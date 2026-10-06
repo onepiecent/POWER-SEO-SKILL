@@ -1,5 +1,5 @@
 {
- "_comment": "Quy tắc loại nhiễu cho export từ khóa rộng. Keyword bị loại được ghi kèm lý do vào excluded.csv. Mỗi rule: name, on (norm = văn bản đã chuẩn hóa, raw = chữ thường nguyên bản), patterns (regex). Sửa/ thêm rule theo brief; chạy với --no-noise-filter để tắt.",
+ "_comment": "Noise-exclusion rules for broad keyword exports. An excluded keyword is written to excluded.csv together with the reason. Each rule: name, on (norm = normalised text, raw = original lowercased text), patterns (regex). Edit or add rules per brief; run with --no-noise-filter to turn them off.",
  "max_words": 12,
  "max_chars": 120,
  "non_ascii_ratio": 0.3,

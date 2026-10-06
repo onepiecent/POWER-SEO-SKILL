@@ -5,46 +5,46 @@ description: Flags risky claims in US and UK Printerval blog posts under FTC, CM
 
 # Claims & compliance check
 
-Công cụ **gắn cờ** để người/pháp chế quyết định; không kết luận hợp pháp hay vi phạm và **không phải tư vấn pháp lý**. Rủi ro cao (sức khỏe, môi trường, giao hàng, review, nhãn hiệu) nên được pháp chế hoặc bộ phận liên quan xác nhận.
+A tool that **raises flags** so that a person or legal can decide; it does not conclude that something is lawful or unlawful and it is **not legal advice**. High-risk items (health, environmental, delivery, reviews, trademarks) should be confirmed by legal or the relevant team.
 
-## Chạy
+## Run
 
 ```bash
 python3 skills/claims-compliance-check/scripts/claims_check.py draft.md --market us
 python3 skills/claims-compliance-check/scripts/claims_check.py draft.md --market uk --json report.json
-python3 skills/claims-compliance-check/scripts/claims_check.py --keywords outputs/keyword-map.csv --column keyword   # cổng IP trước khi lên brief
+python3 skills/claims-compliance-check/scripts/claims_check.py --keywords outputs/keyword-map.csv --column keyword   # IP gate before writing a brief
 ```
 
-Mã thoát = 1 nếu còn phát hiện mức `high` chưa xử lý (dùng như cổng trước khi đăng).
+The exit code is 1 when a `high` finding is still unresolved (use it as a gate before publishing).
 
-## Các quy tắc và cơ sở
+## Rules and their basis
 
-| Rule | Mức | Cơ sở (xem `references/us-uk-claims.md`) |
+| Rule | Level | Basis (see `references/us-uk-claims.md`) |
 |---|---|---|
-| `delivery_promise` | high | FTC Mail/Internet Order Merchandise Rule: cơ sở hợp lý cho thời gian giao hàng; CMA/ASA: chứng minh được |
-| `review_testimonial` | high | FTC 16 CFR Part 465 (hiệu lực 21/10/2024); CMA DMCC Act (từ 4/2025, CMA208) |
+| `delivery_promise` | high | FTC Mail/Internet Order Merchandise Rule: a reasonable basis for delivery times; CMA/ASA: must be substantiated |
+| `review_testimonial` | high | FTC 16 CFR Part 465 (in force since 21 Oct 2024); CMA DMCC Act (since April 2025, CMA208) |
 | `eco_general` | high | FTC Green Guides; CMA Green Claims Code |
 | `health_claim` | high | FTC Act s.5; ASA/CAP Code |
-| `made_in` | high | FTC chuẩn "Made in USA" |
-| `ip_brand` | high | USPTO/UK IPO: nguy cơ nhầm lẫn nhãn hiệu; quyền nhân thân với tên nghệ sĩ |
-| `eco_specific`, `superlative_guarantee`, `price_offer`, `policy_claim`, `first_hand_claim`, `disclosure` | medium | FTC/CMA/ASA; Google (bằng chứng trải nghiệm) |
-| `handmade_claim` | low | CMA/ASA/FTC (bỏ qua nếu chỉ là chủ đề DIY) |
-| `uk_remit_note` | info | ASA: nội dung trên website của nhà bán gắn trực tiếp với việc bán hàng có thể thuộc phạm vi CAP |
+| `made_in` | high | FTC "Made in USA" standard |
+| `ip_brand` | high | USPTO/UK IPO: risk of trademark confusion; personality rights for artist names |
+| `eco_specific`, `superlative_guarantee`, `price_offer`, `policy_claim`, `first_hand_claim`, `disclosure` | medium | FTC/CMA/ASA; Google (evidence of experience) |
+| `handmade_claim` | low | CMA/ASA/FTC (ignore if the topic is simply DIY) |
+| `uk_remit_note` | info | ASA: content on a seller's website that is directly connected with the sale of goods may fall within the CAP Code |
 
-Mỗi phát hiện in: dòng, đoạn trích, các cụm khớp, nguồn, lý do, **cách xử lý** đề xuất.
+Every finding prints: the line, an excerpt, the matched phrases, the source, the reason, and a suggested **fix**.
 
-## Cách xử lý phát hiện
+## Handling a finding
 
-1. **Sửa hoặc bỏ** claim nếu không có bằng chứng. Với giao hàng, giá, review: thay bằng `[DATA NEEDED: ... do bộ phận X xác nhận, ngày]` hoặc bỏ.
-2. **Có bằng chứng:** đưa nguồn vào bài (link/ngày) và, nếu cần, nhờ người có thẩm quyền duyệt rồi để dấu miễn trừ ngay trong đoạn: `[CLAIM-OK: lý do; người duyệt; ngày]`. Đoạn có dấu này được liệt kê trong mục "đã miễn trừ" thay vì báo lỗi; **không tự đặt dấu này** thay cho người duyệt.
-3. **Trải nghiệm trực tiếp:** giữ "we tested/our team..." chỉ khi đoạn có `[EXPERIENCE: nguồn]` hoặc `[DATA: nguồn]` thật; không bịa.
-4. **IP:** hỏi pháp chế; nhắc tên với mục đích thông tin trung thực khác với dùng tên đó để bán/quảng bá sản phẩm mang nhãn. Tránh đưa tên vào tiêu đề, H2, anchor và mô tả sản phẩm khi chưa được duyệt.
+1. **Fix or remove** the claim if there is no evidence. For delivery, price and reviews: replace it with `[DATA NEEDED: ... confirmed by team X, date]` or remove it.
+2. **With evidence:** put the source in the post (link/date) and, if needed, have someone with authority approve it, then leave a waiver marker in the same paragraph: `[CLAIM-OK: reason; approver; date]`. A paragraph with this marker is listed under "waived" instead of being reported as an error; **never add this marker yourself** in place of the approver.
+3. **First-hand experience:** keep "we tested/our team..." only when the paragraph has a real `[EXPERIENCE: source]` or `[DATA: source]`; never invent it.
+4. **IP:** ask legal; mentioning a name to give honest information differs from using it to sell or promote products that carry it. Avoid putting names in titles, H2s, anchors and product descriptions until approved.
 
-## Danh sách IP
+## The IP list
 
-`assets/ip-watchlist.txt` chỉ là **danh sách khởi đầu, không đầy đủ**; team pháp chế/IP của Printerval cần duy trì danh sách thật (một tên mỗi dòng; `re:` cho regex). Dùng chế độ `--keywords` ngay sau bước gom nhóm để loại/duyệt keyword có nhãn hiệu trước khi viết brief.
+`assets/ip-watchlist.txt` is only a **starting list and is not exhaustive**; Printerval's legal/IP team needs to maintain the real list (one name per line; `re:` for a regex). Use the `--keywords` mode right after the clustering step to remove or review trademarked keywords before writing a brief.
 
-## Giới hạn
+## Limits
 
-- Regex bắt dấu hiệu bề mặt: có thể báo thừa (ví dụ "treat stains" không bị bắt, nhưng "sustainable fashion" trong bài bình luận có thể bị bắt) và bỏ sót cách diễn đạt khác. Luôn đọc ngữ cảnh.
-- Quy định thay đổi và có ngoại lệ theo bang/ngành; xem `references/us-uk-claims.md` để biết mức xác minh từng nguồn.
+- The regexes catch surface signals: they can over-report (for example "treat stains" is not caught, but "sustainable fashion" in an opinion piece can be) and miss other phrasings. Always read the context.
+- Regulations change and have exceptions by state and sector; see `references/us-uk-claims.md` for the verification level of every source.

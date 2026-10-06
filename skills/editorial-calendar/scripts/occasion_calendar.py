@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Lịch dịp lễ US/UK và ngày xuất bản/cập nhật nên có cho bài theo mùa. Chỉ dùng thư viện chuẩn.
+"""US/UK holiday calendar and the publish/refresh dates to aim for with seasonal posts. Standard library only.
 
-Ngày lễ được TÍNH bằng quy tắc (không gõ tay, không lấy từ kết quả tìm kiếm) vì ngày của US và UK khác nhau:
-  * Mother's Day US: Chủ nhật thứ hai của tháng 5.  Mothering Sunday UK: 3 tuần trước Easter (Chủ nhật).
-  * Father's Day (cả US và UK): Chủ nhật thứ ba của tháng 6.
-  * Thanksgiving: thứ Năm thứ tư của tháng 11; Black Friday = hôm sau; Cyber Monday = thứ Hai sau Thanksgiving.
-  * Easter: thuật toán Gregorian (Meeus/Jones/Butcher).
-Không có Remembrance, bank holiday: ngày bank holiday phụ thuộc quy tắc "ngày bù"; lấy từ https://www.gov.uk/bank-holidays.
+Holiday dates are COMPUTED by rule (not typed by hand and not taken from search results) because US and UK dates differ:
+  * US Mother's Day: second Sunday of May.  UK Mothering Sunday: three weeks before Easter (a Sunday).
+  * Father's Day (US and UK): third Sunday of June.
+  * Thanksgiving: fourth Thursday of November; Black Friday = the next day; Cyber Monday = the Monday after Thanksgiving.
+  * Easter: Gregorian algorithm (Meeus/Jones/Butcher).
+Remembrance and bank holidays are not included: bank holiday dates depend on "substitute day" rules; take them from https://www.gov.uk/bank-holidays.
 
-Chạy:
+Usage:
     occasion_calendar.py --year 2027 --market both --out outputs
-    occasion_calendar.py --year 2027 --topic-map outputs/topic-map.csv --out outputs   (thêm seasonal-plan.csv)
+    occasion_calendar.py --year 2027 --topic-map outputs/topic-map.csv --out outputs   (adds seasonal-plan.csv)
 
-Số tuần "lead time" mặc định (12 tuần cho bài mới, 6 tuần cho bài cập nhật) là QUY ƯỚC ngành, không phải
-hướng dẫn của Google (Google không công bố thời gian index/xếp hạng). Hãy hiệu chỉnh bằng seasonality
-của chính site (Google Search Console, Google Trends).
+The default lead times (12 weeks for new posts, 6 weeks for refreshing old ones) are an industry CONVENTION, not
+Google guidance (Google does not publish indexing or ranking times). Calibrate them with the site's own seasonality
+(Google Search Console, Google Trends).
 """
 from __future__ import annotations
 
@@ -47,24 +47,24 @@ def easter(year: int) -> dt.date:
     return dt.date(year, month, day)
 
 
-# key, nhãn, thị trường, quy tắc, ghi chú
+# key, label, markets, rule, note
 OCCASIONS = [
     ("new-year", "New Year's Eve", ("us", "uk"), ("fixed", 12, 31), ""),
-    ("valentines-day", "Valentine's Day", ("us", "uk"), ("fixed", 2, 14), "Cần chốt hạn đặt hàng với vận hành trước khi viết 'order by'."),
+    ("valentines-day", "Valentine's Day", ("us", "uk"), ("fixed", 2, 14), "Confirm the order deadline with operations before writing 'order by'."),
     ("st-patricks-day", "St. Patrick's Day", ("us", "uk"), ("fixed", 3, 17), ""),
     ("easter", "Easter Sunday", ("us", "uk"), ("easter", 0), ""),
-    ("mothers-day", "Mother's Day (US)", ("us",), ("nth", 5, SUN, 2), "Cần chốt hạn đặt hàng với vận hành trước khi viết 'order by'."),
-    ("mothers-day", "Mothering Sunday (UK)", ("uk",), ("easter", -21), "Người Anh dùng cả 'Mother's Day' lẫn 'Mothering Sunday'; kiểm tra volume từng cụm."),
-    ("fathers-day", "Father's Day", ("us", "uk"), ("nth", 6, SUN, 3), "Cần chốt hạn đặt hàng với vận hành trước khi viết 'order by'."),
-    ("independence-day", "Fourth of July", ("us",), ("fixed", 7, 4), "Chỉ US."),
+    ("mothers-day", "Mother's Day (US)", ("us",), ("nth", 5, SUN, 2), "Confirm the order deadline with operations before writing 'order by'."),
+    ("mothers-day", "Mothering Sunday (UK)", ("uk",), ("easter", -21), "British readers use both 'Mother's Day' and 'Mothering Sunday'; check the volume of each cluster."),
+    ("fathers-day", "Father's Day", ("us", "uk"), ("nth", 6, SUN, 3), "Confirm the order deadline with operations before writing 'order by'."),
+    ("independence-day", "Fourth of July", ("us",), ("fixed", 7, 4), "US only."),
     ("halloween", "Halloween", ("us", "uk"), ("fixed", 10, 31), ""),
-    ("bonfire-night", "Bonfire Night", ("uk",), ("fixed", 11, 5), "Chỉ UK."),
-    ("thanksgiving", "Thanksgiving", ("us",), ("nth", 11, THU, 4), "Chỉ US."),
-    ("black-friday", "Black Friday", ("us", "uk"), ("after", "thanksgiving", 1), "Giá/ưu đãi phải do team thương mại xác nhận; không tự bịa."),
-    ("cyber-monday", "Cyber Monday", ("us", "uk"), ("after", "thanksgiving", 4), "Giá/ưu đãi phải do team thương mại xác nhận; không tự bịa."),
-    ("christmas", "Christmas Day", ("us", "uk"), ("fixed", 12, 25), "Cần chốt hạn đặt hàng với vận hành trước khi viết 'order by'."),
-    ("graduation", "Graduation season (cửa sổ, xấp xỉ)", ("us", "uk"), ("window", 5, 1), "XẤP XỈ: kiểm tra bằng Google Trends/GSC."),
-    ("back-to-school", "Back to school (cửa sổ, xấp xỉ)", ("us", "uk"), ("window", 8, 1), "XẤP XỈ: US thường sớm hơn UK; kiểm tra bằng Google Trends/GSC."),
+    ("bonfire-night", "Bonfire Night", ("uk",), ("fixed", 11, 5), "UK only."),
+    ("thanksgiving", "Thanksgiving", ("us",), ("nth", 11, THU, 4), "US only."),
+    ("black-friday", "Black Friday", ("us", "uk"), ("after", "thanksgiving", 1), "Prices and offers must be confirmed by the commercial team; never invent them."),
+    ("cyber-monday", "Cyber Monday", ("us", "uk"), ("after", "thanksgiving", 4), "Prices and offers must be confirmed by the commercial team; never invent them."),
+    ("christmas", "Christmas Day", ("us", "uk"), ("fixed", 12, 25), "Confirm the order deadline with operations before writing 'order by'."),
+    ("graduation", "Graduation season (window, approximate)", ("us", "uk"), ("window", 5, 1), "APPROXIMATE: check with Google Trends/GSC."),
+    ("back-to-school", "Back to school (window, approximate)", ("us", "uk"), ("window", 8, 1), "APPROXIMATE: the US usually starts earlier than the UK; check with Google Trends/GSC."),
 ]
 ALIAS = {"black-friday-cyber": "black-friday"}
 
@@ -126,7 +126,7 @@ def seasonal_plan(topic_rows: list[dict], cal: list[dict], today: dt.date, lead_
         if upcoming is None:
             plan.append({**base, "event_date": "", "publish_new_by": "", "refresh_existing_by": "", "days_to_publish_by": "",
                          "status": "no_calendar_rule",
-                         "note": f"Chưa có quy tắc lịch cho '{season}' ở thị trường {mk}: tự đặt ngày hoặc thêm vào OCCASIONS."})
+                         "note": f"No calendar rule for '{season}' in market {mk}: set a date by hand or add it to OCCASIONS."})
             continue
         d = dt.date.fromisoformat(upcoming["date"])
         new_by, ref_by = d - dt.timedelta(weeks=lead_new), d - dt.timedelta(weeks=lead_refresh)
@@ -147,12 +147,12 @@ def write_csv(path: str, rows: list[dict]) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--year", type=int, action="append", help="năm cần tính (lặp lại để thêm); mặc định năm nay và năm sau")
+    ap.add_argument("--year", type=int, action="append", help="year to compute (repeat to add more); default: this year and next")
     ap.add_argument("--market", choices=["us", "uk", "both"], default="both")
-    ap.add_argument("--lead-new", type=int, default=12, help="số tuần trước sự kiện để xuất bản bài MỚI (quy ước, mặc định 12)")
-    ap.add_argument("--lead-refresh", type=int, default=6, help="số tuần trước sự kiện để CẬP NHẬT bài cũ (quy ước, mặc định 6)")
-    ap.add_argument("--today", help="ngày hiện tại YYYY-MM-DD (mặc định: hôm nay), dùng để tính overdue/due_soon")
-    ap.add_argument("--topic-map", help="topic-map.csv: thêm seasonal-plan.csv cho các bài có season")
+    ap.add_argument("--lead-new", type=int, default=12, help="weeks before the event to publish a NEW post (convention, default 12)")
+    ap.add_argument("--lead-refresh", type=int, default=6, help="weeks before the event to REFRESH an existing post (convention, default 6)")
+    ap.add_argument("--today", help="current date YYYY-MM-DD (default: today), used to compute overdue/due_soon")
+    ap.add_argument("--topic-map", help="topic-map.csv: also write seasonal-plan.csv for the posts that have a season")
     ap.add_argument("--out", default="outputs")
     args = ap.parse_args(argv)
 
@@ -162,15 +162,15 @@ def main(argv=None) -> int:
     cal = calendar_rows(years, markets, args.lead_new, args.lead_refresh, today)
     os.makedirs(args.out, exist_ok=True)
     write_csv(os.path.join(args.out, "occasion-calendar.csv"), cal)
-    lines = ["# Lịch dịp lễ US/UK", "", f"Tính ngày: {today.isoformat()}. Lead time: bài mới {args.lead_new} tuần, "
-             f"cập nhật {args.lead_refresh} tuần (quy ước, hãy hiệu chỉnh bằng GSC/Trends).", "",
-             "| Năm | TT | Dịp | Ngày | Thứ | Xuất bản bài mới trước | Cập nhật bài cũ trước | Trạng thái | Ghi chú |", "|---|---|---|---|---|---|---|---|---|"]
+    lines = ["# US/UK holiday calendar", "", f"Computed on: {today.isoformat()}. Lead time: new posts {args.lead_new} weeks, "
+             f"refreshes {args.lead_refresh} weeks (convention; calibrate with GSC/Trends).", "",
+             "| Year | Market | Occasion | Date | Weekday | Publish new post by | Refresh old post by | Status | Notes |", "|---|---|---|---|---|---|---|---|---|"]
     for r in cal:
         lines.append(f"| {r['year']} | {r['market']} | {r['occasion']} | {r['date']} | {r['weekday']} | {r['publish_new_by']} | "
                      f"{r['refresh_existing_by']} | {r['new_status']} / {r['refresh_status']} | {r['notes']} |")
     with open(os.path.join(args.out, "occasion-calendar.md"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
-    msg = f"{len(cal)} dòng lịch ({', '.join(map(str, years))}; {args.market})"
+    msg = f"{len(cal)} calendar rows ({', '.join(map(str, years))}; {args.market})"
     if args.topic_map:
         with open(args.topic_map, encoding="utf-8-sig", newline="") as fh:
             topic_rows = list(csv.DictReader(fh))
@@ -179,9 +179,9 @@ def main(argv=None) -> int:
         counts: dict[str, int] = {}
         for p in plan:
             counts[p["status"]] = counts.get(p["status"], 0) + 1
-        msg += f" | {len(plan)} bài theo mùa: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+        msg += f" | {len(plan)} seasonal posts: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
     print(msg)
-    print(f"Đã ghi vào: {os.path.abspath(args.out)}")
+    print(f"Written to: {os.path.abspath(args.out)}")
     return 0
 
 

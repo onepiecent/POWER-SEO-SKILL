@@ -1,27 +1,27 @@
 # CLAUDE.md
 
-Repo này là bộ skill SEO content cho **blog Printerval** (print-on-demand, thị trường US/UK). Đọc `README.md` trước, rồi `skills/printerval-blog-seo/SKILL.md` (điều phối).
+This repo is an SEO content skill set for the **Printerval blog** (print-on-demand, US/UK markets). Read `README.md` first, then `skills/printerval-blog-seo/SKILL.md` (the orchestrator).
 
-## Quy ước làm việc
+## Working conventions
 
-- Trao đổi với người dùng bằng **tiếng Việt**; mọi nội dung bàn giao (brief, bài, anchor, title) bằng **tiếng Anh** đúng biến thể US hoặc UK.
-- Phạm vi là **nội dung blog**. Không audit kỹ thuật, không URL/sitemap, không link tới trang bán hàng (team content gắn qua `[PRODUCT-SLOT]`).
-- Không bịa số liệu, review, trải nghiệm, hạn giao hàng, giá. Thiếu thì `[DATA NEEDED: ...]`.
-- Mỗi quy tắc ghi mức bằng chứng: **[Google]**, **[Pháp lý]** (không phải tư vấn pháp lý), **[Nghiên cứu]**, **[Quy ước]**. Điểm số và ngưỡng trong script là heuristic nội bộ.
-- File CSV của SEO Specialist có thể lớn và bẩn: luôn chạy script và đọc `cluster-report.md` trước khi báo kết quả.
+- Reply in the user's language (the current maintainers write in Vietnamese); every deliverable (briefs, posts, anchors, titles) is in **English**, in the correct US or UK variant.
+- The scope is **blog content**. No technical audit, no URLs/sitemap, no links to shop pages (the content team adds them through `[PRODUCT-SLOT]`).
+- Never invent figures, reviews, experience, delivery deadlines or prices. If something is missing, write `[DATA NEEDED: ...]`.
+- Every rule states its level of evidence: **[Google]**, **[Legal]** (not legal advice), **[Research]**, **[Convention]**. Scores and thresholds in the scripts are internal heuristics.
+- The SEO specialists' CSV files can be large and dirty: always run the script and read `cluster-report.md` before reporting results.
 
-## Lệnh
+## Commands
 
 ```bash
-python3 -W error::ResourceWarning -m unittest discover -s tests     # 77 test, chạy vài giây
+python3 -W error::ResourceWarning -m unittest discover -s tests     # 77 tests, runs in a few seconds
 python3 scripts/package_skills.py                                    # dist/<skill>.zip
 ```
 
-Script chỉ dùng thư viện chuẩn Python 3 (đã thử trên 3.13). Mỗi skill tự đóng gói trong `skills/<tên>/` (SKILL.md, scripts/, references/, assets/); đừng import chéo giữa các skill (ngoại lệ có fallback: `topic-map` tìm `taxonomy.json` của `keyword-clustering` để đặt tên pillar).
+The scripts use only the Python 3 standard library (tested on 3.13). Each skill is self-contained in `skills/<name>/` (SKILL.md, scripts/, references/, assets/); do not import across skills (one exception, with a fallback: `topic-map` looks for `keyword-clustering`'s `taxonomy.json` to name pillars).
 
-## Khi sửa
+## When editing
 
-- Thêm/sửa regex taxonomy hoặc quy tắc nhiễu: chạy test; đọc lại `excluded.csv` trên dữ liệu mẫu.
-- Thêm dịp lễ: sửa `OCCASIONS` trong `occasion_calendar.py` và thêm test ngày đối chiếu **lịch thật** (không lấy ngày từ kết quả tìm kiếm, vốn từng sai).
-- Frontmatter SKILL.md phải là YAML hợp lệ (không dùng `: ` trong `description`); `tests/test_skills.py` kiểm tra.
-- Cập nhật `skills/printerval-blog-seo/references/sources.md` khi dùng nguồn mới và ghi rõ mức xác minh.
+- Adding or changing taxonomy regexes or noise rules: run the tests; re-read `excluded.csv` on sample data.
+- Adding an occasion: edit `OCCASIONS` in `occasion_calendar.py` and add a test that checks the date against the **real calendar** (do not take dates from search results, which have been wrong before).
+- The SKILL.md frontmatter must be valid YAML (no `: ` inside `description`); `tests/test_skills.py` checks this.
+- Update `skills/printerval-blog-seo/references/sources.md` whenever a new source is used, and state its verification level.

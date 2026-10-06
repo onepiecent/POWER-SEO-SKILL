@@ -3,47 +3,47 @@ name: printerval-blog-seo
 description: Orchestrates the Printerval blog SEO skill suite (print-on-demand marketplace, US and UK markets, English content). Use when the user talks about the Printerval blog, keyword export CSV files from SEO specialists (Semrush, Ahrefs, Keyword Planner, Search Console), keyword clustering, pillar and cluster planning, topic maps, internal links between blog posts, content briefs, gift guides, seasonal content calendars (Mother's Day, Christmas), product slots, claim and IP checks, or whether a draft is helpful to readers. Not for technical audits, URLs or sitemaps, or links to product pages.
 ---
 
-# Printerval Blog SEO: điều phối
+# Printerval Blog SEO: orchestration
 
-Bộ skill này giúp đội SEO/content của Printerval biến một file từ khóa rất rộng thành kế hoạch nội dung blog và những bài viết **hữu ích cho người đọc**, rồi kiểm tra chúng trước khi đăng. Trao đổi với người dùng bằng tiếng Việt; **mọi nội dung bàn giao (brief, bài, anchor, title) bằng tiếng Anh** đúng biến thể thị trường (US = American English, UK = British English).
+This suite helps the Printerval SEO and content team turn a very broad keyword file into a blog content plan and into articles that are **helpful to readers**, then check them before publishing. Reply in the language the user writes in (the team normally writes Vietnamese); **write every deliverable (brief, article, anchor, title) in English**, in the right market variant (US = American English, UK = British English).
 
-## Phạm vi và nguyên tắc cố định
+## Fixed scope and principles
 
-1. **Tập trung nội dung.** Không audit kỹ thuật, không làm URL/sitemap (đang được tối ưu riêng, nhiều redirect), không lập link tới trang bán hàng (`/market`, `/c`...). Link giữa **các bài blog** thuộc phạm vi.
-2. **Blog dẫn sang trang bán hàng một cách tự nhiên.** Skill không gắn link sản phẩm; writer để `[PRODUCT-SLOT: ...]` mô tả ngữ cảnh, team content thay bằng link thật. Bài phải **vẫn đầy đủ và hữu ích khi bỏ hết slot** (`slot_check.py --strip`).
-3. **Không bịa.** Không bịa số liệu, review, "chúng tôi đã test", hạn giao hàng, giá. Thiếu thì để `[DATA NEEDED: ...]`; trải nghiệm thật thì gắn `[EXPERIENCE: nguồn nội bộ]`.
-4. **Không sản xuất hàng loạt.** Google coi việc tạo nhiều trang chủ yếu để thao túng xếp hạng, kể cả bằng AI, là *scaled content abuse*. Mỗi bài cần giá trị riêng và có người duyệt. Không tạo trang cho từng biến thể keyword.
-5. **Mỗi quy tắc nói rõ mức bằng chứng** (như skill `seo-content-vn`): **[Google]** hướng dẫn chính thức; **[Pháp lý]** FTC/CMA/ASA (không phải tư vấn pháp lý); **[Nghiên cứu]** có dữ liệu, thường là tương quan; **[Quy ước]** thông lệ ngành, ngưỡng heuristic. Pillar/cluster và "topical authority" là **[Quy ước]**, Google không định nghĩa chúng.
+1. **Content focus.** No technical audit, no URL or sitemap work (being optimized separately, with many redirects), and no links to shop pages (`/market`, `/c`...). Links between **blog posts** are in scope.
+2. **The blog leads readers to the shop naturally.** The skills do not add product links; writers leave `[PRODUCT-SLOT: ...]` placeholders that describe the context and the content team replaces them with real links. A post must **stay complete and useful with every slot removed** (`slot_check.py --strip`).
+3. **Never invent.** No invented statistics, reviews, "we tested", delivery deadlines or prices. Use `[DATA NEEDED: ...]` when something is missing; tag real experience with `[EXPERIENCE: internal source]`.
+4. **No mass production.** Google treats creating many pages mainly to manipulate rankings, even with AI, as *scaled content abuse*. Every post needs its own value and a human reviewer. Do not create a page for every keyword variant.
+5. **Every rule states its level of evidence** (the same four levels as in the `seo-content-vn` skill): **[Google]** official guidance; **[Legal]** FTC/CMA/ASA (not legal advice); **[Research]** has data, usually correlational; **[Convention]** industry practice and heuristic thresholds. Pillar/cluster and "topical authority" are **[Convention]**; Google does not define them.
 
-## Chọn skill theo tình huống
+## Which skill for which situation
 
-| Người dùng muốn | Skill | Đầu ra chính |
+| The user wants | Skill | Main output |
 |---|---|---|
-| Đọc và gom nhóm file keyword export (nhỏ đến rất lớn), theo yêu cầu cụ thể | `keyword-clustering` | `clusters.csv`, `cluster-report.md` |
-| Dựng pillar/cluster, biết thiếu loại bài nào | `topic-map` | `topic-map.csv/.md` |
-| Kế hoạch link giữa các bài blog, hoặc audit link hiện có | `internal-link-planner` | `link-plan.csv`, `link-audit.csv` |
-| Lịch xuất bản theo mùa US/UK | `editorial-calendar` | `occasion-calendar.csv`, `seasonal-plan.csv` |
-| Brief cho writer/AI | `content-brief` | `briefs/<slug>.md` |
-| Soát/viết lại bài cho hữu ích, trung thực, tự nhiên | `helpful-content-editor` | báo cáo + chỉnh sửa |
-| Chỗ nhắc sản phẩm trong bài, bàn giao team content | `product-slot` | `slots.csv` |
-| Soát claim giá/giao hàng/review/môi trường/IP | `claims-compliance-check` | báo cáo cờ rủi ro |
+| Read and cluster a keyword export (small to very large) on request | `keyword-clustering` | `clusters.csv`, `cluster-report.md` |
+| Build pillars and clusters, see which post types are missing | `topic-map` | `topic-map.csv/.md` |
+| A link plan between blog posts, or an audit of existing links | `internal-link-planner` | `link-plan.csv`, `link-audit.csv` |
+| A US/UK seasonal publishing calendar | `editorial-calendar` | `occasion-calendar.csv`, `seasonal-plan.csv` |
+| Briefs for writers or AI | `content-brief` | `briefs/<slug>.md` |
+| Review or rewrite a post so it is helpful, honest and natural | `helpful-content-editor` | report + edits |
+| Where to mention products, and the hand-off to the content team | `product-slot` | `slots.csv` |
+| Check price, delivery, review, environmental and IP claims | `claims-compliance-check` | risk-flag report |
 
-Dùng kèm skill có sẵn: **`seo-content-vn`** (title/meta, `seo_check.py`, GEO/AIO, ảnh, hreflang) và **`english-grammar-style`** (bắt buộc khi viết hoặc sửa tiếng Anh).
+Use together with the existing skills **`seo-content-vn`** (title/meta, `seo_check.py`, GEO/AIO, images, hreflang) and **`english-grammar-style`** (mandatory when writing or editing English).
 
-## Quy trình chuẩn
+## Standard workflow
 
 ```
-file CSV (SEO Specialist)
-  └─ keyword-clustering ──► clusters.csv + cluster-report.md   (đọc báo cáo trước, xử lý cảnh báo, chạy lại nếu cần)
-       └─ topic-map ──► topic-map.csv (pillar, cluster, độ ưu tiên, khoảng trống)
-            ├─ editorial-calendar ──► seasonal-plan.csv (ngày xuất bản bài theo mùa)
+CSV file (SEO specialist)
+  └─ keyword-clustering ──► clusters.csv + cluster-report.md   (read the report first, handle warnings, re-run if needed)
+       └─ topic-map ──► topic-map.csv (pillars, clusters, priority, gaps)
+            ├─ editorial-calendar ──► seasonal-plan.csv (publish dates for seasonal posts)
             ├─ internal-link-planner ──► link-plan.csv
-            └─ content-brief ──► briefs/*.md   (điền phần [TO FILL] sau khi xem SERP thật)
-                 └─ viết bài ──► helpful-content-editor + claims-compliance-check
-                      └─ product-slot (bàn giao) ──► team content gắn link ──► đăng (--final)
+            └─ content-brief ──► briefs/*.md   (fill the [TO FILL] parts after reviewing the real SERP)
+                 └─ write the post ──► helpful-content-editor + claims-compliance-check
+                      └─ product-slot (hand-off) ──► content team adds links ──► publish (--final)
 ```
 
-Lệnh mẫu (chạy từ thư mục gốc repo; mọi script chỉ dùng thư viện chuẩn của Python 3):
+Sample commands (run from the repository root; every script uses only the Python 3 standard library):
 
 ```bash
 python3 skills/keyword-clustering/scripts/cluster_keywords.py export.csv --out outputs --group-by occasion,recipient
@@ -54,18 +54,18 @@ python3 skills/content-brief/scripts/make_brief.py --topic-map outputs/topic-map
     --link-plan outputs/link-plan.csv --seasonal-plan outputs/seasonal-plan.csv --bucket A --out outputs/briefs
 ```
 
-Schema các file CSV: `references/data-contracts.md`. Nguồn và mức xác minh: `references/sources.md`. Giả định về Printerval và câu hỏi còn mở: `references/printerval-context.md`.
+CSV schemas: `references/data-contracts.md`. Sources and verification levels: `references/sources.md`. Assumptions about Printerval and open questions: `references/printerval-context.md`.
 
-## Cách làm việc với SEO Specialist
+## Working with the SEO specialist
 
-- **File thường lớn, bẩn, mỗi công cụ một kiểu.** Chạy script, **đọc `cluster-report.md` trước khi nói gì về kết quả**: số dòng đọc được, encoding, cột nào được nhận diện, keyword bị loại và lý do, tỷ lệ chưa phân loại, cảnh báo.
-- Yêu cầu của họ ("gom theo người nhận", "bỏ keyword brand", "chỉ US", "volume từ 200") được dịch thành tham số theo bảng trong `keyword-clustering/SKILL.md`. Nêu giả định đã dùng. Chỉ hỏi lại khi yêu cầu mơ hồ thật sự, tối đa 1-2 câu, kèm đề xuất mặc định.
-- Kết quả là **bản nháp có kiểm chứng**, không phải sự thật cuối cùng: cụm gom bằng từ vựng cần Claude/SEO duyệt `merge-candidates.csv`; nếu có SERP overlap (cột `serp_urls`) thì tin SERP hơn.
-- Không nói "xong" khi chưa chạy script và đọc đầu ra. Báo cáo trung thực: lệnh nào chạy, số liệu thật, chỗ nào chưa chắc.
+- **Files are usually large, messy and different for every tool.** Run the script and **read `cluster-report.md` before saying anything about the result**: rows read, encoding, which columns were recognised, excluded keywords and reasons, the unclassified share, warnings.
+- Their requests ("group by recipient", "drop brand keywords", "US only", "volume from 200") are translated into options using the table in `keyword-clustering/SKILL.md`. State the assumptions you used. Ask only when the request is genuinely ambiguous: at most 1-2 questions, with a proposed default.
+- The result is a **verified draft**, not the final truth: clusters built from vocabulary need Claude or the SEO to review `merge-candidates.csv`; when SERP overlap is available (a `serp_urls` column), trust the SERP more.
+- Do not say "done" before running the script and reading its output. Report honestly: which commands ran, the real figures, what is uncertain.
 
-## Giới hạn cần nói với người dùng
+## Limits to tell the user about
 
-- Điểm của `helpful_check.py` và điểm ưu tiên của `topic-map` là **heuristic nội bộ**, không phải số đo của Google.
-- `cluster_volume` là tổng volume các keyword trong cụm, là cận trên (cùng một nhóm người tìm bằng nhiều cách).
-- Lead time xuất bản theo mùa (12 tuần bài mới, 6 tuần cập nhật) là quy ước ngành; hãy hiệu chỉnh bằng GSC/Google Trends của chính site.
-- Danh sách IP/nhãn hiệu chỉ là điểm khởi đầu; claim rủi ro cao (sức khỏe, môi trường, giao hàng, review) cần pháp chế/bộ phận liên quan xác nhận.
+- The `helpful_check.py` score and the `topic-map` priority score are **internal heuristics**, not Google metrics.
+- `cluster_volume` is the sum of the keyword volumes in a cluster, so it is an upper bound (the same searchers use several phrasings).
+- Seasonal lead times (12 weeks for new posts, 6 for refreshes) are an industry convention; calibrate them with the site's own GSC and Google Trends data.
+- The IP/trademark list is only a starting point; high-risk claims (health, environmental, delivery, reviews) need confirmation from legal or the relevant team.

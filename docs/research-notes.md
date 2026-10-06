@@ -1,53 +1,53 @@
-# Ghi chú nghiên cứu (2026-10-06)
+# Research notes (2026-10-06)
 
-Tài liệu này tóm tắt những gì tìm được từ nguồn chính thống, quyết định thiết kế bắt nguồn từ chúng, và những chỗ chưa chắc. Danh sách nguồn, URL và mức xác minh nằm ở [`skills/printerval-blog-seo/references/sources.md`](../skills/printerval-blog-seo/references/sources.md).
+This document summarises what was found in official sources, the design decisions that follow from it, and the points that remain uncertain. The list of sources, URLs and verification levels is in [`skills/printerval-blog-seo/references/sources.md`](../skills/printerval-blog-seo/references/sources.md).
 
-**Giới hạn phương pháp:** môi trường làm việc chặn truy cập trực tiếp tới `printerval.com`, `developers.google.com`, `ftc.gov`, `gov.uk`... nên các điểm dưới đây được xác nhận qua **bản tóm tắt kết quả tìm kiếm của trang chính thức**, không phải đọc nguyên văn. Trước khi trích nguyên văn hoặc dùng cho quyết định pháp lý, hãy mở trang gốc.
+**Method limitation:** the working environment blocks direct access to `printerval.com`, `developers.google.com`, `ftc.gov`, `gov.uk` and similar sites, so the points below were confirmed through **the search-result summaries of the official pages**, not by reading them in full. Before quoting verbatim or using any of this for a legal decision, open the original page.
 
-## 1. Google: điều thay đổi cách thiết kế
+## 1. Google: what changed the design
 
-| Phát hiện | Ảnh hưởng thiết kế |
+| Finding | Design impact |
 |---|---|
-| Hướng dẫn nội dung hữu ích: thông tin gốc, mô tả đầy đủ, phân tích vượt điều hiển nhiên; nguồn, chuyên môn; khung **Who/How/Why**; **trust** là yếu tố quan trọng nhất trong E-E-A-T | Rubric 8 chiều của `helpful-content-editor`; kiểm tra byline/ngày/nguồn; `[EXPERIENCE]`/`[DATA]` bắt buộc cho góc nhìn riêng |
-| Hướng dẫn tối ưu cho tính năng AI (5/2026): nội dung **độc đáo, không "hàng phổ thông"** ảnh hưởng nhiều nhất; điều kiện hiển thị chỉ là được index + đủ điều kiện hiện snippet; không cần file/markup riêng cho AI | Không có "mẹo GEO" tùy tiện trong skill; kho kinh nghiệm (`experience-bank`) và pillar `craft` là nơi tạo khác biệt |
-| Hướng dẫn nội dung AI (cập nhật 1/10/2026 dẫn tới Quality Rater Guidelines 4.6.5, 4.6.6): AI giúp nghiên cứu/dựng cấu trúc nhưng tạo nhiều trang không thêm giá trị là **scaled content abuse**; phải kiểm chứng sự thật; nên nói cách tạo nội dung; nội dung chính ít công sức/độc đáo/giá trị bị xếp thấp nhất | Mỗi cụm = một bài, không tạo trang theo biến thể keyword; bắt buộc người duyệt; cảnh báo hallucination trong rubric; không có chế độ "sinh hàng loạt" |
-| Chính sách **site reputation abuse** (cập nhật 28/8/2026): trang bên thứ ba/tài trợ/đối tác độc lập mục đích chính của site hoặc thiếu giám sát chặt | Bài của seller/khách mời/tài trợ phải được biên tập kiểm soát (ghi trong rubric trust) |
-| Hướng dẫn viết review: bằng chứng trải nghiệm, số đo, ưu **và nhược điểm**, giải thích vì sao "tốt nhất" | Khung `gift-guide` và `choose-guide`: mỗi ý tưởng có lý do, nhược điểm; "tested" chỉ khi thật |
-| Ngày hiển thị: không làm mới ngày giả; khớp structured data | Bài theo mùa giữ một URL, làm mới hằng năm, chỉ đổi ngày khi nội dung đổi (`editorial-calendar`) |
-| Discover: không clickbait, tiêu đề nêu đúng nội dung, ảnh rộng ≥ 1.200 px | Tiêu chí 1 và 8 của rubric |
-| "Helpful content system" đã chuyển sang mục lưu trữ của hướng dẫn hệ thống xếp hạng (gộp vào xếp hạng lõi) | Không hứa "phục hồi HCU"; hướng dẫn nội dung hữu ích vẫn là chuẩn tham chiếu |
-| Search Console có báo cáo Generative AI (6/2026) | Gợi ý đo hiển thị AI sau khi đăng |
+| Helpful-content guidance: original information, a complete description, analysis beyond the obvious; sources, expertise; the **Who/How/Why** framework; **trust** is the most important factor in E-E-A-T | The 8-dimension rubric in `helpful-content-editor`; byline/date/source checks; `[EXPERIENCE]`/`[DATA]` required for a point of view of its own |
+| Guidance on optimizing for AI features (May 2026): **unique, non-commodity** content has the most influence; the only conditions for appearing are being indexed and being eligible to show a snippet; no special file or markup for AI is needed | No ad-hoc "GEO tricks" in the skills; the experience bank (`experience-bank`) and the `craft` pillar are where differentiation comes from |
+| Guidance on AI content (updated 1 Oct 2026, pointing to Quality Rater Guidelines 4.6.5 and 4.6.6): AI helps with research and structuring, but producing many pages without adding value is **scaled content abuse**; facts must be verified; it is advisable to say how the content was created; main content with little effort, originality or value is rated lowest | One cluster = one post, no pages per keyword variant; a human reviewer is mandatory; a hallucination warning in the rubric; no "bulk generation" mode |
+| **Site reputation abuse** policy (updated 28 Aug 2026): third-party, sponsored or partner pages that are independent of the site's main purpose or lack close oversight | Posts by sellers, guest authors or sponsors must be under editorial control (stated in the trust part of the rubric) |
+| Review-writing guidance: evidence of experience, measurements, pros **and cons**, an explanation of why something is "best" | The `gift-guide` and `choose-guide` formats: every idea has a reason and a drawback; "tested" only when true |
+| Visible date: do not refresh dates artificially; match the structured data | Seasonal posts keep one URL, are refreshed every year, and change the date only when the content changes (`editorial-calendar`) |
+| Discover: no clickbait, the title states what the content is, images at least 1,200 px wide | Rubric criteria 1 and 8 |
+| The "helpful content system" has moved to the archive section of the ranking-systems guidance (merged into core ranking) | Do not promise a "HCU recovery"; the helpful-content guidance remains the reference standard |
+| Search Console has a Generative AI report (Jun 2026) | A suggestion to measure AI appearance after publishing |
 
-**Google không định nghĩa pillar/cluster hay topical authority**, không công bố độ dài lý tưởng hay thời gian index. Các ngưỡng tương ứng trong skill là **[Quy ước]**.
+**Google does not define pillar/cluster or topical authority**, and does not publish an ideal length or indexing times. The corresponding thresholds in the skills are **[Convention]**.
 
-## 2. Pháp lý và quảng cáo (không phải tư vấn pháp lý)
+## 2. Legal and advertising (not legal advice)
 
-| Chủ đề | Điểm chính | Rule trong `claims_check.py` |
+| Topic | Key points | Rule in `claims_check.py` |
 |---|---|---|
-| FTC 16 CFR Part 465 (hiệu lực 21/10/2024) | Cấm review giả (kể cả do AI tạo), mua review theo cảm xúc, review nội bộ không công bố, trang review "độc lập" do công ty kiểm soát | `review_testimonial`, `first_hand_claim` |
-| CMA DMCC Act 2024 (từ 4/2025, CMA208) | Review giả/khuyến khích không công bố và trình bày review gây hiểu lầm bị cấm tự thân | `review_testimonial` |
-| FTC Mail/Internet Order Merchandise Rule | Có cơ sở hợp lý cho thời gian giao hàng đã nêu; mặc định 30 ngày; trễ thì xin đồng ý | `delivery_promise` |
-| FTC Green Guides; CMA Green Claims Code | Không "eco-friendly" chung chung; claim cụ thể cần bằng chứng | `eco_general`, `eco_specific` |
-| ASA CAP Code và website của nhà quảng cáo | Nội dung trên website của nhà bán gắn trực tiếp với việc bán hàng có thể thuộc phạm vi CAP; một số bài blog có thể là nội dung biên tập | `uk_remit_note`, `superlative_guarantee` |
-| USPTO/UK IPO: nhãn hiệu | Nhầm lẫn nhãn hiệu không cần giống hệt | `ip_brand` |
-| FTC "Made in USA", Endorsement Guides | Kiến thức nền (chưa xác minh lại trong phiên) | `made_in`, `disclosure` |
+| FTC 16 CFR Part 465 (in force 21 Oct 2024) | Bans fake reviews (including AI-generated ones), buying reviews for a set sentiment, undisclosed insider reviews, and company-controlled "independent" review sites | `review_testimonial`, `first_hand_claim` |
+| CMA DMCC Act 2024 (from April 2025, CMA208) | Fake reviews, incentivised reviews without disclosure and misleading presentation of reviews are banned practices in themselves | `review_testimonial` |
+| FTC Mail/Internet Order Merchandise Rule | A reasonable basis for any stated delivery time; 30 days by default; consent must be sought for delays | `delivery_promise` |
+| FTC Green Guides; CMA Green Claims Code | No generic "eco-friendly"; specific claims need evidence | `eco_general`, `eco_specific` |
+| ASA CAP Code and advertisers' own websites | Content on a seller's website that is directly connected with selling may fall within the CAP Code; some blog posts may be editorial content | `uk_remit_note`, `superlative_guarantee` |
+| USPTO/UK IPO: trademarks | Trademark confusion does not require identical marks | `ip_brand` |
+| FTC "Made in USA", Endorsement Guides | Background knowledge (not re-verified in this session) | `made_in`, `disclosure` |
 
-## 3. Dữ liệu nhu cầu theo mùa
+## 3. Seasonal demand data
 
-Khảo sát NRF 2026 (qua tóm tắt tìm kiếm; **kiểm tra lại trang gốc trước khi trích**): Mother's Day dự kiến ~$38 tỷ (mức kỷ lục), Valentine's ~$29,1 tỷ, Halloween ~$13,5 tỷ; mua online là điểm mua hàng đầu hoặc đồng hạng đầu ở nhiều dịp. Chỉ dùng làm bối cảnh ưu tiên bài theo mùa, không phải bằng chứng xếp hạng.
+NRF 2026 surveys (via search summaries; **re-check the original page before quoting**): Mother's Day expected at about $38 billion (a record), Valentine's about $29.1 billion, Halloween about $13.5 billion; shopping online is the top or joint-top place to buy for several occasions. Use this only as context for prioritising seasonal posts, not as evidence about rankings.
 
-## 4. Lỗi của kết quả tìm kiếm đã được phát hiện
+## 4. Errors in search results that were caught
 
-Tóm tắt tìm kiếm trả "Mothering Sunday 2026 là 19/3" và "Father's Day 2026 là thứ Tư 21/6": **cả hai sai** (Mothering Sunday 2026 là Chủ nhật 15/3; Father's Day 2026 là Chủ nhật 21/6). Vì vậy ngày lễ được **tính bằng quy tắc** và có test đối chiếu lịch thật (`tests/test_pipeline.py`). Bài học: không dùng số liệu/ngày từ tóm tắt tìm kiếm mà không kiểm tra chéo.
+Search summaries returned "Mothering Sunday 2026 is 19 March" and "Father's Day 2026 is Wednesday 21 June": **both are wrong** (Mothering Sunday 2026 is Sunday 15 March; Father's Day 2026 is Sunday 21 June). That is why holiday dates are **computed by rule** and have tests that check them against the real calendar (`tests/test_pipeline.py`). The lesson: do not use figures or dates from search summaries without cross-checking them.
 
-## 5. Về Printerval
+## 5. About Printerval
 
-Không truy cập được `printerval.com` nên không phân tích trực tiếp. Từ kết quả tìm kiếm: marketplace print-on-demand với seller độc lập; URL có nhiều kiểu (`/slug-p<id>`, `/c/...`, `/market/<keyword>`, `/<locale>/`); nhiều tiêu đề sản phẩm do seller nhập, dài và nhồi từ khóa; số liệu tự công bố không nhất quán. Theo yêu cầu của người dùng, URL/sitemap/audit kỹ thuật **ngoài phạm vi**. Giả định và câu hỏi mở: [`printerval-context.md`](../skills/printerval-blog-seo/references/printerval-context.md).
+`printerval.com` could not be accessed, so it was not analysed directly. From search results: a print-on-demand marketplace with independent sellers; URLs come in several styles (`/slug-p<id>`, `/c/...`, `/market/<keyword>`, `/<locale>/`); many product titles are entered by sellers, long and stuffed with keywords; self-reported figures are inconsistent. At the user's request, URLs, the sitemap and technical audits are **out of scope**. Assumptions and open questions: [`printerval-context.md`](../skills/printerval-blog-seo/references/printerval-context.md).
 
-## 6. Những gì chưa làm được / chưa chắc
+## 6. What could not be done / what is uncertain
 
-- Chưa đọc nguyên văn các trang chính thống (bị chặn); mọi ô mức **S** nên được xác nhận lại trước khi dùng cho quyết định lớn.
-- Taxonomy (dịp lễ, người nhận, sở thích, sản phẩm) là điểm khởi đầu theo hiểu biết chung về quà tặng/POD, chưa đối chiếu catalog thật của Printerval.
-- Ngưỡng heuristic (độ đọc, mật độ link, lead time 12/6 tuần, mật độ slot) là **[Quy ước]**: cần hiệu chỉnh bằng dữ liệu của site.
-- Gom cụm bằng từ vựng không hiểu đồng nghĩa sâu; kết quả tốt nhất khi có SERP overlap thật.
-- Danh sách IP chỉ là mẫu khởi đầu; cần pháp chế duy trì.
+- The official pages were not read in full (they are blocked); every level **S** entry should be re-confirmed before being used for a major decision.
+- The taxonomy (occasion, recipient, interest, product) is a starting point based on general knowledge of gifting/POD and has not been checked against Printerval's real catalog.
+- The heuristic thresholds (readability, link density, the 12/6-week lead time, slot density) are **[Convention]**: calibrate them with the site's own data.
+- Clustering by vocabulary does not understand deep synonymy; results are best when real SERP overlap is available.
+- The IP list is only a starting sample; legal needs to maintain it.

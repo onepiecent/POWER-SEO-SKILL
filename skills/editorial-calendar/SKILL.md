@@ -3,38 +3,38 @@ name: editorial-calendar
 description: Computes US and UK holiday dates by rule (US Mother's Day versus UK Mothering Sunday, Father's Day, Thanksgiving, Black Friday, Easter, Halloween, Bonfire Night) and plans publish and refresh deadlines for seasonal blog posts from the topic map. Use when the user mentions a content calendar, seasonal posts, when to publish Mother's Day or Christmas content, or US and UK holiday dates.
 ---
 
-# Editorial calendar theo mùa (US/UK)
+# Seasonal editorial calendar (US/UK)
 
-## Chạy
+## Run
 
 ```bash
 python3 skills/editorial-calendar/scripts/occasion_calendar.py --year 2027 --market both --out outputs
-python3 skills/editorial-calendar/scripts/occasion_calendar.py --topic-map outputs/topic-map.csv --out outputs    # thêm seasonal-plan.csv
+python3 skills/editorial-calendar/scripts/occasion_calendar.py --topic-map outputs/topic-map.csv --out outputs    # also writes seasonal-plan.csv
 python3 skills/editorial-calendar/scripts/occasion_calendar.py --today 2026-10-06 --lead-new 16 --lead-refresh 8 ...
 ```
 
-Đầu ra: `occasion-calendar.csv/.md` (mọi dịp, hai thị trường) và `seasonal-plan.csv` (mỗi bài có `season` trong topic-map: ngày sự kiện kế tiếp, `publish_new_by`, `refresh_existing_by`, `days_to_publish_by`, `status`).
+Output: `occasion-calendar.csv/.md` (every occasion, both markets) and `seasonal-plan.csv` (every post with a `season` in the topic map: the next event date, `publish_new_by`, `refresh_existing_by`, `days_to_publish_by`, `status`).
 
-## Điều cần nhớ
+## What to remember
 
-1. **Ngày được TÍNH bằng quy tắc, không lấy từ kết quả tìm kiếm.** Trong lúc nghiên cứu, công cụ tìm kiếm trả sai ngày Mothering Sunday và Father's Day của Anh; script có test đối chiếu (xem `tests/`). Không tự gõ ngày vào bài.
-2. **US và UK khác nhau:** Mother's Day US = Chủ nhật thứ hai của tháng 5; Mothering Sunday UK = 3 tuần trước Easter (tháng 3 hoặc 4). Father's Day cùng quy tắc (Chủ nhật thứ ba của tháng 6). Thanksgiving, Fourth of July chỉ US; Bonfire Night chỉ UK. Mỗi thị trường là một dòng riêng, một bài riêng khi cần.
-3. **Lead time là quy ước, không phải luật của Google.** Mặc định 12 tuần cho bài mới, 6 tuần cho cập nhật bài cũ (Google không công bố thời gian index/xếp hạng). Hiệu chỉnh bằng seasonality thật: Search Console (impressions theo tuần của các bài mùa năm trước) và Google Trends. Cửa sổ "graduation", "back to school" chỉ **xấp xỉ**.
-4. **Một URL theo mùa, làm mới hằng năm.** Giữ nguyên bài pillar/guide theo dịp, cập nhật nội dung và chỉ đổi ngày hiển thị khi nội dung thật sự thay đổi (Google khuyến nghị không làm mới ngày giả; ngày hiển thị khớp structured data). Không tạo `...-2027`.
-5. **Không hứa giao hàng.** Bài theo mùa rất hay nhắc "đặt trước ngày X". Hạn đặt hàng/giao hàng chỉ lấy từ bộ phận vận hành kèm ngày xác nhận (`[DATA NEEDED: ...]`), vì quy tắc FTC Mail/Internet Order Merchandise yêu cầu cơ sở hợp lý cho thời gian giao hàng đã nêu và CMA/ASA yêu cầu chứng minh được. Cột `notes` đã nhắc điều này cho Valentine's, Mother's/Father's Day, Christmas.
-6. **Bối cảnh nhu cầu (Mỹ):** khảo sát NRF 2026 (qua tóm tắt tìm kiếm, kiểm tra lại trang gốc trước khi trích) cho thấy chi tiêu Mother's Day, Valentine's, Halloween đều ở mức kỷ lục và mua online là điểm mua hàng đầu cho nhiều dịp. Đó là lý do ưu tiên bài theo mùa, không phải bằng chứng về xếp hạng.
+1. **Dates are COMPUTED by rule, not taken from search results.** During the research a search engine returned wrong dates for UK Mothering Sunday and Father's Day; the script has tests that check the dates against the real calendar (see `tests/`). Never type a date into a post by hand.
+2. **The US and the UK differ:** US Mother's Day = the second Sunday of May; UK Mothering Sunday = three weeks before Easter (March or April). Father's Day follows the same rule in both (the third Sunday of June). Thanksgiving and the Fourth of July are US only; Bonfire Night is UK only. Each market is a separate row, and a separate post when needed.
+3. **Lead time is a convention, not a Google rule.** The defaults are 12 weeks for a new post and 6 weeks for refreshing an old one (Google does not publish indexing or ranking times). Calibrate with real seasonality: Search Console (weekly impressions of last year's seasonal posts) and Google Trends. The "graduation" and "back to school" windows are only **approximate**.
+4. **One URL per season, refreshed every year.** Keep the occasion pillar/guide, update the content, and change the visible date only when the content really changes (Google advises against artificially freshened dates; the visible date should match the structured data). Do not create `...-2027`.
+5. **Do not promise delivery.** Seasonal posts love to say "order before date X". Order and delivery deadlines come only from operations, with a confirmation date (`[DATA NEEDED: ...]`), because the FTC Mail/Internet Order Merchandise rule requires a reasonable basis for any stated delivery time and the CMA/ASA require claims to be substantiated. The `notes` column carries this reminder for Valentine's Day, Mother's/Father's Day and Christmas.
+6. **Demand context (US):** the 2026 NRF surveys (through search summaries; re-check the original page before quoting) show Mother's Day, Valentine's Day and Halloween spending at record levels, with online the top shopping destination for several occasions. That is a reason to prioritise seasonal posts, not evidence about rankings.
 
-## Đọc `seasonal-plan.csv`
+## Reading `seasonal-plan.csv`
 
-| `status` | Nghĩa | Việc làm |
+| `status` | Meaning | What to do |
 |---|---|---|
-| `upcoming` | hạn đăng bài mới còn > 14 ngày | lên lịch theo `publish_new_by` |
-| `due_soon` | hạn trong 14 ngày | ưu tiên ngay |
-| `overdue` | hạn đăng bài mới đã qua nhưng sự kiện chưa tới | đăng sớm nhất có thể **hoặc** làm mới bài đã có (`refresh_existing_by`) và dồn nguồn lực cho bài bucket A |
-| `no_calendar_rule` | `season` chưa có quy tắc ngày | thêm vào `OCCASIONS` trong script hoặc đặt ngày thủ công |
+| `upcoming` | the deadline for a new post is more than 14 days away | schedule it by `publish_new_by` |
+| `due_soon` | the deadline is within 14 days | prioritise now |
+| `overdue` | the deadline for a new post has passed but the event has not arrived | publish as soon as possible **or** refresh the existing post (`refresh_existing_by`) and put the effort into bucket-A posts |
+| `no_calendar_rule` | the `season` has no date rule yet | add it to `OCCASIONS` in the script or set a date by hand |
 
-Sự kiện đã qua trong năm nay: script tự chuyển sang lần xuất hiện kế tiếp (năm sau). Thêm dịp mới: sửa `OCCASIONS` (quy tắc `fixed`, `nth`, `easter`, `after`, `window`) và thêm test đối chiếu ngày thật.
+An event that has already passed this year moves automatically to its next occurrence (next year). To add an occasion: edit `OCCASIONS` (rules `fixed`, `nth`, `easter`, `after`, `window`) and add a test that checks the real date.
 
-## Không có trong script
+## Not in the script
 
-Bank holiday của Anh (có quy tắc "ngày bù" phức tạp): lấy từ https://www.gov.uk/bank-holidays. Remembrance và các dịp nhạy cảm không đưa vào lịch quà tặng. Xem ghi chú từng dịp ở `references/occasions.md`.
+UK bank holidays (they have complicated "substitute day" rules): use https://www.gov.uk/bank-holidays. Remembrance and other sensitive occasions are not part of a gifting calendar. See the per-occasion notes in `references/occasions.md`.

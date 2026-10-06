@@ -1,4 +1,4 @@
-"""Kiểm tra sức khỏe repo: frontmatter hợp lệ, tham chiếu tệp tồn tại, script chạy được --help."""
+"""Repo health checks: valid frontmatter, referenced files exist, scripts run with --help."""
 import glob
 import os
 import re
@@ -32,13 +32,13 @@ class SkillFiles(unittest.TestCase):
         for path in SKILLS:
             with self.subTest(skill=path):
                 fm, _ = frontmatter(path)
-                self.assertIsNotNone(fm, "thiếu frontmatter")
+                self.assertIsNotNone(fm, "missing frontmatter")
                 name = re.search(r"^name:\s*(.+)$", fm, re.M).group(1).strip()
                 desc = re.search(r"^description:\s*(.+)$", fm, re.M).group(1)
                 self.assertEqual(name, os.path.basename(os.path.dirname(path)))
                 self.assertRegex(name, r"^[a-z0-9-]{1,64}$")
                 self.assertLessEqual(len(desc), 1024)
-                self.assertNotIn(": ", desc, "dấu ': ' làm hỏng YAML scalar không nháy")
+                self.assertNotIn(": ", desc, "a ': ' breaks an unquoted YAML scalar")
                 if yaml:
                     data = yaml.safe_load(fm)
                     self.assertEqual(set(data), {"name", "description"})
@@ -50,7 +50,7 @@ class SkillFiles(unittest.TestCase):
             for ref in set(REF_RX.findall(text)):
                 with self.subTest(skill=os.path.basename(skill_dir), ref=ref):
                     candidates = [os.path.join(skill_dir, ref), os.path.join(ROOT, ref)]
-                    # tham chiếu chéo dạng references/... của skill khác được ghi kèm tên skill
+                    # cross-references to references/... of another skill are written with the skill name
                     candidates += glob.glob(os.path.join(ROOT, "skills", "*", ref))
                     self.assertTrue(any(os.path.exists(c) for c in candidates), ref)
 

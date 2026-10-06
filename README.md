@@ -78,7 +78,7 @@ The script handles UTF-16/tab files (Keyword Planner), description lines above t
 3. **No mass production**: one cluster is one post, reviewed by a person (Google's scaled content abuse policy).
 4. **Honest claims**: delivery, review, environmental, health and price claims and IP names are flagged for people or legal to decide (this is not legal advice).
 
-Every rule in the documentation carries an evidence level: **[Google]**, **[Legal]**, **[Research]** or **[Convention]** (the documents themselves use the Vietnamese labels **[Pháp lý]**, **[Nghiên cứu]**, **[Quy ước]**). Research notes and the verification level of each source: [`docs/research-notes.md`](docs/research-notes.md) and [`skills/printerval-blog-seo/references/sources.md`](skills/printerval-blog-seo/references/sources.md).
+Every rule in the documentation carries an evidence level: **[Google]**, **[Legal]**, **[Research]** or **[Convention]**. Research notes and the verification level of each source: [`docs/research-notes.md`](docs/research-notes.md) and [`skills/printerval-blog-seo/references/sources.md`](skills/printerval-blog-seo/references/sources.md).
 
 ## Installing the skills
 
@@ -88,7 +88,7 @@ Use **all nine together**: `printerval-blog-seo` is the entry point and the skil
 - **claude.ai or the Claude app:** upload one zip per skill (nine uploads). `python3 scripts/package_skills.py` builds `dist/<skill>.zip`. Make sure Skills and code execution are enabled in Settings so the Python scripts can run. When `topic-map` is uploaded on its own it derives pillar names from keys instead of reading the taxonomy labels; it still works.
 - Use alongside the existing skills **`seo-content-vn`** (title and meta, GEO/AIO, images, hreflang) and **`english-grammar-style`**.
 
-The skill instructions and reference documents are written in Vietnamese; deliverables (briefs, articles, anchors, titles) are produced in English.
+The skill instructions, reference documents and deliverables (briefs, articles, anchors, titles) are all in English. Claude replies in the language the user writes in (the team normally writes Vietnamese).
 
 ## Tests
 

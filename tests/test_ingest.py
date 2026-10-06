@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-import helpers  # noqa: F401  (thiết lập sys.path)
+import helpers  # noqa: F401  (sets up sys.path)
 import kw_ingest as ing
 
 
@@ -60,7 +60,7 @@ class ReadKeywords(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["keyword"], "mother's day gifts")
         self.assertEqual(t.info["volume_source"], "volume")
-        self.assertNotIn("kd", t.info["columns"])  # "Competition (indexed value)" không phải KD SEO
+        self.assertNotIn("kd", t.info["columns"])  # "Competition (indexed value)" is not an SEO difficulty
 
     def test_semrush_style(self):
         p = self.path("sem.csv", 'Keyword,Intent,Volume,Keyword Difficulty,CPC (USD),Competitive Density\n'

@@ -5,43 +5,43 @@ description: Generates and completes English content briefs for the Printerval b
 
 # Content brief
 
-Brief là **hợp đồng chất lượng** giữa SEO và người viết: người đọc cần gì, bài phải có gì, điều gì khiến bài khác biệt, không được làm gì. Script điền phần có thể tính toán; Claude/SEO điền phần cần xem SERP thật và phần kinh nghiệm thật của Printerval.
+A brief is the **quality contract** between SEO and the writer: what the reader needs, what the post must contain, what makes it different, and what it must not do. The script fills in what can be computed; Claude or the SEO fills in what needs the real SERP and Printerval's real first-hand experience.
 
-## Quy trình
+## Workflow
 
-1. **Sinh khung:**
+1. **Generate the skeleton:**
    ```bash
    python3 skills/content-brief/scripts/make_brief.py --topic-map outputs/topic-map.csv \
        --link-plan outputs/link-plan.csv --seasonal-plan outputs/seasonal-plan.csv --bucket A --limit 10 --out outputs/briefs
    python3 skills/content-brief/scripts/make_brief.py --topic-map outputs/topic-map.csv --slug mothers-day-gifts-for-grandma
    ```
-2. **Điền các mục `[TO FILL]`** (xem `references/serp-review.md`):
-   - Người đọc là ai, tình huống nào; điều gì khiến họ đóng tab thất vọng.
-   - SERP thật trên google.com (US) hoặc google.co.uk (UK), **không tìm từ IP Việt Nam**: định dạng đang thắng, đối thủ làm tốt gì và **thiếu gì** (khoảng trống nội dung), câu hỏi trong People Also Ask/AI Overview cần trả lời **trong cùng một bài** (không tách thành trang mỏng).
-   - **Góc kinh nghiệm thật**: hỏi các câu trong mục "First-hand angle" với đúng bộ phận (support, thiết kế, QC, vận hành); ghi `[EXPERIENCE: nguồn]` hoặc `[DATA: nguồn]`. Thiếu thì ghi rõ "chưa có" và nói với người dùng; **không bịa**.
-   - Nguồn cần trích (ưu tiên nguồn gốc: .gov/.gov.uk, tổ chức tiêu chuẩn, khảo sát có thể kiểm chứng, tài liệu của team sản phẩm).
-   - Title/meta 2-3 phương án; đo bằng `seo-content-vn/scripts/seo_check.py`.
-3. **Kiểm tra brief** trước khi giao: có ít nhất một nguồn kinh nghiệm/dữ liệu gốc khả thi? cờ tuân thủ đã đọc? link nội bộ khớp kế hoạch? thị trường và biến thể tiếng Anh đúng?
-4. **Giao cho writer/AI** cùng skill `helpful-content-editor` (tiêu chí hữu ích), `product-slot` (cách nhắc sản phẩm) và `english-grammar-style` (biên tập tiếng Anh).
+2. **Fill in the `[TO FILL]` sections** (see `references/serp-review.md`):
+   - Who the reader is and what situation they are in; what would make them close the tab disappointed.
+   - The real SERP on google.com (US) or google.co.uk (UK), **never searched from a Vietnamese IP**: the winning format, what the competitors do well and **what they miss** (the content gap), and the People Also Ask / AI Overview questions to answer **inside the same post** (not split into thin pages).
+   - **The first-hand angle**: ask the questions in the "First-hand angle" section to the right team (support, design, QC, operations); record `[EXPERIENCE: source]` or `[DATA: source]`. If nothing is available, say so plainly and tell the user; **never invent it**.
+   - Sources to cite (prefer primary sources: .gov/.gov.uk, standards bodies, verifiable surveys, product-team documents).
+   - Two or three title/meta options; measure them with `seo-content-vn/scripts/seo_check.py`.
+3. **Check the brief** before handing it over: is there at least one feasible source of first-hand experience or original data? Have the compliance flags been read? Do the internal links match the plan? Are the market and the English variant right?
+4. **Hand it to the writer or AI** together with the skills `helpful-content-editor` (helpfulness criteria), `product-slot` (how to mention products) and `english-grammar-style` (English editing).
 
-## Khung bài theo loại (`assets/formats/`)
+## Post formats (`assets/formats/`)
 
-| `post_type` | Khi dùng | Đặc trưng |
+| `post_type` | When to use | Characteristics |
 |---|---|---|
-| gift-guide | quà theo dịp/người nhận/sở thích | nhóm theo lý do/tính cách; mỗi ý tưởng có lý do hợp, ưu/nhược; không giá cố định |
-| ideas-list | ý tưởng không gắn quà | chất lượng hơn số lượng; mỗi mục có chi tiết phân biệt |
-| choose-guide | X vs Y, best X, cách chọn | kết luận trước; tiêu chí; bảng so sánh; nhược điểm; chỉ "đã test" khi thật |
-| how-to | cách làm/giải quyết vấn đề | trả lời nhanh trước; bước đánh số; lỗi thường gặp; không hứa kết quả |
-| explainer | what is / when is | câu trả lời trực tiếp 2 câu đầu; ngày lễ phải tính, không đoán |
-| copy-ideas | slogan, quote, caption, lời nhắn | nội dung gốc; nhóm theo giọng điệu; giới hạn in do team thiết kế |
-| pillar-hub | bài tổng hợp chủ đề | "Start here"; tóm tắt từng cluster + một link; làm mới hằng năm |
+| gift-guide | gifts by occasion, recipient or interest | grouped by reason or personality; every idea has a reason it fits, pros and cons; no fixed prices |
+| ideas-list | ideas that are not gifts | quality over quantity; every item has a distinguishing detail |
+| choose-guide | X vs Y, best X, how to choose | verdict first; criteria; comparison table; drawbacks; "tested" only when true |
+| how-to | how to do something or fix a problem | quick answer first; numbered steps; common mistakes; no promised results |
+| explainer | what is / when is | a direct answer in the first two sentences; holiday dates must be computed, not guessed |
+| copy-ideas | slogans, quotes, captions, messages | original wording; grouped by tone; print limits come from the design team |
+| pillar-hub | a hub post for a topic | "Start here"; a summary of every cluster plus one link; refreshed every year |
 
-Mỗi file định dạng có: Skeleton, Rules, **Experience prompts** (câu hỏi phỏng vấn nội bộ), Product-slot guidance. Chúng được chèn vào brief tự động. Kho kinh nghiệm dùng chung: `assets/experience-bank-template.md`.
+Every format file has: Skeleton, Rules, **Experience prompts** (internal interview questions) and Product-slot guidance. They are inserted into the brief automatically. The shared experience library is `assets/experience-bank-template.md`.
 
-## Nguyên tắc cho nội dung hữu ích (tóm tắt, chi tiết ở `helpful-content-editor`)
+## Principles for helpful content (summary; details in `helpful-content-editor`)
 
-- Trả lời sớm; bài **vẫn hữu ích khi bỏ hết product slot**.
-- Có điểm kinh nghiệm hoặc dữ liệu gốc: Google nhấn mạnh nội dung "non-commodity" (góc nhìn riêng, kinh nghiệm trực tiếp), thứ khó thay bằng một bản tóm tắt chung.
-- Không viết hàng loạt cho từng biến thể keyword; một cụm = một bài (scaled content abuse).
-- Số liệu có nguồn gốc; không tự bịa; ghi `[DATA NEEDED: ...]`.
-- Nếu AI hỗ trợ viết nháp: người biên tập kiểm chứng sự thật và thêm giá trị gốc; cân nhắc nói rõ cách tạo nội dung theo cách hợp với người đọc (hướng dẫn của Google).
+- Answer early; the post **stays useful with every product slot removed**.
+- Include a first-hand or original-data point: Google stresses "non-commodity" content (its own point of view, first-hand experience), which a generic summary cannot replace.
+- Do not mass-produce posts for every keyword variant; one cluster = one post (scaled content abuse).
+- Statistics need a primary source; never invent them; write `[DATA NEEDED: ...]`.
+- If AI helps with the draft: an editor verifies the facts and adds original value; consider saying how the content was created, in a way that suits readers (Google's guidance).

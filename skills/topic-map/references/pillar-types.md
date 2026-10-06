@@ -1,29 +1,29 @@
-# Loại pillar cho blog POD (và độ phủ kỳ vọng)
+# Pillar types for a POD blog (and expected coverage)
 
-Đây là **khung tổ chức [Quy ước]**. Điểm chung: pillar phải mang giá trị riêng (giúp người đọc quyết định), không chỉ là danh sách link.
+This is an **organisational framework [Convention]**. The common rule: a pillar must carry value of its own (help the reader decide), not just be a list of links.
 
-| Loại pillar (`pillar_type`) | Ví dụ | Tên gợi ý | Độ phủ kỳ vọng (khoảng trống được báo nếu thiếu) |
+| Pillar type (`pillar_type`) | Examples | Suggested name | Expected coverage (a gap is reported if missing) |
 |---|---|---|---|
-| **occasion** (dịp lễ) | mothers-day, christmas, halloween | "{Occasion} Gift Ideas" | gift guide theo người nhận/ngân sách; slogan/lời nhắn thiệp; câu hỏi thông tin (ngày, ý nghĩa) |
-| **interest** (sở thích/đam mê) | dogs, fishing, gaming | "Gift Ideas for {Audience}" | gift guide; slogan/quote; how-to cá nhân hóa/thiết kế/chăm sóc |
-| **recipient** (người nhận) | mom, teacher, nurse | "Gift Ideas for {Recipient}" | gift guide; slogan/lời nhắn |
-| **craft** (kiến thức chuyên môn) | sizing, care, print-methods, design | "Sizing & Fit Guide", "Care & Washing Guide"... | how-to/solve; giải thích/so sánh (info/choose) |
-| **inspiration** (cảm hứng chữ) | slogans, quotes, captions | "Slogans, Quotes & Caption Ideas" | theo giọng điệu/quan hệ/dịp |
-| **product** (theo sản phẩm, tầng cuối) | shirts, mugs | "{Product}: Ideas & Guides" | gift guide + how-to |
-| **category** (tự định nghĩa) | Pets, Work & school | tên nhóm của bạn | tùy brief |
+| **occasion** | mothers-day, christmas, halloween | "{Occasion} Gift Ideas" | gift guides by recipient/budget; slogans and card messages; informational questions (date, meaning) |
+| **interest** (hobby/passion) | dogs, fishing, gaming | "Gift Ideas for {Audience}" | gift guide; slogans/quotes; how-tos on personalisation, design or care |
+| **recipient** | mom, teacher, nurse | "Gift Ideas for {Recipient}" | gift guide; slogans/messages |
+| **craft** (specialist knowledge) | sizing, care, print-methods, design | "Sizing & Fit Guide", "Care & Washing Guide"... | how-to/solve; explanations and comparisons (info/choose) |
+| **inspiration** (wording ideas) | slogans, quotes, captions | "Slogans, Quotes & Caption Ideas" | by tone, relationship or occasion |
+| **product** (by product, the last tier) | shirts, mugs | "{Product}: Ideas & Guides" | gift guide + how-to |
+| **category** (user-defined) | Pets, Work & school | the name of your group | depends on the brief |
 
-## Vì sao có pillar "craft" và "inspiration"
+## Why there are "craft" and "inspiration" pillars
 
-- **craft** là nơi Printerval có kinh nghiệm thật (in ấn, chất liệu, size, chăm sóc, cá nhân hóa). Google ưu tiên nội dung có góc nhìn và kinh nghiệm trực tiếp ("non-commodity"); đây là loại bài khó bị thay thế bằng tóm tắt chung chung. Mọi khẳng định riêng về sản phẩm của Printerval phải đến từ tài liệu của team sản phẩm.
-- **inspiration** (slogan, quote, caption, lời nhắn thiệp) hữu ích độc lập với việc mua hàng và dẫn tới sản phẩm tùy chỉnh rất tự nhiên (người đọc cần chữ để đặt lên áo/cốc). Dùng nội dung gốc, không sao chép lời bài hát, câu thoại phim, khẩu hiệu thương hiệu.
+- **craft** is where Printerval has real experience (printing, materials, sizing, care, personalisation). Google favours content with a point of view and first-hand experience ("non-commodity"); these are the posts that a generic summary cannot easily replace. Every claim specific to Printerval's products must come from the product team's documents.
+- **inspiration** (slogans, quotes, captions, card messages) is useful independently of buying and leads to custom products very naturally (readers need words to put on a shirt or mug). Use original wording; do not copy song lyrics, film lines or brand slogans.
 
-## Trang hub (bài pillar) tốt
+## A good hub (pillar post)
 
-- Màn hình đầu giúp người chỉ đọc 30 giây: "Nếu bạn cần X, đọc Y".
-- Mỗi cluster có 2-3 câu tóm tắt kèm một link ngữ cảnh; không lặp nội dung cluster.
-- Pillar theo mùa **giữ nguyên một URL và làm mới hằng năm**; chỉ đổi ngày hiển thị khi nội dung thật sự đổi (Google: không làm mới ngày giả).
-- Pillar quá 30 cụm: tách thành hub con (ví dụ theo người nhận) thay vì một trang dài vô tận.
+- The first screen helps a reader who only has 30 seconds: "If you need X, read Y".
+- Every cluster gets 2-3 summary sentences and one contextual link; do not repeat the cluster's content.
+- A seasonal pillar **keeps one URL and is refreshed every year**; change the visible date only when the content really changes (Google: do not refresh dates artificially).
+- A pillar with more than 30 clusters: split it into sub-hubs (for example by recipient) instead of one endless page.
 
-## Liên kết chéo giữa pillar
+## Cross-links between pillars
 
-Cụm có facet thứ hai trùng pillar khác (ví dụ "Mother's Day gift ideas for dog moms" thuộc pillar Mother's Day nhưng có `interest=dogs`) được `internal-link-planner` đề xuất link chéo sang pillar sở thích (loại `cross_pillar`). Giữ tối đa 1 link chéo mỗi bài để không loãng.
+A cluster whose second facet matches another pillar (for example "Mother's Day gift ideas for dog moms" belongs to the Mother's Day pillar but has `interest=dogs`) gets a cross-link to the interest pillar proposed by `internal-link-planner` (type `cross_pillar`). Keep at most 1 cross-link per post so it does not get diluted.

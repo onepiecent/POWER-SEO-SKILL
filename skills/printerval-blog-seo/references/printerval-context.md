@@ -1,35 +1,35 @@
-# Bối cảnh Printerval và giả định
+# Printerval context and assumptions
 
-Tài liệu này ghi những gì đã biết, những gì **chỉ là giả định**, và câu hỏi còn mở. Cập nhật khi có thông tin thật.
+This document records what is known, what is **only an assumption**, and the open questions. Update it when real information becomes available.
 
-## Đã biết (từ yêu cầu của người dùng)
+## Known (from the user's requests)
 
-- Mục tiêu: bộ skill SEO cho **blog** của Printerval; tập trung nội dung hữu ích. Không làm audit kỹ thuật.
-- Thị trường: **US/UK**, bài tiếng Anh.
-- SEO Specialist gửi **file CSV export từ nhóm từ khóa rất rộng**; skill phải đọc và gom nhóm theo yêu cầu.
-- URL và sitemap của Printerval đang được tối ưu lại, có nhiều link redirect: **không dựa vào URL/sitemap** hiện tại.
-- Link tới sản phẩm do team content thực hiện; blog dẫn sang trang bán hàng một cách tự nhiên.
+- Goal: an SEO skill set for the Printerval **blog**, focused on helpful content. No technical audit.
+- Markets: **US/UK**, English posts.
+- SEO specialists send **CSV exports from very broad keyword groups**; the skills must read them and cluster them on request.
+- Printerval's URLs and sitemap are being reworked and there are many redirects: **do not rely on the current URLs or sitemap**.
+- Product links are added by the content team; the blog leads readers to the shop naturally.
 
-## Thông tin công khai (từ kết quả tìm kiếm, chưa kiểm chứng trực tiếp vì môi trường chặn truy cập printerval.com)
+## Public information (from search results; not verified directly because the environment blocks access to printerval.com)
 
-- Marketplace print-on-demand với seller độc lập: áo, hoodie, poster, canvas, đồ gia dụng, quà cá nhân hóa; bản đa ngôn ngữ (`/es/`, `/uk/`) và help center riêng.
-- Con số tự công bố không nhất quán giữa các nguồn (số creator, số khách). Không trích các con số này trong bài nếu chưa có nguồn chính thức từ công ty.
-- Nguồn bên thứ ba (Semrush qua snippet tìm kiếm) nêu các đối thủ gần: ArtistShot, TeePublic, Spreadshirt. Thời điểm dữ liệu không rõ.
+- A print-on-demand marketplace with independent sellers: apparel, hoodies, posters, canvases, homewares and personalized gifts; multilingual versions (`/es/`, `/uk/`) and a separate help center.
+- Self-reported figures are inconsistent between sources (number of creators, number of customers). Do not quote these figures in a post without an official company source.
+- A third-party source (Semrush, via search snippets) lists close competitors: ArtistShot, TeePublic, Spreadshirt. The date of the data is unknown.
 
-## Giả định đang dùng (cần xác nhận)
+## Assumptions in use (to be confirmed)
 
-| Giả định | Ảnh hưởng nếu sai |
+| Assumption | Impact if wrong |
 |---|---|
-| Blog phục vụ chủ yếu **người mua** (quà, cá nhân hóa); chưa có nhóm bài cho seller/creator | Cần topic map riêng cho seller (how to sell POD, thiết kế) |
-| Taxonomy mặc định (dịp lễ, người nhận, sở thích, sản phẩm, kiến thức) phản ánh catalog | Mở rộng bằng `--extend-taxonomy` hoặc sửa `assets/taxonomy.json` |
-| Danh mục sản phẩm đủ rộng để bài gift guide nhắc sản phẩm tự nhiên | Một số cụm có thể không có sản phẩm tương ứng: team content báo lại |
-| Ngày xuất bản bài theo mùa cần lead time 12 tuần (bài mới) / 6 tuần (cập nhật) | Hiệu chỉnh bằng seasonality trong GSC/Trends |
-| Mặc định thị trường `us` khi file không nêu thị trường | Gán `file.csv::uk` cho file UK |
+| The blog mainly serves **buyers** (gifts, personalization); there is no post group for sellers or creators yet | A separate topic map is needed for sellers (how to sell POD, design) |
+| The default taxonomy (occasion, recipient, interest, product, knowledge) reflects the catalog | Extend it with `--extend-taxonomy` or edit `assets/taxonomy.json` |
+| The product catalog is broad enough for gift-guide posts to mention products naturally | Some clusters may have no matching product: the content team reports back |
+| Seasonal posts need a 12-week lead time (new posts) / 6 weeks (updates) | Calibrate with seasonality from GSC/Trends |
+| The default market is `us` when a file does not state one | Tag UK files as `file.csv::uk` |
 
-## Câu hỏi còn mở
+## Open questions
 
-1. Blog nằm ở đâu (subfolder, subdomain, CMS riêng)? Có bao nhiêu bài đã đăng, có danh sách slug để `link_plan.py --published` biết bài nào đã live không?
-2. Có cấu trúc `/uk/` riêng cho bản Anh không? Bài UK có URL riêng hay dùng chung?
-3. Tác giả/biên tập là ai (byline, bio) và có quy trình duyệt sự thật không?
-4. Ai sở hữu danh sách IP/nhãn hiệu cần tránh và dữ liệu vận hành (hạn đặt hàng, thời gian giao)?
-5. Nguồn dữ liệu keyword đang dùng (Semrush, Ahrefs, Keyword Planner, GSC)? Có thể xuất kèm `serp_urls` để gom theo SERP không?
+1. Where does the blog live (subfolder, subdomain, separate CMS)? How many posts are already published, and is there a slug list so that `link_plan.py --published` knows which posts are live?
+2. Is there a separate `/uk/` structure for the UK version? Do UK posts have their own URLs or share them?
+3. Who are the authors and editors (byline, bio), and is there a fact-checking process?
+4. Who owns the list of IPs and trademarks to avoid, and the operational data (order deadlines, delivery times)?
+5. Which keyword data source is in use (Semrush, Ahrefs, Keyword Planner, GSC)? Can it be exported with `serp_urls` so that keywords can be clustered by SERP?

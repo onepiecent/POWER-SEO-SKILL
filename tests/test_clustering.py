@@ -90,7 +90,7 @@ class EndToEnd(unittest.TestCase):
         seed = names["mother's day gift ideas"]
         self.assertGreaterEqual(int(seed["keyword_count"]), 3)
         self.assertIn("mothers day gifts", seed["keywords"])
-        # người nhận khác, sở thích khác, nguồn gốc người tặng: cụm riêng
+        # different recipient, different interest, giver rather than recipient: separate clusters
         for other in ("mother's day gifts for grandma", "mother's day gift ideas for dog moms",
                       "mother's day gifts from daughter", "mother's day quotes", "when is mother's day"):
             self.assertIn(other, names)
@@ -124,7 +124,7 @@ class EndToEnd(unittest.TestCase):
         rows = read_csv(os.path.join(self.out, "clusters.csv"))
         self.assertEqual(sorted((r["market"], r["keyword_count"]) for r in rows), [("uk", "1"), ("us", "3")])
         us = next(r for r in rows if r["market"] == "us")
-        self.assertEqual(us["cluster_volume"], "1800")  # volume biến thể được cộng vào cụm
+        self.assertEqual(us["cluster_volume"], "1800")  # the volume of merged variants is added to the cluster
 
     def test_serp_overlap_beats_vocabulary(self):
         urls = lambda *n: "|".join(f"https://example.com/p{i}" for i in n)  # noqa: E731
@@ -135,9 +135,9 @@ class EndToEnd(unittest.TestCase):
         self.run_ck(p)
         names = cluster_names(self.out)
         self.assertEqual(int(names["gifts for tea lovers"]["keyword_count"]), 2)
-        self.assertIn("gifts for coffee drinkers", names)  # chỉ 2 URL trùng: không gộp
+        self.assertIn("gifts for coffee drinkers", names)  # only 2 URLs overlap: not merged
         pairs = read_csv(os.path.join(self.out, "merge-candidates.csv"))
-        self.assertTrue(any("SERP trùng 2" in r["reason"] for r in pairs))
+        self.assertTrue(any("SERP overlap 2" in r["reason"] for r in pairs))
 
     def test_filters_only_volume_exclude(self):
         self.run_ck(SAMPLE_US, "--only", "occasion=mothers-day,fathers-day", "--min-volume", "3000")
@@ -201,7 +201,7 @@ class EndToEnd(unittest.TestCase):
     def test_gsc_warns_about_impressions(self):
         p = self.csv("gsc.csv", "Top queries,Clicks,Impressions,CTR,Position\nmothers day quotes,120,5400,2.2%,8.4\n")
         _, err = self.run_ck(p)
-        self.assertIn("KHÔNG phải search volume", err)
+        self.assertIn("NOT search volume", err)
 
     def test_parent_topic_is_a_hint_unless_trusted(self):
         p = self.csv("parent.csv", "Keyword,Volume,Parent Topic\nbest gifts for nurses,6600,gifts for nurses\n"
@@ -222,7 +222,7 @@ class EndToEnd(unittest.TestCase):
 
 
 class IndexMatchesBruteForce(unittest.TestCase):
-    """Chỉ mục đảo + lọc tiền tố phải cho cùng kết quả với so sánh từng cặp."""
+    """The inverted index + prefix filter must give the same result as comparing every pair."""
 
     @staticmethod
     def brute(rows, tax, sim_t):

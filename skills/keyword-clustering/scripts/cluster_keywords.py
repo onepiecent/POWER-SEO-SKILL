@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Gom nhóm keyword từ file export của SEO Specialist, theo yêu cầu. Chỉ dùng thư viện chuẩn.
+"""Cluster keywords from an SEO specialist's export file, on request. Standard library only.
 
-Đầu vào : một hay nhiều CSV (Semrush / Ahrefs / Google Keyword Planner / GSC / Google Sheets).
-          Cú pháp  file.csv::uk  gán thị trường cho file không có cột country.
-Đầu ra  : <out>/cluster-report.md     báo cáo đọc file, bộ lọc, kết quả, cảnh báo (ĐỌC TRƯỚC)
-          <out>/clusters.csv          mỗi dòng một cụm = một bài blog (đầu vào của topic-map)
-          <out>/keyword-map.csv       mỗi dòng một keyword
-          <out>/groups.csv, groups.md nhóm theo --group-by
-          <out>/excluded.csv          keyword bị loại + lý do (không loại lặng lẽ)
-          <out>/unclassified.csv, taxonomy-suggestions.csv   keyword chưa nhận diện + gợi ý mở rộng taxonomy
-          <out>/merge-candidates.csv  cặp cụm gần nhau cần người/Claude duyệt
+Input   : one or more CSV files (Semrush / Ahrefs / Google Keyword Planner / GSC / Google Sheets).
+          Syntax  file.csv::uk  assigns a market to a file that has no country column.
+Output  : <out>/cluster-report.md     report on file reading, filters, results and warnings (READ FIRST)
+          <out>/clusters.csv          one row per cluster = one blog post (input of topic-map)
+          <out>/keyword-map.csv       one row per keyword
+          <out>/groups.csv, groups.md groups by --group-by
+          <out>/excluded.csv          excluded keywords + reason (nothing is dropped silently)
+          <out>/unclassified.csv, taxonomy-suggestions.csv   unrecognised keywords + taxonomy extension hints
+          <out>/merge-candidates.csv  pairs of nearby clusters for a person/Claude to review
 
-Hai tầng:  CỤM (keyword cùng ý định tìm kiếm -> cùng một bài)  rồi  NHÓM (--group-by: gom các cụm theo
-chiều bạn yêu cầu: occasion, recipient, interest, product, style, craft, category, intent...).
+Two levels: CLUSTER (keywords with the same search intent -> one post), then GROUP (--group-by: groups the clusters
+along the dimension you ask for: occasion, recipient, interest, product, style, craft, category, intent...).
 
-Cách gom cụm:
-  * Có serp_urls ở cả hai keyword -> cùng cụm khi trùng >= --serp-overlap URL.
-  * Không có                      -> Jaccard có trọng số trên token >= --sim.
-  * "Rào" facet: dịp lễ, người nhận (kể cả ngầm hiểu), sở thích, sản phẩm phải trùng nhau mới gộp theo từ vựng.
-  * Mỗi thị trường (us/uk) gom riêng vì SERP khác nhau.
-  * Tăng tốc cho file lớn bằng chỉ mục đảo + lọc tiền tố, nên không so từng cặp.
+How clusters are formed:
+  * Both keywords have serp_urls -> same cluster when >= --serp-overlap URLs overlap.
+  * Otherwise                    -> weighted Jaccard on tokens >= --sim.
+  * Facet guard: occasion, recipient (including implied), interest and product must match before a lexical merge.
+  * Each market (us/uk) is clustered separately because the SERPs differ.
+  * Large files are sped up with an inverted index + prefix filter, so pairs are not compared one by one.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ from kw_text import (FACET_ORDER, IMPLIED_RECIPIENT, Categories, NoiseRules, Tax
                      normalize_text, weighted_jaccard)
 
 GRANULARITY = {"tight": (0.75, 5), "normal": (0.6, 4), "loose": (0.45, 3)}
-LIST_NEEDS = {"inspire", "choose"}  # hai loại này thường cùng một bài listicle
+LIST_NEEDS = {"inspire", "choose"}  # these two usually share one listicle post
 GROUP_FIELDS = {"occasion": "occasion", "recipient": "recipient", "interest": "interest", "product": "product",
                 "style": "style", "craft": "craft", "category": "category", "season": "season", "market": "market",
                 "intent": "reader_need", "need": "reader_need", "reader_need": "reader_need", "blog_fit": "blog_fit"}
@@ -60,9 +60,9 @@ def eff_recipient(k: KW) -> str:
 
 
 def part_key(k: KW) -> tuple:
-    """Hai keyword chỉ được so sánh/gộp theo từ vựng khi cùng thị trường, cùng nhóm ý định và CÙNG dịp lễ,
-    người nhận (kể cả ngầm hiểu: mother's day -> mom), sở thích, sản phẩm. 'gifts for mom' và
-    'mother's day gifts for mom' là hai bài khác nhau; 'gifts for dog lovers' khác 'gifts for dog moms'."""
+    """Two keywords may only be merged lexically when they share the market, the intent group and the SAME occasion,
+    recipient (including implied: mother's day -> mom), interest and product. 'gifts for mom' and
+    'mother's day gifts for mom' are two different posts; 'gifts for dog lovers' differs from 'gifts for dog moms'."""
     return (k.market, k.ngroup, k.occasion, eff_recipient(k), k.interest, k.product)
 
 
@@ -71,10 +71,10 @@ def parse_map(items) -> dict:
     out = {}
     for it in items or []:
         if "=" not in it:
-            raise SystemExit(f"--map cần dạng cột_chuẩn=Tên cột trong file, nhận: {it}")
+            raise SystemExit(f"--map needs the form canonical_column=Column name in the file, got: {it}")
         k, v = it.split("=", 1)
         if k.strip() not in ALIASES:
-            raise SystemExit(f"--map: cột chuẩn không hợp lệ '{k}'. Hợp lệ: {', '.join(ALIASES)}")
+            raise SystemExit(f"--map: invalid canonical column '{k}'. Valid: {', '.join(ALIASES)}")
         out[k.strip()] = v.strip()
     return out
 
@@ -83,7 +83,7 @@ def parse_only(items) -> dict:
     out = {}
     for it in items or []:
         if "=" not in it:
-            raise SystemExit(f"--only cần dạng facet=giá_trị1,giá_trị2, nhận: {it}")
+            raise SystemExit(f"--only needs the form facet=value1,value2, got: {it}")
         k, v = it.split("=", 1)
         k = {**GROUP_FIELDS, 'season': 'occasion'}.get(k.strip(), k.strip())
         out.setdefault(k, set()).update(x.strip() for x in v.split(",") if x.strip())
@@ -112,11 +112,11 @@ def ingest(args, tax: Taxonomy, noise, cats):
         src = os.path.basename(path)
         vsrc = info["volume_source"]
         if vsrc == "none":
-            warnings.append(f"{src}: không có cột volume/impressions; mọi volume = 0, thứ tự ưu tiên vô nghĩa.")
+            warnings.append(f"{src}: no volume/impressions column; every volume is 0, so the priority order is meaningless.")
         elif vsrc != "volume":
-            warnings.append(f"{src}: dùng cột '{info['columns'][vsrc]}' làm volume; đây KHÔNG phải search volume. "
-                            "Impressions chỉ phản ánh truy vấn mà site đã hiển thị, không phải toàn bộ nhu cầu thị trường; "
-                            "nên bổ sung volume từ Semrush/Ahrefs/Keyword Planner.")
+            warnings.append(f"{src}: using column '{info['columns'][vsrc]}' as volume; this is NOT search volume. "
+                            "Impressions only reflect queries the site was already shown for, not total market demand; "
+                            "add volume from Semrush/Ahrefs/Keyword Planner.")
         for rec in table:
             total_rows += 1
             raw_kw = re.sub(r"\s+", " ", rec.get("keyword", "")).strip()
@@ -179,7 +179,7 @@ def ingest(args, tax: Taxonomy, noise, cats):
                 continue
             kept.append(k)
         if info["rows"] == 0:
-            warnings.append(f"{src}: không đọc được dòng dữ liệu nào.")
+            warnings.append(f"{src}: no data rows could be read.")
     return kept, excluded, reasons, infos, warnings, total_rows
 
 
@@ -197,7 +197,7 @@ def _passes_only(k: KW, only: dict) -> bool:
 
 
 def dedupe(rows: list[KW]) -> tuple[list[KW], int]:
-    """Gộp biến thể cùng nghĩa (mom/mum, đảo từ, thêm năm) trong cùng thị trường; giữ keyword volume cao nhất."""
+    """Merge same-meaning variants (mom/mum, word order, added year) within a market; keep the highest-volume keyword."""
     best: dict[tuple, KW] = {}
     merged = 0
     for r in rows:
@@ -229,8 +229,8 @@ class Clusterer:
         self.parent_index: dict[tuple, int] = {}
 
     def prefix_tokens(self, k: KW, thr: float) -> list[str]:
-        """Lọc tiền tố: hai tập có Jaccard >= thr buộc phải chung ít nhất một token ngoài phần đuôi (token
-        phổ biến nhất có tổng trọng số < thr * W). Nhờ đó chỉ cần xét các cụm chia sẻ token hiếm."""
+        """Prefix filter: two sets with Jaccard >= thr must share at least one token outside the tail (the most common
+        tokens whose total weight is < thr * W). So only clusters that share a rare token need to be checked."""
         toks = sorted(k.tokset, key=lambda t: (self.df.get(t, 0), t))
         weights = [0.3 if t in self.weak else 1.0 for t in toks]
         need, acc, cut = thr * sum(weights), 0.0, len(toks)
@@ -269,14 +269,14 @@ class Clusterer:
             for i, c in self._serp_counts(k).items():
                 if c >= self.serp_t:
                     seed = self.clusters[i][0]
-                    if seed.market == k.market:  # SERP trùng là bằng chứng mạnh hơn rào facet
+                    if seed.market == k.market:  # matching SERPs are stronger evidence than the facet guard
                         score = (2, c, -i)
                         if best_score is None or score > best_score:
                             best, best_score = i, score
         for i in self._lex_candidates(k, self.sim_t):
             seed = self.clusters[i][0]
             if seed.urls and k.urls:
-                continue  # đã có SERP của cả hai thì chỉ tin SERP
+                continue  # when both have SERP data, trust only the SERP
             s = weighted_jaccard(k.tokset, seed.tokset, self.weak)
             if s >= self.sim_t:
                 score = (1, s, -i)
@@ -316,16 +316,16 @@ class Clusterer:
                     continue
                 s = weighted_jaccard(k.tokset, seed.tokset, self.weak)
                 if MERGE_LEX_FLOOR <= s < self.sim_t:
-                    out.append((s, j, i, f"token gần nhau {s:.2f} (ngưỡng gộp {self.sim_t})"))
+                    out.append((s, j, i, f"tokens close together {s:.2f} (merge threshold {self.sim_t})"))
             if k.urls:
                 for j, c in self._serp_counts(k).items():
                     seed = self.clusters[j][0]
                     if j < i and 2 <= c < self.serp_t and seed.market == k.market:
-                        out.append((c / self.serp_t, j, i, f"SERP trùng {c} URL (ngưỡng {self.serp_t})"))
+                        out.append((c / self.serp_t, j, i, f"SERP overlap {c} URLs (threshold {self.serp_t})"))
             if k.parent:
                 j = self.parent_index.get((k.market, k.parent, k.ngroup))
                 if j is not None and j < i and not self.trust_parent:
-                    out.append((0.5, j, i, f"cùng Parent Topic: {k.parent}"))
+                    out.append((0.5, j, i, f"same Parent Topic: {k.parent}"))
         out.sort(key=lambda x: -x[0])
         return out[:limit]
 
@@ -401,14 +401,14 @@ def build_groups(cl_rows: list[dict], dims: list[str]):
 def write_groups(out_dir: str, groups: list[dict], dims: list[str], top_n: int) -> None:
     fields = ["group", *dims, "clusters", "keywords", "volume", "volume_share_pct", "top_clusters"]
     write_csv(os.path.join(out_dir, "groups.csv"), fields, [{k: g[k] for k in fields} for g in groups])
-    lines = [f"# Nhóm theo: {', '.join(dims)}", "", f"{len(groups)} nhóm. Hiển thị {min(top_n, len(groups))} nhóm lớn nhất.", ""]
+    lines = [f"# Groups by: {', '.join(dims)}", "", f"{len(groups)} groups. Showing the {min(top_n, len(groups))} largest.", ""]
     for g in groups[:top_n]:
-        lines += [f"## {g['group']}  ·  {g['clusters']} cụm · {g['keywords']} keyword · volume {g['volume']:,} "
-                  f"({g['volume_share_pct']}%)", "", "| Cụm | Keyword | Volume | Reader need | Blog fit |", "|---|---:|---:|---|---|"]
+        lines += [f"## {g['group']}  ·  {g['clusters']} clusters · {g['keywords']} keywords · volume {g['volume']:,} "
+                  f"({g['volume_share_pct']}%)", "", "| Cluster | Keywords | Volume | Reader need | Blog fit |", "|---|---:|---:|---|---|"]
         for r in g["_rows"][:15]:
             lines.append(f"| {r['cluster_name']} | {r['keyword_count']} | {r['cluster_volume']:,} | {r['reader_need']} | {r['blog_fit']} |")
         if len(g["_rows"]) > 15:
-            lines.append(f"| … và {len(g['_rows']) - 15} cụm nữa (xem clusters.csv) | | | | |")
+            lines.append(f"| … and {len(g['_rows']) - 15} more clusters (see clusters.csv) | | | | |")
         lines.append("")
     with open(os.path.join(out_dir, "groups.md"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
@@ -437,41 +437,41 @@ def write_report(path, args, infos, warnings, total_rows, reasons, n_kept, merge
     fit_vol: Counter = Counter()
     for r in cl_rows:
         fit_vol[r["blog_fit"]] += r["cluster_volume"]
-    L = ["# Báo cáo gom nhóm keyword", ""]
-    L += ["## 1. Đầu vào", "", "| File | Encoding | Phân cách | Dòng tiêu đề | Số dòng | Cột nhận diện | Nguồn volume |", "|---|---|---|---:|---:|---|---|"]
+    L = ["# Keyword clustering report", ""]
+    L += ["## 1. Input", "", "| File | Encoding | Delimiter | Header row | Rows | Recognised columns | Volume source |", "|---|---|---|---:|---:|---|---|"]
     for i in infos:
         cols = ", ".join(f"{k}←{v}" for k, v in i["columns"].items())
         L.append(f"| {os.path.basename(i['path'])} | {i['encoding']} | {i['delimiter']} | {i['header_row']} | {i['rows']:,} | {cols} | {i['volume_source']} |")
     if warnings:
-        L += ["", "**Cảnh báo:**"] + [f"- {w}" for w in warnings]
-    L += ["", "## 2. Bộ lọc", "", f"- Đọc {total_rows:,} dòng; giữ {n_kept:,} keyword; loại {sum(reasons.values()):,}."]
+        L += ["", "**Warnings:**"] + [f"- {w}" for w in warnings]
+    L += ["", "## 2. Filters", "", f"- Read {total_rows:,} rows; kept {n_kept:,} keywords; excluded {sum(reasons.values()):,}."]
     if reasons:
-        L += ["", "| Lý do loại | Số keyword |", "|---|---:|"] + [f"| {r} | {n:,} |" for r, n in reasons.most_common()]
-        L += ["", "Chi tiết từng keyword bị loại: `excluded.csv`. Rà lại nếu thấy rule loại nhầm (sửa `assets/noise-rules.json`)."]
-    L += ["", "## 3. Kết quả gom cụm", "",
-          f"- {n_kept:,} keyword -> gộp {merged:,} biến thể cùng nghĩa -> **{len(clusters):,} cụm** "
-          f"(ngưỡng: Jaccard {sim_t}, SERP trùng {serp_t} URL).",
-          f"- Cụm chỉ có 1 keyword: {singles:,} ({100 * singles // max(1, len(clusters))}%). "
-          "Quá cao nghĩa là keyword rất đa dạng hoặc ngưỡng quá chặt: thử `--granularity loose`.",
-          "- Volume theo blog fit: " + ", ".join(f"{k}={fit_vol[k]:,}" for k in ("high", "medium", "low")),
-          "- Lưu ý: `cluster_volume` là TỔNG volume các keyword trong cụm, là cận trên (nhiều keyword cùng một nhóm người tìm)."]
-    L += ["", "### Top 20 cụm theo volume", "", "| Cụm | Keyword | Volume | Need | Fit | Dịp | Người nhận | Sở thích |", "|---|---:|---:|---|---|---|---|---|"]
+        L += ["", "| Exclusion reason | Keywords |", "|---|---:|"] + [f"| {r} | {n:,} |" for r, n in reasons.most_common()]
+        L += ["", "Every excluded keyword is listed in `excluded.csv`. Check it for false exclusions and adjust `assets/noise-rules.json` if a rule is too aggressive."]
+    L += ["", "## 3. Clustering result", "",
+          f"- {n_kept:,} keywords -> {merged:,} same-meaning variants merged -> **{len(clusters):,} clusters** "
+          f"(thresholds: Jaccard {sim_t}, SERP overlap {serp_t} URLs).",
+          f"- Single-keyword clusters: {singles:,} ({100 * singles // max(1, len(clusters))}%). "
+          "A very high share means the keywords are very diverse or the threshold is too strict: try `--granularity loose`.",
+          "- Volume by blog fit: " + ", ".join(f"{k}={fit_vol[k]:,}" for k in ("high", "medium", "low")),
+          "- Note: `cluster_volume` is the SUM of the keyword volumes in the cluster, so it is an upper bound (many keywords share the same searchers)."]
+    L += ["", "### Top 20 clusters by volume", "", "| Cluster | Keywords | Volume | Need | Fit | Occasion | Recipient | Interest |", "|---|---:|---:|---|---|---|---|---|"]
     for r in cl_rows[:20]:
         L.append(f"| {r['cluster_name']} | {r['keyword_count']} | {r['cluster_volume']:,} | {r['reader_need']} | {r['blog_fit']} | "
                  f"{r['occasion'] or '-'} | {r['recipient'] or '-'} | {r['interest'] or '-'} |")
     if groups:
-        L += ["", f"## 4. Nhóm theo {', '.join(dims)}", "", "| Nhóm | Cụm | Keyword | Volume | % |", "|---|---:|---:|---:|---:|"]
+        L += ["", f"## 4. Groups by {', '.join(dims)}", "", "| Group | Clusters | Keywords | Volume | % |", "|---|---:|---:|---:|---:|"]
         for g in groups[:15]:
             L.append(f"| {g['group']} | {g['clusters']} | {g['keywords']:,} | {g['volume']:,} | {g['volume_share_pct']} |")
     pct = 100 * unclassified_vol / max(1, total_vol)
-    L += ["", "## 5. Chưa phân loại", "",
-          f"- {len(unclassified):,} keyword chưa khớp facet nào ({pct:.0f}% volume). "
-          "Xem `unclassified.csv` và `taxonomy-suggestions.csv` để mở rộng taxonomy (niche/dịp mới).",
-          "- Nếu tỷ lệ này cao: file có thể lệch chủ đề (cần lọc `--include/--exclude`) hoặc taxonomy thiếu niche."]
-    L += ["", "## 6. Cần người duyệt", "", "- `merge-candidates.csv`: cặp cụm gần ngưỡng gộp; Claude/SEO duyệt rồi quyết định gộp tay.",
-          "- Cụm `reader_need=info` (medium fit) có thể chỉ là một mục trong bài pillar thay vì bài riêng.",
-          "", "## 7. Lệnh đã chạy", "", "```", "python3 cluster_keywords.py " + " ".join(argv), "```",
-          f"Thời gian xử lý: {elapsed:.1f}s"]
+    L += ["", "## 5. Unclassified", "",
+          f"- {len(unclassified):,} keywords matched no facet ({pct:.0f}% of volume). "
+          "See `unclassified.csv` and `taxonomy-suggestions.csv` to extend the taxonomy (new niches/occasions).",
+          "- If this share is high, the file may be off-topic (filter with `--include/--exclude`) or the taxonomy is missing niches."]
+    L += ["", "## 6. Needs review", "", "- `merge-candidates.csv`: cluster pairs near the merge threshold; Claude or the SEO reviews them and merges by hand if needed.",
+          "- A `reader_need=info` cluster (medium fit) may be a section of a pillar post rather than a post of its own.",
+          "", "## 7. Command run", "", "```", "python3 cluster_keywords.py " + " ".join(argv), "```",
+          f"Processing time: {elapsed:.1f}s"]
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(L) + "\n")
 
@@ -479,32 +479,32 @@ def write_report(path, args, infos, warnings, total_rows, reasons, n_kept, merge
 # --------------------------------------------------------------------------- CLI
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("files", nargs="*", help="CSV export; thêm ::us / ::uk để gán thị trường cho từng file")
-    ap.add_argument("--request", help="file JSON chứa các tùy chọn bên dưới (khóa = tên tùy chọn, dùng _ thay -)")
+    ap.add_argument("files", nargs="*", help="CSV export files; append ::us or ::uk to assign a market to a file")
+    ap.add_argument("--request", help="JSON file with the options below (key = option name, use _ instead of -)")
     ap.add_argument("--out", default="outputs")
-    ap.add_argument("--market", help="thị trường mặc định cho file không có cột country (us|uk)")
-    ap.add_argument("--map", action="append", metavar="CỘT=TÊN", help="chỉ định cột, vd keyword='Top queries' volume=Impressions")
+    ap.add_argument("--market", help="default market for files without a country column (us|uk)")
+    ap.add_argument("--map", action="append", metavar="COLUMN=NAME", help="map a column, e.g. keyword='Top queries' volume=Impressions")
     ap.add_argument("--range-mode", choices=["low", "mid", "high"], default="low",
-                    help="cách đọc volume dạng khoảng '1K - 10K' của Keyword Planner (mặc định: cận dưới)")
+                    help="how to read volume ranges such as '1K - 10K' from Keyword Planner (default: lower bound)")
     ap.add_argument("--granularity", choices=list(GRANULARITY), default="normal",
-                    help="độ mịn của cụm: tight = nhiều cụm nhỏ, loose = ít cụm lớn")
-    ap.add_argument("--sim", type=float, help="ngưỡng Jaccard (ghi đè granularity)")
-    ap.add_argument("--serp-overlap", type=int, help="số URL top 10 trùng để gộp (ghi đè granularity)")
-    ap.add_argument("--trust-parent-topic", action="store_true", help="gộp theo cột Parent Topic của Ahrefs")
-    ap.add_argument("--group-by", default="none", help="chiều gom nhóm các cụm, vd occasion,recipient | interest | intent | category | none")
+                    help="cluster size: tight = many small clusters, loose = fewer large clusters")
+    ap.add_argument("--sim", type=float, help="Jaccard threshold (overrides granularity)")
+    ap.add_argument("--serp-overlap", type=int, help="number of shared top-10 URLs needed to merge (overrides granularity)")
+    ap.add_argument("--trust-parent-topic", action="store_true", help="merge by the Ahrefs Parent Topic column")
+    ap.add_argument("--group-by", default="none", help="dimension to group the clusters by, e.g. occasion,recipient | interest | intent | category | none")
     ap.add_argument("--top-groups", type=int, default=30)
-    ap.add_argument("--only", action="append", metavar="FACET=GIÁ_TRỊ", help="chỉ giữ keyword thuộc facet này, vd occasion=mothers-day,fathers-day")
-    ap.add_argument("--include", action="append", metavar="REGEX", help="chỉ giữ keyword khớp ít nhất một regex")
-    ap.add_argument("--exclude", action="append", metavar="REGEX", help="loại keyword khớp regex")
+    ap.add_argument("--only", action="append", metavar="FACET=VALUE", help="keep only keywords with this facet value, e.g. occasion=mothers-day,fathers-day")
+    ap.add_argument("--include", action="append", metavar="REGEX", help="keep only keywords matching at least one regex")
+    ap.add_argument("--exclude", action="append", metavar="REGEX", help="drop keywords matching the regex")
     ap.add_argument("--min-volume", type=int, default=0)
     ap.add_argument("--max-volume", type=int, default=0)
     ap.add_argument("--max-kd", type=float)
-    ap.add_argument("--drop-shop", action="store_true", help="loại keyword ý định mua hàng thuần túy")
-    ap.add_argument("--categories", help="JSON nhóm tự định nghĩa: {'Tên nhóm': ['từ', 'cụm từ', 're:regex']}")
-    ap.add_argument("--taxonomy", help="thay hẳn taxonomy mặc định")
-    ap.add_argument("--extend-taxonomy", action="append", help="JSON mở rộng taxonomy (thêm niche/dịp)")
-    ap.add_argument("--noise-rules", help="thay file quy tắc loại nhiễu mặc định")
-    ap.add_argument("--no-noise-filter", action="store_true", help="không loại nhiễu (retailer, local, tiếng khác...)")
+    ap.add_argument("--drop-shop", action="store_true", help="drop pure shopping-intent keywords")
+    ap.add_argument("--categories", help="JSON of custom groups: {'Group name': ['word', 'phrase', 're:regex']}")
+    ap.add_argument("--taxonomy", help="replace the default taxonomy entirely")
+    ap.add_argument("--extend-taxonomy", action="append", help="JSON that extends the taxonomy (new niches or occasions)")
+    ap.add_argument("--noise-rules", help="replace the default noise rules file")
+    ap.add_argument("--no-noise-filter", action="store_true", help="do not filter noise (retailers, local intent, other languages...)")
     return ap
 
 
@@ -519,11 +519,11 @@ def parse_args(argv: list[str]):
         valid = {a.dest for a in ap._actions}
         bad = sorted(set(cfg) - valid)
         if bad:
-            raise SystemExit(f"--request có khóa không hợp lệ: {', '.join(bad)}. Hợp lệ: {', '.join(sorted(valid - {'help'}))}")
+            raise SystemExit(f"--request has invalid keys: {', '.join(bad)}. Valid: {', '.join(sorted(valid - {'help'}))}")
         ap.set_defaults(**cfg)
     args = ap.parse_args(argv)
     if not args.files:
-        ap.error("cần ít nhất một file CSV (hoặc khóa 'files' trong --request)")
+        ap.error("at least one CSV file is required (or a 'files' key in --request)")
     args.files = [args.files] if isinstance(args.files, str) else args.files
     return args
 
@@ -540,13 +540,13 @@ def main(argv=None) -> int:
     dims = [d.strip() for d in args.group_by.split(",") if d.strip() and d.strip() != "none"]
     for d in dims:
         if d not in GROUP_FIELDS:
-            raise SystemExit(f"--group-by không hợp lệ: '{d}'. Hợp lệ: {', '.join(GROUP_FIELDS)}, none")
+            raise SystemExit(f"--group-by is invalid: '{d}'. Valid: {', '.join(GROUP_FIELDS)}, none")
     if "category" in dims and not cats:
-        raise SystemExit("--group-by category cần --categories file.json")
+        raise SystemExit("--group-by category needs --categories file.json")
 
     kept, excluded, reasons, infos, warnings, total_rows = ingest(args, tax, noise, cats)
     if not kept:
-        raise SystemExit("Không còn keyword nào sau khi lọc. Xem lý do: " + ", ".join(f"{r}={n}" for r, n in reasons.most_common(5)))
+        raise SystemExit("No keywords left after filtering. Reasons: " + ", ".join(f"{r}={n}" for r, n in reasons.most_common(5)))
     n_kept = len(kept)
     rows, merged = dedupe(kept)
     cl = Clusterer(rows, tax.weak, sim_t, serp_t, args.trust_parent_topic)
@@ -578,14 +578,14 @@ def main(argv=None) -> int:
                  time.time() - started, sim_t, serp_t, argv)
 
     fit = Counter(k.fit for k in rows)
-    print(f"Đọc {total_rows:,} dòng -> giữ {n_kept:,} -> {len(rows):,} sau gộp biến thể -> {len(clusters):,} cụm "
+    print(f"Read {total_rows:,} rows -> kept {n_kept:,} -> {len(rows):,} after merging variants -> {len(clusters):,} clusters "
           f"({time.time() - started:.1f}s)")
-    print(f"Loại {sum(reasons.values()):,} keyword: " + (", ".join(f"{r}={n:,}" for r, n in reasons.most_common(4)) or "không"))
+    print(f"Excluded {sum(reasons.values()):,} keywords: " + (", ".join(f"{r}={n:,}" for r, n in reasons.most_common(4)) or "none"))
     print("Blog fit: " + ", ".join(f"{k}={fit[k]:,}" for k in ("high", "medium", "low")) +
-          f" | chưa phân loại: {len(unclassified):,} | cặp cần duyệt: {len(pairs)}")
+          f" | unclassified: {len(unclassified):,} | pairs to review: {len(pairs)}")
     for w in warnings:
-        print("CẢNH BÁO:", w, file=sys.stderr)
-    print(f"Đọc cluster-report.md trước. Đã ghi vào: {os.path.abspath(args.out)}")
+        print("WARNING:", w, file=sys.stderr)
+    print(f"Read cluster-report.md first. Written to: {os.path.abspath(args.out)}")
     return 0
 
 

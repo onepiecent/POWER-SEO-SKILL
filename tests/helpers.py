@@ -1,4 +1,4 @@
-"""Tiện ích dùng chung cho test: đường dẫn script, chạy main() và bắt đầu ra."""
+"""Shared test utilities: script paths, running main() and capturing its output."""
 import contextlib
 import csv
 import io
@@ -15,7 +15,7 @@ for sub in ("keyword-clustering", "topic-map", "internal-link-planner", "editori
 
 
 def run_main(main, argv):
-    """Chạy main(argv), trả (mã thoát, stdout, stderr)."""
+    """Run main(argv) and return (exit code, stdout, stderr)."""
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         try:

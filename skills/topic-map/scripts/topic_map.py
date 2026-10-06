@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Dựng bản đồ pillar/cluster từ clusters.csv (đầu ra của keyword-clustering). Chỉ dùng thư viện chuẩn.
+"""Build a pillar/cluster map from clusters.csv (the output of keyword-clustering). Standard library only.
 
-Đầu ra: <out>/topic-map.csv  và  <out>/topic-map.md
+Output: <out>/topic-map.csv  and  <out>/topic-map.md
 
-Quy tắc chính:
-  * Mỗi cụm thuộc đúng MỘT pillar, chọn theo thứ tự ưu tiên facet (--priority, mặc định
-    occasion,interest,recipient,craft). Facet còn lại dùng để link chéo (internal-link-planner).
-  * Pillar cần >= --min-clusters cụm; ít hơn thì cụm đứng riêng (standalone) và chỉ gợi ý pillar cha.
-  * Cụm có blog_fit = low (ý định mua hàng thuần túy) bị đánh dấu skip, không đưa vào bản đồ blog.
-  * Điểm ưu tiên = cluster_volume x trọng số blog_fit x (0.5 + khả thi), khả thi = 1 - KD/100
-    (KD thiếu -> 0.5). Đây là heuristic để xếp hạng, không phải số đo của Google.
+Main rules:
+  * Each cluster belongs to exactly ONE pillar, chosen by facet priority (--priority, default
+    occasion,interest,recipient,craft). The remaining facets are used for cross links (internal-link-planner).
+  * A pillar needs >= --min-clusters clusters; with fewer, the clusters stand alone (standalone) and only get a suggested parent pillar.
+  * Clusters with blog_fit = low (pure shopping intent) are marked skip and left out of the blog map.
+  * Priority score = cluster_volume x blog_fit weight x (0.5 + achievability), achievability = 1 - KD/100
+    (missing KD -> 0.5). This is a ranking heuristic, not a Google metric.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ TAXONOMY_CANDIDATES = [
     os.path.join(HERE, "..", "..", "keyword-clustering", "assets", "taxonomy.json"),
 ]
 FIT_WEIGHT = {"high": 1.0, "medium": 0.6, "low": 0.15}
-GENERIC_RECIPIENTS = {"her", "him"}  # quá rộng để làm pillar
+GENERIC_RECIPIENTS = {"her", "him"}  # too broad to be a pillar
 KNOWHOW_NEEDS = {"how_to", "solve", "info"}
 LIST_NEEDS = {"inspire", "choose"}
 EXPECTED_BY_TYPE = {
@@ -38,12 +38,12 @@ EXPECTED_BY_TYPE = {
     "product": ["list", "how_to|solve"],
 }
 GAP_HINT = {
-    "list": "gift guide theo người nhận/ngân sách",
-    "copy_ideas": "slogan / quote / caption / lời nhắn thiệp",
-    "info": "what is / when is / ý nghĩa / lịch sử",
-    "how_to": "how to cá nhân hóa / thiết kế / chăm sóc",
-    "solve": "xử lý vấn đề: giặt, co rút, chọn size",
-    "choose": "best X / X vs Y / cách chọn",
+    "list": "gift guide by recipient or budget",
+    "copy_ideas": "slogans / quotes / captions / card messages",
+    "info": "what is / when is / meaning / history",
+    "how_to": "how to personalize / design / care for",
+    "solve": "problem solving: washing, shrinking, choosing a size",
+    "choose": "best X / X vs Y / how to choose",
 }
 
 
@@ -96,10 +96,10 @@ def to_int(v, default=0):
 
 
 def stage_key(row: dict, stage: str) -> str:
-    """Khóa pillar của một cụm ở một 'tầng' ưu tiên; rỗng nghĩa là cụm không thuộc tầng này."""
+    """Pillar key of a cluster at one priority 'stage'; empty means the cluster does not belong to this stage."""
     need = row["reader_need"]
     if stage in ("occasion", "interest", "recipient") and row.get("craft") and need in KNOWHOW_NEEDS:
-        return ""  # bài kiến thức (giặt, size, in ấn) thuộc pillar craft, không thuộc pillar đối tượng
+        return ""  # know-how posts (washing, sizing, printing) belong to the craft pillar, not to an audience pillar
     if stage == "recipient" and row.get("recipient") in GENERIC_RECIPIENTS:
         return ""
     if stage == "craft":
@@ -116,8 +116,8 @@ def stage_type(stage: str) -> str:
 
 
 def assign_groups(live: list[dict], priority: list[str], min_clusters: int):
-    """Gán cụm vào pillar theo từng tầng: tầng nào có >= min_clusters cụm cùng khóa thì thành pillar,
-    cụm còn lại rơi xuống tầng kế tiếp. Cụm không tầng nào nhận thì đứng riêng."""
+    """Assign clusters to pillars stage by stage: a stage that has >= min_clusters clusters with the same key becomes a pillar,
+    the remaining clusters fall through to the next stage. A cluster that no stage takes stands alone."""
     stages = priority + [s for s in ("inspiration", "product") if s not in priority]
     groups: dict[tuple, list[dict]] = {}
     remaining = list(live)
@@ -210,14 +210,14 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
                         "recipient": chosen.get("recipient", ""), "interest": chosen.get("interest", ""),
                         "product": chosen.get("product", ""), "craft": chosen.get("craft", ""),
                         "keywords": chosen["keywords"], "parent_hint": "",
-                        "note": f"pillar chọn từ cụm {chosen['cluster_id']}; viết như hub bao quát các cluster bên dưới"})
+                        "note": f"pillar chosen from cluster {chosen['cluster_id']}; write it as a hub that covers the clusters below"})
         else:
             out.append({**base, "role": "pillar", "cluster_id": "", "primary_keyword": title.lower(),
                         "planned_slug": unique_slug(title), "post_type": "pillar-hub", "reader_need": "inspire",
                         "cluster_volume": 0, "priority_score": round(total * 0.3),
                         "season": next(iter(seasons)) if len(seasons) == 1 else "", "occasion": "", "recipient": "",
                         "interest": "", "product": "", "craft": "", "keywords": "", "parent_hint": "",
-                        "note": "pillar ẢO: không cụm nào đủ rộng; nghiên cứu keyword đầu mối rồi viết hub"})
+                        "note": "VIRTUAL pillar: no cluster is broad enough; research a head keyword, then write the hub"})
         for r in sorted(members, key=lambda r: -to_int(r["cluster_volume"])):
             if chosen and r["cluster_id"] == chosen["cluster_id"]:
                 continue
@@ -250,7 +250,7 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
                     "occasion": r.get("occasion", ""), "recipient": r.get("recipient", ""),
                     "interest": r.get("interest", ""), "product": r.get("product", ""), "craft": r.get("craft", ""),
                     "keywords": r["keywords"], "parent_hint": hint,
-                    "note": "ít hơn %d cụm cùng nhóm: viết độc lập, link tới pillar gợi ý nếu có" % min_clusters})
+                    "note": "fewer than %d clusters in this group: write as a standalone post, link to the suggested pillar if there is one" % min_clusters})
     for r in sorted(skipped, key=lambda r: -to_int(r["cluster_volume"])):
         out.append({"pillar_id": "", "pillar_type": "", "pillar_key": "", "pillar_name": "", "market": r["market"],
                     "role": "skip", "cluster_id": r["cluster_id"], "primary_keyword": r["cluster_name"],
@@ -259,7 +259,7 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
                     "occasion": r.get("occasion", ""), "recipient": r.get("recipient", ""),
                     "interest": r.get("interest", ""), "product": r.get("product", ""), "craft": r.get("craft", ""),
                     "keywords": r["keywords"], "parent_hint": "",
-                    "note": "ý định mua hàng thuần túy: để trang bán hàng/ team content xử lý, không viết blog"})
+                    "note": "pure shopping intent: leave to the shop pages / content team, do not write a blog post"})
 
     ranked = sorted((o for o in out if o["role"] != "skip"), key=lambda o: -o["priority_score"])
     for i, o in enumerate(ranked):
@@ -284,27 +284,27 @@ def write_md(path: str, out: list[dict], gaps: dict) -> None:
     for pid, rows in by_pillar.items():
         head = next(r for r in rows if r["role"] == "pillar")
         total = sum(r["cluster_volume"] for r in rows)
-        season = f" · mùa vụ: {head['season']}" if head["season"] else ""
+        season = f" · season: {head['season']}" if head["season"] else ""
         lines += [f"## {pid} · {head['pillar_name']}  ({head['pillar_type']} · {head['market']}{season})",
-                  f"Tổng volume các cụm: {total:,}. Pillar: `{head['planned_slug']}` – {head['primary_keyword']}"
-                  + (" (pillar ảo)" if not head["cluster_id"] else ""), "",
-                  "| Vai trò | Slug | Loại bài | Reader need | Volume | Ưu tiên |", "|---|---|---|---|---:|---|"]
+                  f"Total cluster volume: {total:,}. Pillar: `{head['planned_slug']}` – {head['primary_keyword']}"
+                  + (" (virtual pillar)" if not head["cluster_id"] else ""), "",
+                  "| Role | Slug | Post type | Reader need | Volume | Priority |", "|---|---|---|---|---:|---|"]
         for r in rows:
             lines.append(f"| {r['role']} | `{r['planned_slug']}` | {r['post_type']} | {r['reader_need']} | "
                          f"{r['cluster_volume']:,} | {r['bucket']} |")
         if pid in gaps:
-            lines += ["", "**Khoảng trống nội dung:** " + "; ".join(f"thiếu *{s.replace('|', ' hoặc ')}* ({h})" for s, h in gaps[pid])]
+            lines += ["", "**Content gaps:** " + "; ".join(f"missing *{s.replace('|', ' or ')}* ({h})" for s, h in gaps[pid])]
         lines.append("")
     stand = [o for o in out if o["role"] == "standalone"]
     if stand:
-        lines += ["## Bài đứng riêng (chưa đủ cụm để lập pillar)", "",
-                  "| Slug | Loại bài | Volume | Ưu tiên | Pillar gợi ý |", "|---|---|---:|---|---|"]
+        lines += ["## Standalone posts (not enough clusters for a pillar)", "",
+                  "| Slug | Post type | Volume | Priority | Suggested pillar |", "|---|---|---:|---|---|"]
         lines += [f"| `{o['planned_slug']}` | {o['post_type']} | {o['cluster_volume']:,} | {o['bucket']} | {o['parent_hint'] or '-'} |"
                   for o in stand]
         lines.append("")
     skip = [o for o in out if o["role"] == "skip"]
     if skip:
-        lines += ["## Bỏ qua (ý định mua hàng, không phải việc của blog)", ""]
+        lines += ["## Skipped (shopping intent, not the blog's job)", ""]
         lines += [f"- {o['primary_keyword']} ({o['cluster_volume']:,})" for o in skip]
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
@@ -312,10 +312,10 @@ def write_md(path: str, out: list[dict], gaps: dict) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("clusters", help="clusters.csv từ keyword-clustering")
+    ap.add_argument("clusters", help="clusters.csv from keyword-clustering")
     ap.add_argument("--out", default="outputs")
     ap.add_argument("--priority", default="occasion,interest,recipient,craft",
-                    help="thứ tự facet quyết định pillar (mặc định: occasion,interest,recipient,craft)")
+                    help="order of the facets that decide the pillar (default: occasion,interest,recipient,craft)")
     ap.add_argument("--min-clusters", type=int, default=3)
     ap.add_argument("--taxonomy", default=None)
     args = ap.parse_args(argv)
@@ -323,10 +323,10 @@ def main(argv=None) -> int:
     with open(args.clusters, encoding="utf-8-sig", newline="") as fh:
         rows = list(csv.DictReader(fh))
     if not rows:
-        raise SystemExit("clusters.csv rỗng")
+        raise SystemExit("clusters.csv is empty")
     tax = load_taxonomy(args.taxonomy)
     if tax is None:
-        print("Không thấy taxonomy.json: tên pillar sẽ được suy ra từ key.", file=sys.stderr)
+        print("taxonomy.json not found: pillar names will be derived from the keys.", file=sys.stderr)
     priority = [p.strip() for p in args.priority.split(",") if p.strip()]
     out, gaps = build(rows, priority, args.min_clusters, tax)
     os.makedirs(args.out, exist_ok=True)
@@ -339,8 +339,8 @@ def main(argv=None) -> int:
     counts = defaultdict(int)
     for o in out:
         counts[o["role"]] += 1
-    print(f"{len(rows)} cụm -> {n_p} pillar | " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
-    print(f"Đã ghi vào: {os.path.abspath(args.out)}")
+    print(f"{len(rows)} clusters -> {n_p} pillars | " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    print(f"Written to: {os.path.abspath(args.out)}")
     return 0
 
 
