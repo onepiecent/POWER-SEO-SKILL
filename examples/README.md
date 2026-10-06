@@ -1,13 +1,13 @@
-# Dữ liệu mẫu
+# Sample data
 
-**Tất cả dữ liệu ở đây là TỔNG HỢP, dùng để thử công cụ. Volume và KD không phải số liệu thật; không dùng để ra quyết định SEO.**
+**Everything here is SYNTHETIC and only meant for trying the tools. Volumes and difficulty scores are not real figures; do not use them for SEO decisions.**
 
-| File | Nội dung |
+| File | Contents |
 |---|---|
-| `synthetic-keywords-us.csv` | 84 keyword US (dịp lễ, sở thích, người nhận, kiến thức giặt/size/in ấn, slogan, keyword mua hàng) |
-| `synthetic-keywords-uk.csv` | 18 keyword UK (mum, personalised, Mothering Sunday, hen do, Bonfire Night) |
-| `request-example.json` | cấu hình chạy lại được cho `cluster_keywords.py --request` |
-| `categories-example.json` | nhóm tự định nghĩa (`--categories`) |
-| `extend-taxonomy-example.json` | mở rộng taxonomy (`--extend-taxonomy`) |
-| `draft-weak-demo.md` | bản nháp **cố ý nhiều lỗi** (giọng AI, claim giao hàng/review/môi trường/sức khỏe, IP, slot sai) để thử 3 bộ kiểm tra |
-| `draft-good-demo.md` | bản nháp mẫu đạt; các marker `[EXPERIENCE]` trong đó chỉ là chỗ giữ chỗ, không phải quan sát thật |
+| `synthetic-keywords-us.csv` | 84 US keywords (occasions, interests, recipients, washing/sizing/printing know-how, slogans, shopping keywords) |
+| `synthetic-keywords-uk.csv` | 18 UK keywords (mum, personalised, Mothering Sunday, hen do, Bonfire Night) |
+| `request-example.json` | a re-runnable request for `cluster_keywords.py --request` |
+| `categories-example.json` | custom groups for `--categories` |
+| `extend-taxonomy-example.json` | taxonomy extension for `--extend-taxonomy` |
+| `draft-weak-demo.md` | a draft with **deliberate flaws** (AI-sounding phrases, delivery/review/environmental/health claims, IP names, bad slots) for trying the three checkers |
+| `draft-good-demo.md` | a passing sample draft; the `[EXPERIENCE]` markers in it are placeholders, not real observations |

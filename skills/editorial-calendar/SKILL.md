@@ -1,6 +1,6 @@
 ---
 name: editorial-calendar
-description: Tính ngày các dịp lễ US/UK bằng quy tắc (Mother's Day khác Mothering Sunday, Father's Day, Thanksgiving, Black Friday, Easter, Halloween, Bonfire Night...) và lập lịch xuất bản/cập nhật bài blog theo mùa (hạn đăng bài mới, hạn làm mới bài cũ) từ topic-map. Dùng khi người dùng nói "lịch nội dung", "content calendar", "bài theo mùa", "seasonal", "khi nào đăng bài Mother's Day/Christmas", "ngày lễ US UK".
+description: Computes US and UK holiday dates by rule (US Mother's Day versus UK Mothering Sunday, Father's Day, Thanksgiving, Black Friday, Easter, Halloween, Bonfire Night) and plans publish and refresh deadlines for seasonal blog posts from the topic map. Use when the user mentions a content calendar, seasonal posts, when to publish Mother's Day or Christmas content, or US and UK holiday dates.
 ---
 
 # Editorial calendar theo mùa (US/UK)

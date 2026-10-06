@@ -1,6 +1,6 @@
 ---
 name: printerval-blog-seo
-description: Điều phối bộ kỹ năng SEO content cho BLOG Printerval (marketplace print-on-demand, thị trường US/UK, bài tiếng Anh). Dùng khi người dùng nói về blog Printerval, file keyword export/CSV từ SEO Specialist (Semrush, Ahrefs, Keyword Planner, GSC), gom nhóm từ khóa, pillar/cluster, topic map, internal link giữa các bài blog, content brief, gift guide, lịch nội dung theo mùa (Mother's Day, Christmas...), product slot, soát claim/IP, hoặc kiểm tra bài có hữu ích cho người đọc không. Không dùng cho audit kỹ thuật, URL/sitemap, hay link tới trang bán hàng.
+description: Orchestrates the Printerval blog SEO skill suite (print-on-demand marketplace, US and UK markets, English content). Use when the user talks about the Printerval blog, keyword export CSV files from SEO specialists (Semrush, Ahrefs, Keyword Planner, Search Console), keyword clustering, pillar and cluster planning, topic maps, internal links between blog posts, content briefs, gift guides, seasonal content calendars (Mother's Day, Christmas), product slots, claim and IP checks, or whether a draft is helpful to readers. Not for technical audits, URLs or sitemaps, or links to product pages.
 ---
 
 # Printerval Blog SEO: điều phối

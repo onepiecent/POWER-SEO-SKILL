@@ -1,6 +1,6 @@
 ---
 name: topic-map
-description: Dựng bản đồ pillar/cluster cho blog Printerval từ clusters.csv (đầu ra của keyword-clustering). Chọn pillar theo dịp lễ, sở thích, người nhận, kiến thức (size, giặt, in ấn), cảm hứng (slogan, caption), xếp ưu tiên A/B/C, chỉ ra khoảng trống nội dung, loại keyword mua hàng khỏi blog. Dùng khi người dùng nói "pillar", "cluster", "topic map", "topic cluster", "kế hoạch nội dung blog", "nên viết bài nào trước".
+description: Builds a pillar and cluster map for the Printerval blog from clusters.csv (the output of keyword-clustering). Chooses pillars by occasion, interest, recipient, know-how (sizing, washing, printing) and inspiration (slogans, captions), ranks posts A, B or C, shows content gaps, and removes pure shopping keywords from the blog plan. Use when the user mentions pillars, clusters, a topic map, a blog content plan, or which posts to write first.
 ---
 
 # Topic map: pillar/cluster

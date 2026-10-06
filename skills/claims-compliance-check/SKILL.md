@@ -1,6 +1,6 @@
 ---
 name: claims-compliance-check
-description: Soát rủi ro claim trong bài blog US/UK của Printerval (thời gian giao hàng/hạn đặt hàng, review và độ phổ biến, claim môi trường, sức khỏe, giá/ưu đãi, "made in USA/handmade", so sánh tuyệt đối, kinh nghiệm "we tested", công bố affiliate/tài trợ) theo FTC/CMA/ASA, và gắn cờ tên thương hiệu/IP (franchise, nghệ sĩ) trong bài hoặc trong danh sách keyword. Dùng khi người dùng nói "claim", "pháp lý", "FTC", "CMA", "ASA", "review giả", "giao hàng", "eco-friendly", "bản quyền/nhãn hiệu", "IP", "affiliate disclosure", "kiểm tra trước khi đăng". Không phải tư vấn pháp lý.
+description: Flags risky claims in US and UK Printerval blog posts under FTC, CMA and ASA guidance (delivery times and order deadlines, reviews and popularity, environmental, health, price and offer claims, made in USA or handmade, absolute comparisons, we-tested experience claims, affiliate and sponsorship disclosure) and flags brand and IP names (franchises, artists) in a draft or a keyword list. Use when the user mentions claims, legal checks, FTC, CMA, ASA, fake reviews, delivery promises, eco-friendly wording, trademarks, IP or affiliate disclosure before publishing. Not legal advice.
 ---
 
 # Claims & compliance check

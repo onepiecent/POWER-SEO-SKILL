@@ -1,6 +1,6 @@
 ---
 name: keyword-clustering
-description: Đọc file CSV keyword export của SEO Specialist (Semrush, Ahrefs, Google Keyword Planner, Search Console, Google Sheets; nhỏ đến hàng trăm nghìn dòng) và gom nhóm từ khóa theo yêu cầu cụ thể (theo dịp lễ, người nhận, sở thích, sản phẩm, ý định người đọc, nhóm tự định nghĩa, SERP overlap), có lọc nhiễu minh bạch, tách US/UK, báo cáo kiểm chứng. Dùng khi người dùng gửi/nhắc file keyword, "gom nhóm từ khóa", "cluster keywords", "phân nhóm", "lọc từ khóa", "keyword map" cho blog Printerval.
+description: Reads keyword export CSV files from SEO specialists (Semrush, Ahrefs, Google Keyword Planner, Search Console, Google Sheets; from small files to hundreds of thousands of rows) and clusters the keywords on request by occasion, recipient, interest, product, reader intent, custom categories or SERP overlap. Filters noise transparently, separates US and UK, and writes a verification report. Use when the user sends or mentions a keyword file, or asks to cluster, group, filter or map keywords for the Printerval blog.
 ---
 
 # Keyword clustering: đọc export thật, gom nhóm theo yêu cầu

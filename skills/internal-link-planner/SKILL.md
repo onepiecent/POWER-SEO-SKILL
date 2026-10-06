@@ -1,6 +1,6 @@
 ---
 name: internal-link-planner
-description: Lập kế hoạch internal link giữa các bài BLOG Printerval (pillar ↔ cluster, bài cùng cụm, link chéo, link ngược từ bài cũ) từ topic-map.csv, gợi ý anchor mô tả, đánh dấu bài mồ côi hoặc ngõ cụt, và audit file link hiện có (export từ Screaming Frog hoặc Ahrefs với cột source, target, anchor). Dùng khi người dùng nói "internal link", "anchor text", "link giữa các bài", "bài mồ côi/orphan", "link ngược bài cũ". Không lập link tới trang bán hàng hay danh mục.
+description: Plans internal links between Printerval blog posts (pillar to cluster, posts in the same cluster, cross links, links back from older posts) from topic-map.csv, suggests descriptive anchors, flags orphan posts and dead ends, and audits an existing link export (Screaming Frog or Ahrefs with source, target and anchor columns). Use when the user mentions internal links, anchor text, orphan pages or linking older posts to new ones. Does not plan links to product or category pages.
 ---
 
 # Internal link planner (blog ↔ blog)

@@ -1,6 +1,6 @@
 ---
 name: content-brief
-description: Sinh và hoàn thiện content brief tiếng Anh cho blog Printerval từ topic-map (metadata, từ khóa, khung bài theo loại gift guide/ideas list/choose guide/how-to/explainer/copy ideas/pillar hub, link nội bộ, kế hoạch product slot, cờ tuân thủ, hạn xuất bản). Dùng khi người dùng cần "brief", "outline bài", "chuẩn bị bài viết", "giao việc cho writer", hoặc sau khi có topic map/link plan.
+description: Generates and completes English content briefs for the Printerval blog from the topic map (metadata, keywords, outline by post type such as gift guide, ideas list, choose guide, how-to, explainer, copy ideas or pillar hub, internal links, product slot plan, compliance flags, publish deadline). Use when the user needs a brief, an outline, help preparing an article or a hand-off to writers, or after a topic map or link plan exists.
 ---
 
 # Content brief

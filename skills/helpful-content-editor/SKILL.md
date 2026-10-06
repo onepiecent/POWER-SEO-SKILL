@@ -1,6 +1,6 @@
 ---
 name: helpful-content-editor
-description: Soát, chấm và biên tập bài blog tiếng Anh (US/UK) của Printerval theo tiêu chí nội dung hữu ích cho người đọc (people-first), gồm trả lời sớm, góc nhìn và kinh nghiệm thật, bằng chứng, trung thực, dễ đọc, nhắc sản phẩm tự nhiên, không viết cho công cụ tìm kiếm trước, bớt giọng AI. Dùng khi người dùng gửi bản nháp hoặc nói "review bài", "bài này đã hữu ích chưa", "chấm bài", "sửa cho tự nhiên", "E-E-A-T", "bớt giọng AI", "helpful content".
+description: Reviews, scores and edits English blog drafts (US and UK) for Printerval against people-first content criteria, covering early answers, real first-hand insight, evidence, honesty, readability, natural product mentions, no search-engine-first writing and fewer AI-sounding phrases. Use when the user sends a draft or asks to review an article, check if it is helpful, edit it to sound natural, apply E-E-A-T, or reduce AI tone.
 ---
 
 # Helpful content editor

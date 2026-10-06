@@ -1,6 +1,6 @@
 ---
 name: product-slot
-description: Quy ước và công cụ để nhắc sản phẩm một cách tự nhiên trong bài blog Printerval mà không gắn URL. Writer để placeholder PRODUCT-SLOT mô tả sản phẩm, ngữ cảnh và lý do, team content thay bằng link thật. Kiểm tra mật độ, vị trí và chất lượng slot, xuất CSV bàn giao, tạo bản bài không có sản phẩm để thử xem bài còn hữu ích không. Dùng khi người dùng nói "gắn link sản phẩm", "product link", "slot", "chèn sản phẩm tự nhiên", "bàn giao cho team content", "bài quá quảng cáo".
+description: Convention and tools for mentioning products naturally in Printerval blog posts without URLs. Writers leave a PRODUCT-SLOT placeholder that describes the product, the reader's situation and the reason, and the content team replaces it with a real link. Checks slot density, placement and quality, exports a hand-off CSV, and builds a version of the post without products to test whether it is still useful. Use when the user mentions product links, slots, natural product placement, hand-off to the content team, or posts that read like ads.
 ---
 
 # Product slot
