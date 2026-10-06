@@ -4,9 +4,12 @@ import unittest
 
 import helpers  # noqa: F401  (sets up sys.path)
 
+import datetime as dt
+
 import cluster_keywords as ck
 import export_plan as ep
 import kw_text
+import link_plan as lp
 import plan_qa
 import topic_map as tm
 from kw_text import Fluency, NoiseRules, Respeller
@@ -233,6 +236,64 @@ class PlanQA(unittest.TestCase):
         self.assertNotIn(("overlap", 3), found)  # 'thanksgiving date' and 'when is thanksgiving' differ only by fillers
         self.assertEqual(qa[0][0], "high")  # most severe first
         self.assertIn("items to review", plan_qa.summary(qa))
+
+
+class ContextualLinks(unittest.TestCase):
+    def test_related_posts_in_other_theme_pillars_get_body_links(self):
+        def t(pid, key, role, kw, slug, kws, merged_into=""):
+            return {"pillar_id": pid, "pillar_key": key, "role": role, "primary_keyword": kw, "planned_slug": slug,
+                    "keywords": "|".join(kws), "market": "us", "cluster_volume": "100", "post_type": "explainer",
+                    "parent_hint": "", "merged_into": merged_into, "occasion": "thanksgiving"}
+        rows = [t("P1", "thanksgiving/history", "pillar", "history of thanksgiving", "history", ["thanksgiving history"]),
+                t("P1", "thanksgiving/history", "cluster", "when was the first thanksgiving", "first",
+                  ["first thanksgiving", "first thanksgiving pilgrims", "first thanksgiving 1621"]),
+                t("P2", "thanksgiving/facts", "pillar", "thanksgiving trivia", "trivia", ["thanksgiving quiz"]),
+                t("P2", "thanksgiving/facts", "cluster", "facts about the first thanksgiving", "first-facts",
+                  ["first thanksgiving facts", "pilgrims first thanksgiving facts"]),
+                t("P2", "thanksgiving/facts", "cluster", "thanksgiving jeopardy", "jeopardy", ["thanksgiving jeopardy game"]),
+                t("P2", "thanksgiving/facts", "merged", "jeopardy questions thanksgiving", "", ["jeopardy questions"], "jeopardy")]
+        pl = lp.Planner(rows, None, 3, 1)
+        pl.build()
+        ctx = {(l["source_slug"], l["target_slug"]) for l in pl.links.values() if l["link_type"] == "contextual"}
+        self.assertIn(("first-facts", "first"), ctx)  # shares 'first', 'pilgrims' across two theme pillars
+        self.assertNotIn(("jeopardy", "first"), ctx)  # nothing in common: no forced link
+        self.assertIn("jeopardy", pl.words["jeopardy"])  # merged clusters' keywords count for their post
+
+
+class ScheduleAndResearch(unittest.TestCase):
+    def test_schedule_orders_by_deadline_then_priority(self):
+        def r(n, slug, bucket, score, kd=30):
+            return {"n": n, "post": {"planned_slug": slug, "primary_keyword": slug.replace("-", " "), "bucket": bucket,
+                                     "priority_score": str(score)}, "kind": "Cluster", "volume": 100, "kd": kd}
+        rows = [r(1, "evergreen-post", "A", 900), r(2, "late-post", "B", 100), r(3, "late-post-a", "A", 50, kd=75),
+                r(4, "soon-post", "A", 10)]
+        seasonal = [{"planned_slug": "late-post", "season": "thanksgiving", "event_date": "2026-11-26", "publish_new_by": "2026-09-03"},
+                    {"planned_slug": "late-post-a", "season": "thanksgiving", "event_date": "2026-11-26", "publish_new_by": "2026-09-03"},
+                    {"planned_slug": "soon-post", "season": "christmas", "event_date": "2027-01-05", "publish_new_by": "2026-10-13"}]
+        out = ep.schedule_rows(rows, seasonal, dt.date(2026, 10, 6))
+        self.assertEqual([x[1] for x in out], [3, 2, 4, 1])  # late (A before B), due soon, evergreen
+        self.assertEqual([x[10] for x in out], ["late: publish ASAP", "late: publish ASAP", "due soon", "evergreen"])
+        self.assertIn("12-week lead time", out[0][11])
+        self.assertIn("KD 75", out[0][11])
+        self.assertEqual(out[0][0], 1)
+
+    def test_research_next_names_missing_themes_and_seeds(self):
+        topic = [{"pillar_key": "thanksgiving/messages", "cluster_id": "C1"}, {"pillar_key": "thanksgiving/dates", "cluster_id": "C2"}]
+        keywords = [{"cluster_id": "C1", "keyword": f"thanksgiving quotes for {w}", "volume": "200", "variants": ""}
+                    for w in "abcdefghij"]
+        keywords += [{"cluster_id": "C1", "keyword": "thanksgiving quotes", "volume": "40000", "variants": ""},
+                     {"cluster_id": "C2", "keyword": "thanksgiving shirt", "volume": "50", "variants": ""}]
+        spec = {"labels": {}, "themes": [
+            {"theme": "messages", "why": "w", "match": "\\bquotes?\\b", "seeds": ["{topic} quotes"]},
+            {"theme": "apparel", "why": "w", "match": "\\bshirts?\\b", "seeds": ["{topic} shirts", "funny {topic} shirts"]},
+            {"theme": "decor", "why": "w", "match": "\\bdecor\\b", "seeds": ["{topic} decor"]}],
+            "occasion_extras": {"thanksgiving": ["friendsgiving ideas"]}}
+        out = {row[1]: row for row in ep.research_rows(topic, keywords, spec)}
+        self.assertEqual(out["messages"][5], "covered")
+        self.assertEqual(out["messages"][6], "")
+        self.assertEqual((out["apparel"][5], out["apparel"][6]), ("thin", "thanksgiving shirts\nfunny thanksgiving shirts"))
+        self.assertEqual(out["decor"][5], "missing")
+        self.assertEqual(out["related"][6], "friendsgiving ideas")
 
 
 if __name__ == "__main__":

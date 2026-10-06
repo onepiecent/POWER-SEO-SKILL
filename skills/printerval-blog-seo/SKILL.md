@@ -39,7 +39,8 @@ CSV file (SEO specialist)
        └─ topic-map ──► topic-map.csv (pillars, clusters, priority, gaps)
             ├─ editorial-calendar ──► seasonal-plan.csv (publish dates for seasonal posts)
             ├─ internal-link-planner ──► link-plan.csv
-            │    └─ export_plan.py ──► final-plan.xlsx (the content team's sheet: posts, keywords, links, planned URLs)
+            │    └─ export_plan.py ──► final-plan.xlsx (the content team's sheet: posts, keywords, links, planned URLs,
+            │                          + Keyword Map, Schedule, QA, Research Next)
             └─ content-brief ──► briefs/*.md   (fill the [TO FILL] parts after reviewing the real SERP)
                  └─ write the post ──► helpful-content-editor + claims-compliance-check
                       └─ product-slot (hand-off) ──► content team adds links ──► publish (--final)
@@ -55,7 +56,8 @@ python3 skills/internal-link-planner/scripts/link_plan.py plan outputs/topic-map
 python3 skills/content-brief/scripts/make_brief.py --topic-map outputs/topic-map.csv \
     --link-plan outputs/link-plan.csv --seasonal-plan outputs/seasonal-plan.csv --bucket A --out outputs/briefs
 python3 skills/printerval-blog-seo/scripts/export_plan.py --topic-map outputs/topic-map.csv \
-    --keyword-map outputs/keyword-map.csv --link-plan outputs/link-plan.csv --out outputs/final-plan.xlsx
+    --keyword-map outputs/keyword-map.csv --link-plan outputs/link-plan.csv \
+    --seasonal-plan outputs/seasonal-plan.csv --out outputs/final-plan.xlsx
 ```
 
 A one-topic Semrush export (for example `thanksgiving-day_all-keywords_us.xlsx`, broad match, so it also holds other holidays) goes in as it is: `cluster_keywords.py file.xlsx --market us --only occasion=thanksgiving`.
@@ -70,6 +72,8 @@ One row per post, in the content team's column order: `STT | Main Keyword | Seco
 - **Internal Link**: the body links from `link-plan.csv` (cluster -> its pillar, pillar -> every cluster, cross-pillar). **Related Post**: up to 3 siblings (for a pillar: the other pillars). Each line is `anchor || URL`.
 - **URL Blog** is the planned URL, `https://printerval.com/{slug}` by default (`--url-pattern`). Printerval's CMS adds `-n<id>.html` when the post is published: paste the real URL into URL Blog and, in the `.xlsx`, every link cell that points to that post updates (they are formulas that look the URL up by STT). The `.csv` copy has plain text; `--plain-links` writes text in the `.xlsx` too.
 - A second sheet, **Keyword Map**, lists every keyword placed in the plan (main, secondary, also covers, variant) with its post's STT.
+- A **Schedule** sheet gives the writing order: posts whose season's usual lead time has passed first (`late: publish ASAP`, with the date it ended), then `due soon` (within 14 days), `on time` and evergreen posts; within each, priority bucket A, B, C and the priority score. Deadlines come from `--seasonal-plan` (editorial-calendar: 12 weeks before the event for a new post [Convention]); `--today` fixes the date for a reproducible run. Very hard keywords (KD >= 70) are noted as long-term targets.
+- For a one-topic export, a **Research Next** sheet lists the themes a POD blog needs for that occasion (`assets/research-seeds.json`: gifts, apparel, quotes and messages, humor, decor, crafts, plus occasion ideas such as Friendsgiving) with how many keywords and searches the file has for each: `covered` only when the file holds a head keyword of the theme (`thanksgiving quotes`) and a real long tail, else `thin` or `missing` with the **seed keywords to export next** (Semrush, same market). Hand this list to the SEO specialist; do not plan posts for a theme without its keywords.
 - A **QA** sheet lists what to review before handing the plan over, most severe first: two posts asking nearly the same thing (overlap), a keyword that is another post's main question (misplaced), a year in a main keyword, duplicate or long slugs, a post absorbing 100+ clusters, posts with few internal links or none pointing to them, weak posts (< 500 searches in total) and very hard main keywords (KD >= 70). The script prints a one-line summary. **Read it and resolve or explain every high item to the user**; the others are judgment calls.
 
 CSV schemas: `references/data-contracts.md`. Sources and verification levels: `references/sources.md`. Assumptions about Printerval and open questions: `references/printerval-context.md`.

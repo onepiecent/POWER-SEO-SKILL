@@ -26,7 +26,7 @@ CSV or .xlsx from the SEO specialist
     -> topic-map -> topic-map.csv
         |- editorial-calendar -> seasonal-plan.csv
         |- internal-link-planner -> link-plan.csv
-        |    '- export_plan.py -> final-plan.xlsx   (the content team's sheet)
+        |    '- export_plan.py -> final-plan.xlsx   (the content team's sheet + schedule, QA, research next)
         '- content-brief -> briefs/*.md -> write the article
               -> helpful-content-editor + claims-compliance-check
               -> product-slot (content team adds the links) -> publish
@@ -51,7 +51,8 @@ python3 skills/content-brief/scripts/make_brief.py --topic-map outputs/topic-map
 
 # 3. The final plan for the content team (one row per post, 15 columns, .xlsx + .csv)
 python3 skills/printerval-blog-seo/scripts/export_plan.py --topic-map outputs/topic-map.csv \
-    --keyword-map outputs/keyword-map.csv --link-plan outputs/link-plan.csv --out outputs/final-plan.xlsx
+    --keyword-map outputs/keyword-map.csv --link-plan outputs/link-plan.csv \
+    --seasonal-plan outputs/seasonal-plan.csv --out outputs/final-plan.xlsx
 
 # 4. Check a draft
 python3 skills/helpful-content-editor/scripts/helpful_check.py draft.md --market us --post-type gift-guide --keyword "mother's day gifts for grandma"
@@ -74,7 +75,7 @@ Semrush's "all keywords" is broad match, so the file also holds other holidays; 
 
 `STT | Main Keyword | Secondary Keyword | Volume | KD | Category | Category Kind | Thuộc Pillar | Title SEO | Meta Description SEO | Outline | Internal Link (Anchor || URL) | Related Post (Anchor || URL) | URL Blog | Trạng thái`
 
-Category, Title SEO, Meta Description SEO, Outline and Trạng thái are left for the content team. Category Kind is Pillar or Cluster, and a Cluster names its pillar. URL Blog is the planned URL (`https://printerval.com/{slug}`, change it with `--url-pattern`); the link cells in the .xlsx look the target's URL Blog up, so pasting the real URL after publishing updates every link to that post. A second sheet, Keyword Map, shows where every keyword went, and a QA sheet lists what to check before handing the plan over (overlapping posts, misplaced keywords, orphans, weak posts).
+Category, Title SEO, Meta Description SEO, Outline and Trạng thái are left for the content team. Category Kind is Pillar or Cluster, and a Cluster names its pillar. URL Blog is the planned URL (`https://printerval.com/{slug}`, change it with `--url-pattern`); the link cells in the .xlsx look the target's URL Blog up, so pasting the real URL after publishing updates every link to that post. Other sheets: Keyword Map (where every keyword went), Schedule (writing order: posts late for their season first, then by priority), QA (what to check before handing the plan over: overlapping posts, misplaced keywords, orphans, weak posts) and, for a one-topic export, Research Next (themes such as gifts, shirts, quotes or decor that the file barely covers, with the seed keywords to export next).
 
 ## Clustering "on request"
 
@@ -118,7 +119,7 @@ python3 -W error::ResourceWarning -m unittest discover -s tests
 python3 tests/make_big_fixture.py 150000 /tmp/big.csv   # performance check
 ```
 
-116 tests: multi-format file reading (including .xlsx), spelling fixes (typos, split, glued and cut-off words), facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, natural post names, filters, topic map with theme pillars, sub-topic posts and merged posts, link plan and audit, the final plan export (secondary keywords, QA sheet), holiday dates checked against the real calendar, briefs and the three checkers.
+119 tests: multi-format file reading (including .xlsx), spelling fixes (typos, split, glued and cut-off words), facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, natural post names, filters, topic map with theme pillars, sub-topic posts and merged posts, link plan and audit, contextual links, the final plan export (secondary keywords, schedule, QA and research sheets), holiday dates checked against the real calendar, briefs and the three checkers.
 
 ## Layout
 

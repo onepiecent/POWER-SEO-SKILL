@@ -26,6 +26,10 @@ from urllib.parse import urlparse
 
 GENERIC_ANCHORS = {"click here", "read more", "here", "this article", "this post", "learn more", "link",
                    "this link", "more", "see more", "check it out", "this guide", "this"}
+STOPWORDS = {"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was", "were", "do", "does", "did", "and",
+             "what", "when", "where", "why", "how", "who", "which", "with", "at", "by", "it", "its", "you", "we", "your",
+             "our", "my", "day", "this", "that", "be", "can", "best", "ideas", "idea", "happy"}
+CONTEXTUAL_MIN = 0.2  # cosine similarity of two posts' keyword words for a contextual body link
 FACETS = ("occasion", "recipient", "interest", "product", "craft")
 INBOUND_HEURISTIC_MAX = 50
 OUTBOUND_REVIEW_MAX = 15
@@ -78,11 +82,41 @@ def anchor_candidates(row: dict) -> list[str]:
     return cands or [main]
 
 
+def word_counts(texts: list[str]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for text in texts:
+        for t in set(re.findall(r"[a-z0-9]+", text.lower().replace("'", ""))):
+            if t not in STOPWORDS and not YEAR_RX.fullmatch(t) and len(t) > 1:
+                counts[t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith(("ss", "us", "is")) else t] += 1
+    return counts
+
+
+def cosine(a: dict[str, int], b: dict[str, int]) -> float:
+    dot = sum(v * b.get(t, 0) for t, v in a.items())
+    na, nb = sum(v * v for v in a.values()) ** 0.5, sum(v * v for v in b.values()) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
+
+
 class Planner:
-    def __init__(self, rows: list[dict], published: set[str] | None, max_siblings: int, max_cross: int):
+    def __init__(self, rows: list[dict], published: set[str] | None, max_siblings: int, max_cross: int,
+                 max_contextual: int = 2):
         self.posts = {r["planned_slug"]: r for r in rows if r["role"] != "skip" and r["planned_slug"]}
         self.published = published
-        self.max_siblings, self.max_cross = max_siblings, max_cross
+        self.max_siblings, self.max_cross, self.max_contextual = max_siblings, max_cross, max_contextual
+        # the words of each post: its keywords and those of the clusters merged into it, minus the topic word
+        # that every post shares ('thanksgiving'), so 'first' or 'native' decide which posts are related
+        texts: dict[str, list[str]] = defaultdict(list)
+        for r in rows:
+            slug = r["planned_slug"] if r["planned_slug"] in self.posts else r.get("merged_into", "")
+            if slug in self.posts:
+                texts[slug] += [r["primary_keyword"]] + [k for k in r.get("keywords", "").split("|") if k]
+        self.words = {s: word_counts(t) for s, t in texts.items()}
+        share: dict[str, int] = defaultdict(int)
+        for w in self.words.values():
+            for t in w:
+                share[t] += 1
+        common = {t for t, n in share.items() if n >= max(3, 0.5 * len(self.words))}
+        self.words = {s: {t: v for t, v in w.items() if t not in common} for s, w in self.words.items()}
         self.links: dict[tuple[str, str], dict] = {}
         self.unresolved: list[tuple[str, str]] = []  # (slug, reason) posts with no natural place to link
         self.anchor_owner: dict[str, str] = {}
@@ -160,6 +194,7 @@ class Planner:
                 for s in sibs[: self.max_siblings]:
                     self.add(c["planned_slug"], s["planned_slug"], "sibling", "body, where the angle is relevant", 2,
                              f"related angle in the same pillar (shared facets: {self.shared(c, s)})")
+        self._contextual()
         for p in self.posts.values():
             if p["role"] == "standalone" and p["parent_hint"] in self.pillar_slug:
                 pillar = self.pillar_slug[p["parent_hint"]]
@@ -182,6 +217,32 @@ class Planner:
                     done += len(self.links) - before
         self._fix_orphans_and_dead_ends()
         self._backlink_queue()
+
+    def topic(self, p: dict) -> str:
+        return (p.get("pillar_key") or "").split("/", 1)[0]
+
+    def _contextual(self) -> None:
+        """Body links between posts that talk about the same thing, in any theme pillar of the topic: 'facts about the
+        first thanksgiving' -> 'when was the first thanksgiving'. Up to max_contextual per post, never to its own
+        pillar (already linked) and never between unrelated posts (cosine of their keyword words >= CONTEXTUAL_MIN)."""
+        for slug, p in self.posts.items():
+            if p["role"] not in ("cluster", "standalone"):
+                continue
+            mine = self.words.get(slug, {})
+            own_pillar = self.pillar_slug.get(p["pillar_id"])
+            scored = []
+            for other, q in self.posts.items():
+                if other in (slug, own_pillar) or q["market"] != p["market"] or (slug, other) in self.links:
+                    continue
+                if self.topic(q) != self.topic(p):
+                    continue
+                score = cosine(mine, self.words.get(other, {}))
+                if score >= CONTEXTUAL_MIN:
+                    scored.append((score, other))
+            for score, other in sorted(scored, reverse=True)[: self.max_contextual]:
+                shared = sorted(set(mine) & set(self.words.get(other, {})), key=lambda t: -mine[t])[:3]
+                self.add(slug, other, "contextual", "body, where this angle comes up", 2,
+                         f"related angle (shared words: {', '.join(shared)}; similarity {score:.2f})")
 
     def _fix_orphans_and_dead_ends(self) -> None:
         for slug, p in self.posts.items():
@@ -231,7 +292,7 @@ def run_plan(args) -> int:
     published = None
     if args.published:
         published = {slug_of(r.get("slug") or r.get("url") or next(iter(r.values()), "")) for r in read_csv(args.published)}
-    pl = Planner(rows, published, args.max_siblings, args.max_cross)
+    pl = Planner(rows, published, args.max_siblings, args.max_cross, args.max_contextual)
     pl.build()
     links = sorted(pl.links.values(), key=lambda l: (l["priority"], l["source_slug"], l["target_slug"]))
     os.makedirs(args.out, exist_ok=True)
@@ -359,6 +420,8 @@ def main(argv=None) -> int:
     p.add_argument("--published", help="CSV of published posts (slug or url column)")
     p.add_argument("--max-siblings", type=int, default=3)
     p.add_argument("--max-cross", type=int, default=1)
+    p.add_argument("--max-contextual", type=int, default=2,
+                   help="body links per post to the most related posts of the same topic (default 2)")
     p.add_argument("--out", default="outputs")
     p.set_defaults(fn=run_plan)
     a = sub.add_parser("audit", help="audit an existing link file")

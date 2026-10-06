@@ -47,7 +47,7 @@ Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop
 
 `source_slug, source_keyword, target_slug, link_type, anchor, anchor_alternatives, placement, priority, status, reason`
 
-- `link_type` ∈ to_pillar, from_pillar, sibling, cross_pillar, orphan_fix, related, backlink_old_post.
+- `link_type` ∈ to_pillar, from_pillar, contextual, sibling, cross_pillar, orphan_fix, related, backlink_old_post. The final plan's Internal Link column takes every type except `sibling`; Related Post takes the siblings.
 - `status` ∈ include_in_draft, include_in_draft_target_not_live_yet, existing_verify_present, update_old_post_after_target_live.
 
 ## seasonal-plan.csv
@@ -63,6 +63,10 @@ Sheet **Plan**, one row per planned post: `STT, Main Keyword, Secondary Keyword,
 - `Secondary Keyword`, `Internal Link`, `Related Post`: one item per line (`anchor || URL` for links). In the .xlsx the link cells are formulas that read `URL Blog` of the target row by STT; the .csv has plain text (UTF-8 with BOM).
 
 Sheet **Keyword Map**: `STT, Main Keyword, Keyword, Volume, KD, Role` with Role ∈ main, secondary, also covers, variant.
+
+Sheet **Schedule**: `Order, STT, Main Keyword, Category Kind, Priority, Volume, KD, Season, Event Date, Publish By, Status, Note`; Status ∈ late: publish ASAP, due soon, on time, no date rule, evergreen.
+
+Sheet **Research Next** (one-topic exports only): `Topic, Theme, Why It Matters, Keywords In File, Volume In File, Status, Seeds To Export`; Status ∈ covered, thin, missing, suggested (occasion ideas).
 
 Sheet **QA**: `Severity, Check, STT, Main Keyword, Detail, Suggestion`; Severity ∈ high, medium, low, info; Check ∈ overlap, misplaced, year_in_main, slug, overloaded, thin_links, weak_post, hard_keyword (`scripts/plan_qa.py`; heuristics for a person to review).
 

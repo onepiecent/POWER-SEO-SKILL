@@ -18,14 +18,17 @@ Columns (the team's template, in this order):
     of the target row (matched by STT), so pasting the real URL after publishing updates every link to that post.
     The .csv copy has plain text.
 
-A second sheet, Keyword Map, lists every keyword placed in the plan and the post (STT) it belongs to. A QA sheet lists
-what a person should review before handing the plan over (overlapping posts, misplaced keywords, orphans...).
+Other sheets: Keyword Map (every keyword placed in the plan and the post it belongs to), Schedule (writing order:
+deadlines from editorial-calendar's seasonal-plan.csv, then priority), QA (what a person should review before handing
+the plan over: overlapping posts, misplaced keywords, orphans...) and, for a one-topic export, Research Next (themes a
+POD blog needs that the file barely covers, with seed keywords to export).
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import datetime as dt
+import json
 import os
 import re
 import sys
@@ -43,8 +46,16 @@ COL = {name: i for i, name in enumerate(COLUMNS)}
 WIDTHS = [6, 34, 44, 11, 6, 16, 14, 30, 30, 34, 30, 60, 60, 46, 14]
 MAP_COLUMNS = ["STT", "Main Keyword", "Keyword", "Volume", "KD", "Role"]
 MAP_WIDTHS = [6, 40, 52, 11, 6, 14]
+SCHEDULE_COLUMNS = ["Order", "STT", "Main Keyword", "Category Kind", "Priority", "Volume", "KD", "Season", "Event Date",
+                    "Publish By", "Status", "Note"]
+SCHEDULE_WIDTHS = [7, 6, 40, 13, 9, 11, 6, 14, 12, 12, 20, 80]
+RESEARCH_COLUMNS = ["Topic", "Theme", "Why It Matters", "Keywords In File", "Volume In File", "Status", "Seeds To Export"]
+RESEARCH_WIDTHS = [16, 12, 52, 10, 12, 10, 60]
+HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_SEEDS = os.path.join(HERE, "..", "assets", "research-seeds.json")
+STATUS_RANK = {"late: publish ASAP": 0, "due soon": 1, "on time": 2, "no date rule": 3, "evergreen": 4}
 PLANNED = ("pillar", "cluster", "standalone")
-BODY_LINKS = ("to_pillar", "cross_pillar", "from_pillar", "orphan_fix", "related", "backlink_old_post")
+BODY_LINKS = ("to_pillar", "contextual", "cross_pillar", "from_pillar", "orphan_fix", "related", "backlink_old_post")
 STOP = {"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was", "were", "do", "does", "did", "and"}
 YEAR_RX = re.compile(r"^(19|20)\d\d$")
 YEAR_IN_TEXT_RX = re.compile(r"\b(19|20)\d\d\b")
@@ -385,6 +396,67 @@ def qa_rows(plan: Plan, rows: list[dict]) -> list[list]:
     return plan_qa.check(rows, signature, LIGHT, merged_counts, owned, inbound)
 
 
+def schedule_rows(rows: list[dict], seasonal: list[dict] | None, today: dt.date) -> list[list]:
+    """Writing order and deadlines: seasonal posts by their deadline (editorial-calendar's seasonal-plan.csv), then
+    priority bucket (A first) and priority score. A post whose usual lead time has passed is 'late: publish ASAP'."""
+    by_slug = {r["planned_slug"]: r for r in seasonal or []}
+    out = []
+    for r in rows:
+        post, s = r["post"], by_slug.get(r["post"]["planned_slug"])
+        season, event, publish_by, status, notes = "", "", "", "evergreen", []
+        if s:
+            season, event, publish_by = s.get("season", ""), s.get("event_date", ""), s.get("publish_new_by", "")
+            if not event or not publish_by:
+                status = "no date rule"
+                notes.append(s.get("note", ""))
+            else:
+                days = (dt.date.fromisoformat(publish_by) - today).days
+                weeks = (dt.date.fromisoformat(event) - dt.date.fromisoformat(publish_by)).days // 7
+                status = "late: publish ASAP" if days < 0 else "due soon" if days <= 14 else "on time"
+                if days < 0:
+                    notes.append(f"the usual {weeks}-week lead time for a new post ended on {publish_by}: publish as soon "
+                                 "as possible, expect most results next season")
+                else:
+                    notes.append(f"publish {weeks} weeks before {event} so it can be indexed and ranked in time")
+        if r["kd"] is not None and r["kd"] >= plan_qa.HARD_KD:
+            notes.append(f"KD {r['kd']}: a long-term target")
+        out.append([status, post.get("bucket", ""), -to_int(post.get("priority_score"), 0), r["n"],
+                    r["post"]["primary_keyword"], r["kind"], r["volume"], r["kd"], season, event, publish_by,
+                    "; ".join(n for n in notes if n)])
+    out.sort(key=lambda x: (STATUS_RANK.get(x[0], 9), x[1] or "Z", x[2], x[3]))
+    return [[i, n, kw, kind, bucket, "" if vol is None else vol, "" if kd is None else kd, season, event, by, status, note]
+            for i, (status, bucket, _, n, kw, kind, vol, kd, season, event, by, note) in enumerate(out, 1)]
+
+
+def research_rows(topic: list[dict], keywords: list[dict] | None, spec: dict) -> list[list]:
+    """For a one-topic export (theme pillars 'thanksgiving/dates'...), the themes a POD blog needs and how well the file
+    covers them; for a missing or thin theme, the seed keywords to export next. A theme is covered only when the file
+    holds one of its head keywords ('thanksgiving quotes') and a real long tail (>= 10 keywords, >= 1,000 searches):
+    a broad 'thanksgiving day' export has long-tail quotes but not 'thanksgiving quotes' itself."""
+    clusters: dict[str, set[str]] = defaultdict(set)
+    for r in topic:
+        key = r.get("pillar_key") or ""
+        if "/" in key and r.get("cluster_id"):
+            clusters[key.split("/", 1)[0]].add(r["cluster_id"])
+    out = []
+    for t, ids in clusters.items():
+        label = spec.get("labels", {}).get(t, t.replace("-", " "))
+        kws = [k for k in keywords or [] if k["cluster_id"] in ids]
+        present = {signature(v) for k in kws for v in [k["keyword"]] + [x for x in (k.get("variants") or "").split("|") if x]}
+        for theme in spec.get("themes", []):
+            rx = re.compile(theme["match"])
+            hits = [k for k in kws if rx.search(k["keyword"].lower())]
+            n, vol = len(hits), sum(to_int(k.get("volume"), 0) for k in hits)
+            head = any(signature(x.format(topic=label)) in present for x in theme["seeds"])
+            status = "missing" if n == 0 else "covered" if head and n >= 10 and vol >= 1000 else "thin"
+            seeds = "" if status == "covered" else "\n".join(x.format(topic=label) for x in theme["seeds"])
+            out.append([label, theme["theme"], theme["why"], n, vol, status, seeds])
+        extras = spec.get("occasion_extras", {}).get(t)
+        if extras:
+            out.append([label, "related", "occasion-specific ideas worth a check", "", "", "suggested", "\n".join(extras)])
+    return out
+
+
 def build_outputs(plan: Plan, plain_links: bool, rows: list[dict] | None = None):
     url_col, stt_col = col_letter(COL["URL Blog"]), col_letter(COL["STT"])
     xlsx_rows, csv_rows, map_rows = [], [], []
@@ -430,6 +502,10 @@ def main(argv=None) -> int:
     ap.add_argument("--plain-links", action="store_true", help="write the link columns as text instead of formulas")
     ap.add_argument("--year", type=int, help="plan year: keywords with an earlier year are not listed as secondary "
                                              "(default: this year)")
+    ap.add_argument("--seasonal-plan", help="seasonal-plan.csv from editorial-calendar: deadlines in the Schedule sheet")
+    ap.add_argument("--today", help="date YYYY-MM-DD used for deadlines (default: today)")
+    ap.add_argument("--research-seeds", default=DEFAULT_SEEDS,
+                    help="themes and seed keywords for the Research Next sheet (default: assets/research-seeds.json)")
     args = ap.parse_args(argv)
     if "{slug}" not in args.url_pattern:
         ap.error("--url-pattern must contain {slug}")
@@ -445,12 +521,19 @@ def main(argv=None) -> int:
     rows = list(plan.rows())
     xlsx_rows, csv_rows, map_rows = build_outputs(plan, args.plain_links, rows)
     qa = qa_rows(plan, rows)
+    today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
+    seasonal = read_csv(args.seasonal_plan) if args.seasonal_plan else None
+    schedule = schedule_rows(rows, seasonal, today)
+    with open(args.research_seeds, encoding="utf-8") as fh:
+        research = research_rows(topic, keywords, json.load(fh))
 
     out = args.out if args.out.lower().endswith(".xlsx") else args.out + ".xlsx"
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     write_xlsx(out, [("Plan", sheet_xml(COLUMNS, xlsx_rows, WIDTHS, [(col_letter(COL["Category Kind"]), ["Pillar", "Cluster"])])),
                      ("Keyword Map", sheet_xml(MAP_COLUMNS, map_rows, MAP_WIDTHS)),
-                     ("QA", sheet_xml(plan_qa.QA_COLUMNS, qa, plan_qa.QA_WIDTHS))])
+                     ("Schedule", sheet_xml(SCHEDULE_COLUMNS, schedule, SCHEDULE_WIDTHS)),
+                     ("QA", sheet_xml(plan_qa.QA_COLUMNS, qa, plan_qa.QA_WIDTHS))]
+               + ([("Research Next", sheet_xml(RESEARCH_COLUMNS, research, RESEARCH_WIDTHS))] if research else []))
     csv_path = out[:-5] + ".csv"
     with open(csv_path, "w", encoding="utf-8-sig", newline="") as fh:  # BOM: Excel opens the Vietnamese headers correctly
         w = csv.writer(fh)
@@ -459,6 +542,13 @@ def main(argv=None) -> int:
     pillars = sum(1 for r in csv_rows if r[COL["Category Kind"]] == "Pillar")
     print(f"{len(csv_rows)} posts ({pillars} pillars, {len(csv_rows) - pillars} clusters), {len(map_rows):,} keywords placed")
     print(plan_qa.summary(qa) + " (sheet QA)")
+    late = sum(1 for x in schedule if x[10] == "late: publish ASAP")
+    if seasonal:
+        print(f"Schedule: {late} posts are past the usual lead time for their season (publish ASAP), "
+              f"{sum(1 for x in schedule if x[10] == 'due soon')} due within 14 days")
+    gaps = [f"{x[1]} ({x[5]})" for x in research if x[5] in ("missing", "thin")]
+    if gaps:
+        print("Research Next: themes to export seed keywords for: " + ", ".join(gaps))
     if not args.keyword_map:
         print("No --keyword-map: Volume/KD are empty and secondary keywords come from topic-map.csv (15 per cluster).", file=sys.stderr)
     if not args.link_plan:
