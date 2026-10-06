@@ -415,11 +415,27 @@ def facet_cols(r: dict) -> dict:
             "theme": r.get("theme", "")}
 
 
+NAME_FILLER = {"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was", "were", "do", "does", "did", "and",
+               "what", "when", "where", "why", "how", "who", "which", "we", "you", "it", "its", "this", "that", "with",
+               "about", "at", "by", "celebrate", "celebrated", "celebrating", "celebration", "always", "ever", "really",
+               "day", "america", "american", "usa", "us", "happy"}
+
+
+def name_words(name: str, topic_words: set[str]) -> set[str]:
+    out = set()
+    for t in re.findall(r"[a-z0-9]+", name.lower().replace("'", "")):
+        if t in NAME_FILLER or t in topic_words:
+            continue
+        out.add(t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith(("ss", "us", "is")) else t)
+    return out
+
+
 def dedupe_across_pillars(plans: list[dict]) -> None:
     """Two theme pillars of one topic must not plan the same post: 'why do we celebrate thanksgiving on thursday'
-    (meaning) and 'is thanksgiving always on a thursday' (dates) share the core {thursday}. The smaller post joins the
-    larger one, with every cluster merged into it. Who/when-only cores ({kids}) are left alone: 'thanksgiving facts for
-    kids' and 'thanksgiving story for kids' are different posts."""
+    (meaning) and 'is thanksgiving always on a thursday' (dates) share the core {thursday} and the word 'thursday'. The
+    smaller post joins the larger one, with every cluster merged into it. The names must share most of their words too,
+    because a theme's own words are not in the core: 'true meaning of thanksgiving' and 'true story of thanksgiving'
+    both have the core {real} but are different posts. Who/when-only cores ({kids}) are left alone."""
     by_core: dict[tuple, list[tuple[dict, dict]]] = defaultdict(list)
     for plan in plans:
         if not plan["theme"]:
@@ -432,12 +448,15 @@ def dedupe_across_pillars(plans: list[dict]) -> None:
     def owned(plan: dict, r: dict) -> int:
         return volume(r) + sum(volume(m) for m in plan["members"]
                                if plan["merged"].get(m["cluster_id"]) is r)
-    for posts in by_core.values():
+    for (topic, _), posts in by_core.items():
         if len({id(p) for p, _ in posts}) < 2:
             continue
         win_plan, winner = max(posts, key=lambda pr: owned(*pr))
+        topic_words = set(topic[2].replace("-", " ").split())
+        win_words = name_words(winner["cluster_name"], topic_words)
         for plan, r in posts:
-            if r is winner:
+            words = name_words(r["cluster_name"], topic_words)
+            if r is winner or not (words | win_words) or len(words & win_words) / len(words | win_words) < 0.5:
                 continue
             plan["kept"] = [k for k in plan["kept"] if k is not r]
             plan["merged"] = {cid: (winner if t is r else t) for cid, t in plan["merged"].items()}

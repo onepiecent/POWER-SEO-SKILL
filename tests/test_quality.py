@@ -170,12 +170,19 @@ class SubTopicPosts(unittest.TestCase):
             row("M", "why do we celebrate thanksgiving on thursday", 470, "thursday", theme="meaning")
         k1, k2 = row("K1", "thanksgiving facts for kids", 1200, "kids", theme="facts"), \
             row("K2", "thanksgiving story for kids", 4000, "kids", theme="history")
-        plans = [{"theme": "dates", "topic": "t", "kept": [big], "merged": {}, "members": [big]},
-                 {"theme": "meaning", "topic": "t", "kept": [small, k1], "merged": {}, "members": [small, k1]},
-                 {"theme": "history", "topic": "t", "kept": [k2], "merged": {}, "members": [k2]}]
+        t = ("us", "occasion", "thanksgiving")
+        plans = [{"theme": "dates", "topic": t, "kept": [big], "merged": {}, "members": [big]},
+                 {"theme": "meaning", "topic": t, "kept": [small, k1], "merged": {}, "members": [small, k1]},
+                 {"theme": "history", "topic": t, "kept": [k2], "merged": {}, "members": [k2]}]
         tm.dedupe_across_pillars(plans)
         self.assertEqual(plans[1]["kept"], [k1])  # who-only cores ({kids}) are different posts
         self.assertIs(plans[1]["merged"]["M"], big)
+        story, meaning = row("S", "true story of thanksgiving", 9000, "real", theme="history"), \
+            row("R", "true meaning of thanksgiving", 6000, "real", theme="meaning")
+        plans = [{"theme": "history", "topic": ("us", "occasion", "thanksgiving"), "kept": [story], "merged": {}, "members": [story]},
+                 {"theme": "meaning", "topic": ("us", "occasion", "thanksgiving"), "kept": [meaning], "merged": {}, "members": [meaning]}]
+        tm.dedupe_across_pillars(plans)
+        self.assertEqual(plans[1]["kept"], [meaning])  # same core {real}, but 'meaning' is not 'story'
 
     def test_long_tail_without_a_theme_finds_its_pillar(self):
         names = row("N", "thanksgiving names", 670, "name", theme="")
