@@ -59,13 +59,19 @@ def read_csv(path: str) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- plan
+YEAR_RX = re.compile(r"\b(19|20)\d\d\b")
+QUESTION_START_RX = re.compile(r"^(what|when|where|why|how|who|which|is|are|do|does|did|can|should|will)\b")
+
+
 def anchor_candidates(row: dict) -> list[str]:
+    """Descriptive anchors from the target's own keywords. No year (the post is refreshed every year, a year in the
+    anchor goes stale) and 'our guide to ...' only for a noun phrase, not for a question."""
     main = clean_anchor(row["primary_keyword"])
     cands: list[str] = []
-    for k in [main] + [clean_anchor(k) for k in row["keywords"].split("|") if k][:4]:
-        if 2 <= len(k.split()) <= 8 and k.lower() not in {c.lower() for c in cands}:
+    for k in [main] + [clean_anchor(k) for k in row["keywords"].split("|") if k][:6]:
+        if 2 <= len(k.split()) <= 8 and not YEAR_RX.search(k) and k.lower() not in {c.lower() for c in cands}:
             cands.append(k)
-    if row["post_type"] == "pillar-hub":
+    if row["post_type"] == "pillar-hub" and not QUESTION_START_RX.match(main.lower()):
         desc = f"our guide to {main}"
         if len(desc.split()) <= 8 and desc not in cands:
             cands.append(desc)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cluster keywords from an SEO specialist's export file, on request. Standard library only.
 
-Input   : one or more CSV files (Semrush / Ahrefs / Google Keyword Planner / GSC / Google Sheets).
+Input   : one or more CSV or Excel (.xlsx) files (Semrush / Ahrefs / Google Keyword Planner / GSC / Google Sheets).
           Syntax  file.csv::uk  assigns a market to a file that has no country column.
 Output  : <out>/cluster-report.md     report on file reading, filters, results and warnings (READ FIRST)
           <out>/clusters.csv          one row per cluster = one blog post (input of topic-map)
@@ -15,9 +15,12 @@ Two levels: CLUSTER (keywords with the same search intent -> one post), then GRO
 along the dimension you ask for: occasion, recipient, interest, product, style, craft, category, intent...).
 
 How clusters are formed:
+  * Typos and split words are fixed first, learned from the file itself (thanksgivng, thanks giving -> thanksgiving).
   * Both keywords have serp_urls -> same cluster when >= --serp-overlap URLs overlap.
   * Otherwise                    -> weighted Jaccard on tokens >= --sim.
-  * Facet guard: occasion, recipient (including implied), interest and product must match before a lexical merge.
+  * Facet guard: occasion, recipient (including implied), interest, product and theme must match before a lexical merge.
+  * Then clusters that ask the same thing in other words are merged into one post: same guard and the same core
+    ('when is thanksgiving' = 'what day is thanksgiving 2026' = 'thanksgiving 2026 date'). --no-consolidate turns it off.
   * Each market (us/uk) is clustered separately because the SERPs differ.
   * Large files are sped up with an inverted index + prefix filter, so pairs are not compared one by one.
 """
@@ -34,22 +37,24 @@ from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kw_ingest import ALIASES, norm_market, parse_number, read_keywords  # noqa: E402
-from kw_text import (FACET_ORDER, IMPLIED_RECIPIENT, Categories, NoiseRules, Taxonomy,  # noqa: E402
+from kw_text import (FACET_ORDER, IMPLIED_RECIPIENT, Categories, NoiseRules, Respeller, Taxonomy,  # noqa: E402
                      normalize_text, weighted_jaccard)
 
 GRANULARITY = {"tight": (0.75, 5), "normal": (0.6, 4), "loose": (0.45, 3)}
 LIST_NEEDS = {"inspire", "choose"}  # these two usually share one listicle post
 GROUP_FIELDS = {"occasion": "occasion", "recipient": "recipient", "interest": "interest", "product": "product",
-                "style": "style", "craft": "craft", "category": "category", "season": "season", "market": "market",
-                "intent": "reader_need", "need": "reader_need", "reader_need": "reader_need", "blog_fit": "blog_fit"}
+                "style": "style", "craft": "craft", "theme": "theme", "category": "category", "season": "season",
+                "market": "market", "intent": "reader_need", "need": "reader_need", "reader_need": "reader_need",
+                "blog_fit": "blog_fit"}
 MERGE_LEX_FLOOR = 0.34
+YEAR_KW_RX = re.compile(r"\b(19|20)\d\d\b")
 MAX_POSTING = 3000
 
 
 class KW:
     __slots__ = ("keyword", "tokens", "tokset", "volume", "vol_est", "kd", "cpc", "market", "urls", "occasion",
-                 "recipient", "interest", "product", "style", "craft", "need", "fit", "terms", "category",
-                 "variants", "var_vol", "parent", "intent_src", "src", "ngroup")
+                 "recipient", "interest", "product", "style", "craft", "theme", "core", "need", "fit", "terms",
+                 "category", "variants", "var_vols", "var_vol", "parent", "intent_src", "src", "ngroup", "fixed")
 
     def facets(self) -> dict:
         return {f: getattr(self, f) for f in FACET_ORDER}
@@ -59,11 +64,20 @@ def eff_recipient(k: KW) -> str:
     return k.recipient or IMPLIED_RECIPIENT.get(k.occasion, "")
 
 
+def cores_compatible(a: frozenset, b: frozenset) -> bool:
+    """Shared words are not enough when the two keywords ask different things: 'day of thanksgiving' (core empty: the
+    date) must not join 'day after thanksgiving' (core {after}). Cores must be equal, or overlap by half."""
+    if a == b:
+        return True
+    return bool(a and b) and len(a & b) / len(a | b) >= 0.5
+
+
 def part_key(k: KW) -> tuple:
     """Two keywords may only be merged lexically when they share the market, the intent group and the SAME occasion,
-    recipient (including implied: mother's day -> mom), interest and product. 'gifts for mom' and
-    'mother's day gifts for mom' are two different posts; 'gifts for dog lovers' differs from 'gifts for dog moms'."""
-    return (k.market, k.ngroup, k.occasion, eff_recipient(k), k.interest, k.product)
+    recipient (including implied: mother's day -> mom), interest, product and theme. 'gifts for mom' and
+    'mother's day gifts for mom' are two different posts; 'gifts for dog lovers' differs from 'gifts for dog moms';
+    'thanksgiving trivia' (facts) differs from 'thanksgiving games' (activities)."""
+    return (k.market, k.ngroup, k.occasion, eff_recipient(k), k.interest, k.product, k.theme)
 
 
 # --------------------------------------------------------------------------- ingest + filters
@@ -101,15 +115,28 @@ def ingest(args, tax: Taxonomy, noise, cats):
     reasons: Counter = Counter()
     infos, warnings = [], []
     total_rows = 0
+    loaded = []
     for spec in args.files:
         path, sep, mk = spec.rpartition("::")
         if not sep:
             path, mk = spec, ""
-        file_market = norm_market(mk) if mk else default_market
         table = read_keywords(path, overrides)
-        info = table.info
-        infos.append(info)
-        src = os.path.basename(path)
+        loaded.append((os.path.basename(path), table.info, norm_market(mk) if mk else default_market, list(table)))
+        infos.append(table.info)
+    # Typos and split words are learned from every row of every file BEFORE any filter, so 'thanksgivng day' is kept by
+    # --only occasion=thanksgiving and merged with 'thanksgiving day'.
+    respeller = Respeller()
+    if not args.no_respell:  # learn from English rows only: Spanish words must not become correction targets
+        docs = []
+        for _, _, _, recs in loaded:
+            for rec in recs:
+                raw = rec.get("keyword", "")
+                norm0 = normalize_text(raw)
+                if noise is None or noise.check(raw.lower(), norm0, language_only=True) is None:
+                    docs.append(norm0.split())
+        respeller = Respeller.learn(docs)
+    respelled = 0
+    for src, info, file_market, records in loaded:
         vsrc = info["volume_source"]
         if vsrc == "none":
             warnings.append(f"{src}: no volume/impressions column; every volume is 0, so the priority order is meaningless.")
@@ -117,20 +144,24 @@ def ingest(args, tax: Taxonomy, noise, cats):
             warnings.append(f"{src}: using column '{info['columns'][vsrc]}' as volume; this is NOT search volume. "
                             "Impressions only reflect queries the site was already shown for, not total market demand; "
                             "add volume from Semrush/Ahrefs/Keyword Planner.")
-        for rec in table:
+        for rec in records:
             total_rows += 1
             raw_kw = re.sub(r"\s+", " ", rec.get("keyword", "")).strip()
-            norm = normalize_text(raw_kw)
-            if not norm:
+            norm0 = normalize_text(raw_kw)
+            if not norm0:
                 reasons["empty_keyword"] += 1
                 continue
+            norm = respeller.apply(norm0)
+            respelled += norm != norm0
             low = raw_kw.lower()
             vol_raw = rec.get(vsrc) if vsrc != "none" else None
             vol, est = parse_number(vol_raw, integer=True, range_mode=args.range_mode)
             volume = int(vol) if vol is not None else 0
             reason = None
-            if noise is not None:
-                reason = noise.check(low, norm)
+            if noise is not None:  # language is judged on the original words ('celebracion' is a Spanish marker)
+                reason = noise.check(low, norm0)
+                if reason is None and norm != norm0:
+                    reason = noise.check(low, norm, skip_language=True)
             if reason is None and vsrc != "none":
                 if args.min_volume and volume < args.min_volume:
                     reason = "filter:min_volume"
@@ -155,18 +186,20 @@ def ingest(args, tax: Taxonomy, noise, cats):
             category, _ = cats.assign(norm) if cats else ("", [])
             k = KW()
             k.keyword, k.volume, k.vol_est, k.kd = raw_kw, volume, est, kd
+            k.fixed = norm != norm0
             k.cpc = parse_number(rec.get("cpc"))[0]
             mk_row = norm_market(rec.get("market")) if rec.get("market") else ""
             k.market = mk_row or file_market or "all"
             k.tokens = tuple(tax.canon_tokens(norm))
             k.tokset = frozenset(k.tokens)
+            k.core = tax.core_tokens(norm, facets["theme"])
             k.urls = frozenset(_norm_url(u) for u in re.split(r"[|\s]+", rec.get("serp", "")) if u.strip())
             for f in FACET_ORDER:
                 setattr(k, f, facets[f])
             k.need, k.fit = need, tax.blog_fit[need]
             k.ngroup = "list" if need in LIST_NEEDS else need
             k.terms = tax.market_terms(norm)
-            k.category, k.variants, k.var_vol = category, [], 0
+            k.category, k.variants, k.var_vols, k.var_vol = category, [], [], 0
             k.parent = normalize_text(rec.get("parent", "")) if rec.get("parent") else ""
             k.intent_src, k.src = rec.get("intent", ""), src
             if only and not _passes_only(k, only):
@@ -180,7 +213,8 @@ def ingest(args, tax: Taxonomy, noise, cats):
             kept.append(k)
         if info["rows"] == 0:
             warnings.append(f"{src}: no data rows could be read.")
-    return kept, excluded, reasons, infos, warnings, total_rows
+    respell = {"typos": respeller.typos, "joins": respeller.joins, "keywords_changed": respelled}
+    return kept, excluded, reasons, infos, warnings, total_rows, respell
 
 
 def _norm_url(u: str) -> str:
@@ -196,8 +230,19 @@ def _passes_only(k: KW, only: dict) -> bool:
     return True
 
 
+def prefer(a: KW, b: KW) -> bool:
+    """True when a should name the merged keyword instead of b: the version without a year when it has at least 20%
+    of the dated one's volume ('when is thanksgiving' rather than 'when is thanksgiving 2026'), else the bigger one."""
+    ya, yb = bool(YEAR_KW_RX.search(a.keyword)), bool(YEAR_KW_RX.search(b.keyword))
+    if ya != yb:
+        plain, dated = (b, a) if ya else (a, b)
+        return (plain if plain.volume >= 0.2 * dated.volume else dated) is a
+    return a.volume > b.volume
+
+
 def dedupe(rows: list[KW]) -> tuple[list[KW], int]:
-    """Merge same-meaning variants (mom/mum, word order, added year) within a market; keep the highest-volume keyword."""
+    """Merge same-meaning variants (mom/mum, word order, added year, fixed typo) within a market; the kept keyword
+    lists the others (and their volumes) as variants."""
     best: dict[tuple, KW] = {}
     merged = 0
     for r in rows:
@@ -207,8 +252,9 @@ def dedupe(rows: list[KW]) -> tuple[list[KW], int]:
             best[key] = r
             continue
         merged += 1
-        keep, drop = (r, cur) if r.volume > cur.volume else (cur, r)
+        keep, drop = (r, cur) if prefer(r, cur) else (cur, r)
         keep.variants = cur.variants + r.variants + [drop.keyword]
+        keep.var_vols = cur.var_vols + r.var_vols + [drop.volume]
         keep.var_vol = cur.var_vol + r.var_vol + drop.volume
         keep.urls = keep.urls | drop.urls
         best[key] = keep
@@ -278,7 +324,7 @@ class Clusterer:
             if seed.urls and k.urls:
                 continue  # when both have SERP data, trust only the SERP
             s = weighted_jaccard(k.tokset, seed.tokset, self.weak)
-            if s >= self.sim_t:
+            if s >= self.sim_t and cores_compatible(k.core, seed.core):
                 score = (1, s, -i)
                 if best_score is None or score > best_score:
                     best, best_score = i, score
@@ -330,13 +376,65 @@ class Clusterer:
         return out[:limit]
 
 
+def consolidate(clusters: list[list[KW]]) -> tuple[list[list[KW]], list[int]]:
+    """Merge clusters that ask the same thing in other words into one post: same guard (part_key) and the same core of
+    the seed keyword. 'when is thanksgiving', 'what day is thanksgiving 2026' and 'thanksgiving 2026 date' share
+    theme=dates and an empty core, so they become one post; 'is thanksgiving always on a thursday' (core {thursday})
+    stays a post of its own. Clusters built from SERP overlap are left as they are (the SERP is stronger evidence).
+    Returns the new clusters and, for every old cluster index, the index of the cluster it ended up in."""
+    groups: dict[tuple, int] = {}
+    out: list[list[KW]] = []
+    owner: list[int] = []
+    for i, cl in enumerate(clusters):  # clusters were created in volume order: the first one of a key keeps its seed
+        seed = cl[0]
+        # within one theme and one core, a list query and a question are the same topic ('thanksgiving traditions' =
+        # 'what are some thanksgiving traditions'); how-to, copy ideas and shopping stay apart
+        group = "list" if seed.ngroup in ("list", "info") else seed.ngroup
+        key = ("serp", i) if seed.urls else (seed.market, group, *part_key(seed)[2:], seed.core)
+        j = groups.get(key)
+        if j is None:
+            groups[key] = j = len(out)
+            out.append(list(cl))
+        else:
+            out[j].extend(cl)
+        owner.append(j)
+    for cl in out:
+        cl[1:] = sorted(cl[1:], key=lambda r: (-(r.volume + r.var_vol), r.keyword))
+    return out, owner
+
+
+
+QUESTION_LAST_RX = re.compile(r"\b(why|how|what|when|where|who|which)\s*$")
+
+
+def evergreen_seed(cl: list[KW]) -> list[KW]:
+    """Choose the cluster's name (main keyword and slug) among its strong keywords:
+    * without a year when one has at least 20% of the top volume: a seasonal post keeps one URL and is refreshed
+      every year, so 'when is thanksgiving' beats 'thanksgiving 2025';
+    * then, among keywords with at least half of the best volume, prefer a natural phrase over an inverted one
+      ('why do we eat turkey on thanksgiving' over 'turkey thanksgiving why')."""
+    top = cl[0]
+    pool = [r for r in cl if not YEAR_KW_RX.search(r.keyword)]
+    if not pool or max(r.volume for r in pool) < 0.2 * top.volume:
+        pool = cl
+    best_vol = max(r.volume for r in pool)
+    strong = [r for r in pool if r.volume >= 0.5 * best_vol]
+    seed = max(strong, key=lambda r: (not QUESTION_LAST_RX.search(r.keyword.lower()), not any(ch.isdigit() for ch in r.keyword),
+                                      r.volume, -len(r.keyword)))
+    if seed is not top:
+        cl.remove(seed)
+        cl.insert(0, seed)
+    return cl
+
+
 # --------------------------------------------------------------------------- outputs
 KW_FIELDS = ["cluster_id", "market", "keyword", "volume", "volume_estimated", "kd", "cpc", "is_seed", "reader_need",
-             "blog_fit", "occasion", "recipient", "interest", "product", "style", "craft", "category", "market_terms",
-             "parent_topic", "intent_source", "variants", "source_file"]
+             "blog_fit", "occasion", "recipient", "interest", "product", "style", "craft", "theme", "category",
+             "market_terms", "parent_topic", "intent_source", "variants", "source_file", "spelling_fixed",
+             "variant_volumes"]
 CL_FIELDS = ["cluster_id", "market", "cluster_name", "keyword_count", "seed_volume", "cluster_volume", "seed_kd",
              "kd_min", "reader_need", "blog_fit", "occasion", "recipient", "interest", "product", "style", "craft",
-             "category", "season", "market_terms", "parent_topic", "keywords"]
+             "theme", "core", "category", "season", "market_terms", "parent_topic", "keywords"]
 
 
 def build_rows(clusters: list[list[KW]], tax: Taxonomy):
@@ -354,14 +452,16 @@ def build_rows(clusters: list[list[KW]], tax: Taxonomy):
                             "cpc": "" if r.cpc is None else r.cpc, "is_seed": int(r is seed), "reader_need": r.need,
                             "blog_fit": r.fit, "occasion": r.occasion, "recipient": r.recipient,
                             "interest": r.interest, "product": r.product, "style": r.style, "craft": r.craft,
-                            "category": r.category, "market_terms": r.terms, "parent_topic": r.parent,
-                            "intent_source": r.intent_src, "variants": "|".join(r.variants), "source_file": r.src})
+                            "theme": r.theme, "category": r.category, "market_terms": r.terms, "parent_topic": r.parent,
+                            "intent_source": r.intent_src, "variants": "|".join(r.variants), "source_file": r.src,
+                            "spelling_fixed": int(r.fixed), "variant_volumes": "|".join(str(v) for v in r.var_vols)})
         cl_rows.append({"cluster_id": cid, "market": seed.market, "cluster_name": seed.keyword,
                         "keyword_count": len(cl) + sum(len(r.variants) for r in cl), "seed_volume": seed.volume,
                         "cluster_volume": sum(r.volume + r.var_vol for r in cl), "seed_kd": "" if seed.kd is None else int(seed.kd),
                         "kd_min": "" if not kds else int(min(kds)), "reader_need": seed.need, "blog_fit": seed.fit,
                         "occasion": seed.occasion, "recipient": seed.recipient, "interest": seed.interest,
-                        "product": seed.product, "style": seed.style, "craft": seed.craft, "category": seed.category,
+                        "product": seed.product, "style": seed.style, "craft": seed.craft, "theme": seed.theme,
+                        "core": " ".join(sorted(seed.core)), "category": seed.category,
                         "season": seed.occasion if seed.occasion in tax.seasonal else "",
                         "market_terms": "mixed" if len(terms) > 1 else (next(iter(terms)) if terms else "none"),
                         "parent_topic": seed.parent, "keywords": "|".join(r.keyword for r in cl[:15])})
@@ -432,11 +532,15 @@ def suggest_terms(unclassified: list[KW], tax: Taxonomy, top: int = 200) -> list
 
 
 def write_report(path, args, infos, warnings, total_rows, reasons, n_kept, merged, clusters, cl_rows, unclassified,
-                 unclassified_vol, total_vol, groups, dims, elapsed, sim_t, serp_t, argv):
+                 unclassified_vol, total_vol, groups, dims, elapsed, sim_t, serp_t, argv, respell, n_lexical):
     singles = sum(1 for c in clusters if len(c) == 1)
     fit_vol: Counter = Counter()
+    theme_vol: Counter = Counter()
+    theme_n: Counter = Counter()
     for r in cl_rows:
         fit_vol[r["blog_fit"]] += r["cluster_volume"]
+        theme_vol[r["theme"] or "(none)"] += r["cluster_volume"]
+        theme_n[r["theme"] or "(none)"] += 1
     L = ["# Keyword clustering report", ""]
     L += ["## 1. Input", "", "| File | Encoding | Delimiter | Header row | Rows | Recognised columns | Volume source |", "|---|---|---|---:|---:|---|---|"]
     for i in infos:
@@ -444,21 +548,32 @@ def write_report(path, args, infos, warnings, total_rows, reasons, n_kept, merge
         L.append(f"| {os.path.basename(i['path'])} | {i['encoding']} | {i['delimiter']} | {i['header_row']} | {i['rows']:,} | {cols} | {i['volume_source']} |")
     if warnings:
         L += ["", "**Warnings:**"] + [f"- {w}" for w in warnings]
+    typos, joins = respell["typos"], respell["joins"]
+    if typos or joins:
+        examples = [f"{a}→{b}" for a, b in list(typos.items())[:12]] + [f"'{a} {b}'→{j}" for (a, b), j in list(joins.items())[:3]]
+        L += ["", f"**Spelling fixed from the file itself:** {respell['keywords_changed']:,} keywords changed by "
+              f"{len(typos):,} typo corrections and {len(joins):,} joined words (e.g. {', '.join(examples)}). "
+              "Turn off with `--no-respell` if a correction is wrong."]
     L += ["", "## 2. Filters", "", f"- Read {total_rows:,} rows; kept {n_kept:,} keywords; excluded {sum(reasons.values()):,}."]
     if reasons:
         L += ["", "| Exclusion reason | Keywords |", "|---|---:|"] + [f"| {r} | {n:,} |" for r, n in reasons.most_common()]
         L += ["", "Every excluded keyword is listed in `excluded.csv`. Check it for false exclusions and adjust `assets/noise-rules.json` if a rule is too aggressive."]
     L += ["", "## 3. Clustering result", "",
-          f"- {n_kept:,} keywords -> {merged:,} same-meaning variants merged -> **{len(clusters):,} clusters** "
+          f"- {n_kept:,} keywords -> {merged:,} same-meaning variants merged -> {n_lexical:,} lexical clusters -> "
+          f"**{len(clusters):,} clusters (posts)** after merging clusters that ask the same thing in other words "
           f"(thresholds: Jaccard {sim_t}, SERP overlap {serp_t} URLs).",
           f"- Single-keyword clusters: {singles:,} ({100 * singles // max(1, len(clusters))}%). "
           "A very high share means the keywords are very diverse or the threshold is too strict: try `--granularity loose`.",
           "- Volume by blog fit: " + ", ".join(f"{k}={fit_vol[k]:,}" for k in ("high", "medium", "low")),
           "- Note: `cluster_volume` is the SUM of the keyword volumes in the cluster, so it is an upper bound (many keywords share the same searchers)."]
-    L += ["", "### Top 20 clusters by volume", "", "| Cluster | Keywords | Volume | Need | Fit | Occasion | Recipient | Interest |", "|---|---:|---:|---|---|---|---|---|"]
+    L += ["", "### Top 20 clusters by volume", "", "| Cluster | Keywords | Volume | Need | Fit | Occasion | Recipient | Interest | Theme |", "|---|---:|---:|---|---|---|---|---|---|"]
     for r in cl_rows[:20]:
         L.append(f"| {r['cluster_name']} | {r['keyword_count']} | {r['cluster_volume']:,} | {r['reader_need']} | {r['blog_fit']} | "
-                 f"{r['occasion'] or '-'} | {r['recipient'] or '-'} | {r['interest'] or '-'} |")
+                 f"{r['occasion'] or '-'} | {r['recipient'] or '-'} | {r['interest'] or '-'} | {r['theme'] or '-'} |")
+    if len(theme_n) > 1:
+        L += ["", "### Themes (sub-topics; topic-map uses them to split a pillar that is too big)", "",
+              "| Theme | Clusters | Volume |", "|---|---:|---:|"]
+        L += [f"| {t} | {theme_n[t]:,} | {v:,} |" for t, v in theme_vol.most_common()]
     if groups:
         L += ["", f"## 4. Groups by {', '.join(dims)}", "", "| Group | Clusters | Keywords | Volume | % |", "|---|---:|---:|---:|---:|"]
         for g in groups[:15]:
@@ -479,7 +594,7 @@ def write_report(path, args, infos, warnings, total_rows, reasons, n_kept, merge
 # --------------------------------------------------------------------------- CLI
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("files", nargs="*", help="CSV export files; append ::us or ::uk to assign a market to a file")
+    ap.add_argument("files", nargs="*", help="CSV or .xlsx export files; append ::us or ::uk to assign a market to a file")
     ap.add_argument("--request", help="JSON file with the options below (key = option name, use _ instead of -)")
     ap.add_argument("--out", default="outputs")
     ap.add_argument("--market", help="default market for files without a country column (us|uk)")
@@ -505,6 +620,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--extend-taxonomy", action="append", help="JSON that extends the taxonomy (new niches or occasions)")
     ap.add_argument("--noise-rules", help="replace the default noise rules file")
     ap.add_argument("--no-noise-filter", action="store_true", help="do not filter noise (retailers, local intent, other languages...)")
+    ap.add_argument("--no-respell", action="store_true", help="do not fix typos and split words learned from the file")
+    ap.add_argument("--no-consolidate", action="store_true",
+                    help="keep lexical clusters as they are (do not merge clusters that ask the same thing in other words)")
     return ap
 
 
@@ -544,14 +662,25 @@ def main(argv=None) -> int:
     if "category" in dims and not cats:
         raise SystemExit("--group-by category needs --categories file.json")
 
-    kept, excluded, reasons, infos, warnings, total_rows = ingest(args, tax, noise, cats)
+    kept, excluded, reasons, infos, warnings, total_rows, respell = ingest(args, tax, noise, cats)
     if not kept:
         raise SystemExit("No keywords left after filtering. Reasons: " + ", ".join(f"{r}={n}" for r, n in reasons.most_common(5)))
     n_kept = len(kept)
     rows, merged = dedupe(kept)
     cl = Clusterer(rows, tax.weak, sim_t, serp_t, args.trust_parent_topic)
-    clusters = cl.run()
-    pairs = cl.merge_candidates()
+    lexical = cl.run()
+    raw_pairs = cl.merge_candidates()
+    if args.no_consolidate:
+        clusters, owner = lexical, list(range(len(lexical)))
+    else:
+        clusters, owner = consolidate(lexical)
+    clusters = [evergreen_seed(c) for c in clusters]
+    pairs, seen = [], set()
+    for s, a, b, why in raw_pairs:  # map pairs onto the consolidated clusters; drop pairs that are now one post
+        a, b = owner[a], owner[b]
+        if a != b and (min(a, b), max(a, b)) not in seen:
+            seen.add((min(a, b), max(a, b)))
+            pairs.append((s, a, b, why))
     kw_rows, cl_rows, ids, _ = build_rows(clusters, tax)
 
     os.makedirs(args.out, exist_ok=True)
@@ -561,9 +690,11 @@ def main(argv=None) -> int:
               sorted(excluded, key=lambda e: -e[1]))
     write_csv(os.path.join(args.out, "merge-candidates.csv"),
               ["cluster_a", "name_a", "cluster_b", "name_b", "score", "reason"],
-              [[ids[id(cl.clusters[a])], cl.clusters[a][0].keyword, ids[id(cl.clusters[b])], cl.clusters[b][0].keyword,
+              [[ids[id(clusters[a])], clusters[a][0].keyword, ids[id(clusters[b])], clusters[b][0].keyword,
                 f"{s:.2f}", why] for s, a, b, why in pairs])
-    unclassified = [k for k in rows if not any(getattr(k, f) for f in FACET_ORDER) and not k.category]
+    # 'unclassified' = no niche recognised (the theme says what kind of post, not who it is for), so taxonomy
+    # suggestions still surface unknown niches such as 'pickleball' in 'gifts for pickleball players'
+    unclassified = [k for k in rows if not any(getattr(k, f) for f in FACET_ORDER if f != "theme") and not k.category]
     write_csv(os.path.join(args.out, "unclassified.csv"), ["keyword", "volume", "reader_need"],
               [[k.keyword, k.volume, k.need] for k in sorted(unclassified, key=lambda k: -k.volume)])
     write_csv(os.path.join(args.out, "taxonomy-suggestions.csv"), ["term", "keywords", "volume", "examples"],
@@ -575,11 +706,14 @@ def main(argv=None) -> int:
     total_vol = sum(k.volume + k.var_vol for k in rows)
     write_report(os.path.join(args.out, "cluster-report.md"), args, infos, warnings, total_rows, reasons, n_kept, merged,
                  clusters, cl_rows, unclassified, sum(k.volume for k in unclassified), total_vol, groups, dims,
-                 time.time() - started, sim_t, serp_t, argv)
+                 time.time() - started, sim_t, serp_t, argv, respell, len(lexical))
 
     fit = Counter(k.fit for k in rows)
-    print(f"Read {total_rows:,} rows -> kept {n_kept:,} -> {len(rows):,} after merging variants -> {len(clusters):,} clusters "
-          f"({time.time() - started:.1f}s)")
+    print(f"Read {total_rows:,} rows -> kept {n_kept:,} -> {len(rows):,} after merging variants -> {len(lexical):,} lexical "
+          f"clusters -> {len(clusters):,} clusters ({time.time() - started:.1f}s)")
+    if respell["typos"] or respell["joins"]:
+        print(f"Spelling fixed from the file: {respell['keywords_changed']:,} keywords "
+              f"({len(respell['typos']):,} typos, {len(respell['joins']):,} joined words)")
     print(f"Excluded {sum(reasons.values()):,} keywords: " + (", ".join(f"{r}={n:,}" for r, n in reasons.most_common(4)) or "none"))
     print("Blog fit: " + ", ".join(f"{k}={fit[k]:,}" for k in ("high", "medium", "low")) +
           f" | unclassified: {len(unclassified):,} | pairs to review: {len(pairs)}")

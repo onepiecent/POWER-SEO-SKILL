@@ -77,6 +77,8 @@ def english_variant(market: str) -> str:
 def build_brief(row: dict, topic_rows: list[dict], links: list[dict], seasonal: dict) -> str:
     slug, pt, need = row["planned_slug"], row["post_type"], row["reader_need"]
     kws = [k for k in row["keywords"].split("|") if k and k != row["primary_keyword"]]
+    merged = [r["primary_keyword"] for r in sorted(topic_rows, key=lambda r: -int(float(r.get("cluster_volume") or 0)))
+              if r.get("role") == "merged" and r.get("merged_into") == slug] if slug else []
     pillar = next((r for r in topic_rows if r["pillar_id"] == row["pillar_id"] and r["role"] == "pillar"), None) \
         if row["pillar_id"] else None
     sections = format_sections(pt)
@@ -113,6 +115,8 @@ def build_brief(row: dict, topic_rows: list[dict], links: list[dict], seasonal: 
           "## Keywords",
           f"- Primary: {row['primary_keyword']}",
           f"- Secondary / variants (from the cluster): {', '.join(kws[:12]) if kws else '[none]'}",
+          *([f"- Also covers (clusters merged into this post; answer them as sections or FAQs): {', '.join(merged[:12])}"]
+            if merged else []),
           "- Use natural wording and synonyms; do not repeat the exact phrase mechanically.", "",
           "## Search intent and winning format",
           f"- Expected format: {pt}. Confirm on the real SERP (google.com for US, google.co.uk for UK), not from a Vietnam IP.",

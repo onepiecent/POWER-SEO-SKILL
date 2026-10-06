@@ -7,6 +7,12 @@ Main rules:
   * Each cluster belongs to exactly ONE pillar, chosen by facet priority (--priority, default
     occasion,interest,recipient,craft). The remaining facets are used for cross links (internal-link-planner).
   * A pillar needs >= --min-clusters clusters; with fewer, the clusters stand alone (standalone) and only get a suggested parent pillar.
+  * A pillar with more than --max-pillar-size clusters (typical of a one-topic export such as 'thanksgiving') is split
+    into one pillar per theme (dates, history, meaning, activities, messages...). A theme that is too small joins its
+    fallback theme (facts -> meaning, food -> activities...); clusters left without a pillar go to the backlog.
+  * A pillar with more than --max-posts clusters keeps its hub and the strongest posts (each >= --min-post-volume,
+    >= 2% of the pillar's volume outside the hub and >= 10% of its strongest sibling); every other cluster is merged
+    into the closest kept post (role 'merged', column merged_into), so its keywords become secondary keywords of it.
   * Clusters with blog_fit = low (pure shopping intent) are marked skip and left out of the blog map.
   * Priority score = cluster_volume x blog_fit weight x (0.5 + achievability), achievability = 1 - KD/100
     (missing KD -> 0.5). This is a ranking heuristic, not a Google metric.
@@ -82,6 +88,7 @@ def pillar_title(ptype: str, key: str, market: str, tax: dict | None) -> str:
 
 def slugify(text: str) -> str:
     s = text.lower().replace("’", "").replace("'", "")
+    s = re.sub(r"\b(19|20)\d\d\b", " ", s)  # evergreen URLs: one URL per season, refreshed every year
     s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
     if len(s) > 60:
         s = s[:60].rsplit("-", 1)[0]
@@ -140,7 +147,9 @@ def post_type(row: dict, is_pillar: bool) -> str:
     if is_pillar:
         return "pillar-hub"
     need = row["reader_need"]
-    has_gift_facet = any(row.get(f) for f in ("occasion", "recipient", "interest"))
+    # 'thanksgiving trivia' or 'thanksgiving traditions' are idea lists, not gift guides: only the gifts theme (or no
+    # theme) of an occasion / recipient / interest is a gift guide
+    has_gift_facet = any(row.get(f) for f in ("occasion", "recipient", "interest")) and row.get("theme", "") in ("", "gifts")
     if need == "inspire":
         return "gift-guide" if has_gift_facet else "ideas-list"
     if need == "choose":
@@ -176,10 +185,144 @@ def has_need(needs: set[str], spec: str) -> bool:
     return False
 
 
-def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | None):
+def volume(r: dict) -> int:
+    return to_int(r["cluster_volume"])
+
+
+def core_of(r: dict) -> frozenset:
+    return frozenset((r.get("core") or "").split())
+
+
+def theme_specs(tax: dict | None) -> tuple[dict, list[str]]:
+    if not tax or "theme" not in tax["facets"]:
+        return {}, []
+    values = tax["facets"]["theme"]["values"]
+    return values, list(values)
+
+
+def theme_pillar_title(ptype: str, key: str, theme: str, market: str, tax: dict | None) -> str:
+    specs, _ = theme_specs(tax)
+    label = specs.get(theme, {}).get("label", prettify(theme))
+    if theme == "gifts" and ptype in ("interest", "recipient"):
+        return pillar_title(ptype, key, market, tax)  # already 'Gift Ideas for Dog Lovers'
+    if ptype == "occasion" and tax and key in tax["facets"]["occasion"]["values"]:
+        spec = tax["facets"]["occasion"]["values"][key]
+        occ = spec.get("label_uk") if market == "uk" and spec.get("label_uk") else spec["label"]
+        return f"{occ} {label}"
+    return f"{pillar_title(ptype, key, market, tax)}: {label}"
+
+
+def split_by_theme(groups: dict, tax: dict | None, max_size: int, min_clusters: int, max_sub: int):
+    """Split every pillar group with more than max_size clusters into one group per theme.
+
+    A theme becomes a pillar when it has >= min_clusters clusters and enough volume (>= 500 and >= 2% of the group's
+    volume outside its biggest theme, so one huge theme such as 'dates' does not hide the others). A theme that is too
+    small joins its fallback theme when that one is a pillar. What is left (no theme, or a small theme without a
+    fallback) is miscellaneous: a cluster that reaches the theme volume threshold on its own becomes a standalone
+    post, the rest goes to the backlog (not planned as posts)."""
+    specs, order = theme_specs(tax)
+    out: dict[tuple, tuple[list[dict], str]] = {}
+    backlog: list[dict] = []
+    standalone: list[tuple[dict, tuple]] = []
+    split_notes: dict[tuple, dict] = {}
+    for gkey, members in groups.items():
+        market, ptype, key = gkey
+        by: dict[str, list[dict]] = defaultdict(list)
+        for m in members:
+            by[m.get("theme", "") or ""].append(m)
+        if len(members) <= max_size or set(by) <= {""}:
+            out[gkey] = (members, "")
+            continue
+        vol = {t: sum(volume(r) for r in rows) for t, rows in by.items()}
+        themed = sorted((t for t in by if t), key=lambda t: (-vol[t], order.index(t) if t in order else 99))
+        rest_vol = sum(vol.values()) - (vol[themed[0]] if themed else 0)
+        min_vol = max(500, 0.02 * rest_vol)
+        qualified = [t for i, t in enumerate(themed)
+                     if len(by[t]) >= min_clusters and (i == 0 or vol[t] >= min_vol)][:max_sub]
+        final: dict[str, list[dict]] = defaultdict(list)
+        residual: list[dict] = []
+        for t, rows in by.items():
+            target = t if t in qualified else specs.get(t, {}).get("fallback") if t else None
+            if target in qualified:
+                final[target].extend(rows)
+            else:
+                residual.extend(rows)
+        for t in qualified:
+            out[(market, ptype, f"{key}/{t}")] = (final[t], t)
+        for r in residual:
+            if volume(r) >= min_vol:
+                standalone.append((r, gkey))
+            else:
+                backlog.append(r)
+        split_notes[gkey] = {"themes": set(qualified)}
+    return out, backlog, standalone, split_notes
+
+
+def choose_theme_hub(rows: list[dict]) -> dict:
+    """Hub of a theme pillar: the broadest cluster (empty core: 'history of thanksgiving', 'when is thanksgiving'),
+    else the strongest one."""
+    broad = [r for r in rows if not core_of(r)]
+    return max(broad or rows, key=lambda r: (volume(r), priority_score(r)))
+
+
+def nearest_post(r: dict, targets: list[dict], hub: dict) -> dict:
+    """Kept post that the cluster r is merged into: a post whose core is contained in r's core (r is a narrower version
+    of it, the most specific such post wins), else the post sharing most of r's core, else the pillar hub."""
+    cr, best, best_score = core_of(r), hub, (0.5, 0.0, 0)
+    for t in targets:
+        ct = core_of(t)
+        if ct and ct <= cr:
+            score = (2.0 + len(ct), 0.0, volume(t))
+        elif ct & cr:
+            score = (1.0, len(ct & cr) / len(ct | cr), volume(t))
+        else:
+            continue
+        if score > best_score:
+            best, best_score = t, score
+    return best
+
+
+def select_posts(hub: dict | None, members: list[dict], max_posts: int, min_post_volume: int):
+    """Return (kept clusters, {cluster_id: target row}) for one pillar. Nothing is merged unless the pillar has more
+    than max_posts clusters."""
+    others = [m for m in members if hub is None or m["cluster_id"] != hub["cluster_id"]]
+    if len(members) <= max_posts:
+        return others, {}
+    # a post must be worth writing next to its siblings: >= 2% of the pillar's volume outside the hub and >= 10% of the
+    # strongest sibling ('thanksgiving defined', 320, is not a post next to 'true meaning of thanksgiving', 3,580)
+    rel = max(0.02 * sum(volume(r) for r in others), 0.1 * max((volume(r) for r in others), default=0))
+    kept = []
+    for r in sorted(others, key=lambda r: (-priority_score(r), -volume(r))):
+        if len(kept) >= max_posts - (1 if hub else 0):
+            break
+        if volume(r) >= max(min_post_volume, rel):
+            kept.append(r)
+    if not kept and hub is None and others:  # a virtual pillar still needs one real post to merge the rest into
+        kept = [max(others, key=lambda r: (priority_score(r), volume(r)))]
+    kept_ids = {r["cluster_id"] for r in kept}
+    targets = kept + ([hub] if hub else [])
+    anchor = hub or (max(kept, key=volume) if kept else None)
+    merged = {r["cluster_id"]: nearest_post(r, targets, anchor) for r in others if r["cluster_id"] not in kept_ids}
+    return kept, merged
+
+
+def facet_cols(r: dict) -> dict:
+    return {"season": r.get("season", ""), "occasion": r.get("occasion", ""), "recipient": r.get("recipient", ""),
+            "interest": r.get("interest", ""), "product": r.get("product", ""), "craft": r.get("craft", ""),
+            "theme": r.get("theme", "")}
+
+
+def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | None, max_pillar_size: int = 30,
+          max_posts: int = 12, min_post_volume: int = 100, max_sub_pillars: int = 10, target_posts: int = 0):
     live = [r for r in rows if r["blog_fit"] != "low"]
     skipped = [r for r in rows if r["blog_fit"] == "low"]
     real, leftovers = assign_groups(live, priority, min_clusters)
+    groups, backlog, extra_standalone, split_notes = split_by_theme(real, tax, max_pillar_size, min_clusters, max_sub_pillars)
+    # In a pillar that is too big, a cluster must also be among the target_posts largest clusters of the file to stay
+    # a post of its own; this keeps the plan around target_posts posts however long the export is.
+    vols = sorted((volume(r) for r in live), reverse=True)
+    if target_posts and len(vols) > target_posts:
+        min_post_volume = max(min_post_volume, vols[target_posts - 1])
 
     out, gaps, used_slugs = [], {}, set()
 
@@ -191,53 +334,78 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         used_slugs.add(slug)
         return slug
 
-    ordered = sorted(real.items(), key=lambda kv: -sum(to_int(r["cluster_volume"]) for r in kv[1]))
+    def post_row(base: dict, r: dict, role: str, slug: str, note: str = "", merged_into: str = "") -> dict:
+        return {**base, "role": role, "cluster_id": r["cluster_id"], "primary_keyword": r["cluster_name"],
+                "planned_slug": slug, "post_type": post_type(r, False) if role != "merged" else "merged",
+                "reader_need": r["reader_need"], "cluster_volume": volume(r),
+                "priority_score": priority_score(r) if role != "merged" else 0, **facet_cols(r),
+                "keywords": r["keywords"], "parent_hint": "", "note": note, "merged_into": merged_into}
+
+    ordered = sorted(groups.items(), key=lambda kv: -sum(volume(r) for r in kv[1][0]))
     pillar_ids = {}
-    for n, ((market, ptype, key), members) in enumerate(ordered, 1):
+    for n, ((market, ptype, key), (members, theme)) in enumerate(ordered, 1):
         pid = f"P{n:02d}"
         pillar_ids[(market, ptype, key)] = pid
-        title = pillar_title(ptype, key, market, tax)
-        chosen = choose_pillar_cluster(members, ptype)
-        total = sum(to_int(r["cluster_volume"]) for r in members)
+        if theme:
+            title = theme_pillar_title(ptype, key.split("/", 1)[0], theme, market, tax)
+        else:
+            title = pillar_title(ptype, key, market, tax)
+        chosen = choose_theme_hub(members) if theme else choose_pillar_cluster(members, ptype)
+        total = sum(volume(r) for r in members)
         seasons = {r.get("season", "") for r in members if r.get("season")}
         base = {"pillar_id": pid, "pillar_type": ptype, "pillar_key": key, "pillar_name": title, "market": market}
         if chosen:
             out.append({**base, "role": "pillar", "cluster_id": chosen["cluster_id"],
                         "primary_keyword": chosen["cluster_name"], "planned_slug": unique_slug(chosen["cluster_name"]),
                         "post_type": "pillar-hub", "reader_need": chosen["reader_need"],
-                        "cluster_volume": to_int(chosen["cluster_volume"]), "priority_score": priority_score(chosen),
-                        "season": chosen.get("season", ""), "occasion": chosen.get("occasion", ""),
-                        "recipient": chosen.get("recipient", ""), "interest": chosen.get("interest", ""),
-                        "product": chosen.get("product", ""), "craft": chosen.get("craft", ""),
-                        "keywords": chosen["keywords"], "parent_hint": "",
-                        "note": f"pillar chosen from cluster {chosen['cluster_id']}; write it as a hub that covers the clusters below"})
+                        "cluster_volume": volume(chosen), "priority_score": priority_score(chosen),
+                        **facet_cols(chosen), "keywords": chosen["keywords"], "parent_hint": "",
+                        "note": f"pillar chosen from cluster {chosen['cluster_id']}; write it as a hub that covers the clusters below",
+                        "merged_into": ""})
         else:
             out.append({**base, "role": "pillar", "cluster_id": "", "primary_keyword": title.lower(),
                         "planned_slug": unique_slug(title), "post_type": "pillar-hub", "reader_need": "inspire",
                         "cluster_volume": 0, "priority_score": round(total * 0.3),
                         "season": next(iter(seasons)) if len(seasons) == 1 else "", "occasion": "", "recipient": "",
-                        "interest": "", "product": "", "craft": "", "keywords": "", "parent_hint": "",
-                        "note": "VIRTUAL pillar: no cluster is broad enough; research a head keyword, then write the hub"})
-        for r in sorted(members, key=lambda r: -to_int(r["cluster_volume"])):
-            if chosen and r["cluster_id"] == chosen["cluster_id"]:
-                continue
-            out.append({**base, "role": "cluster", "cluster_id": r["cluster_id"], "primary_keyword": r["cluster_name"],
-                        "planned_slug": unique_slug(r["cluster_name"]), "post_type": post_type(r, False),
-                        "reader_need": r["reader_need"], "cluster_volume": to_int(r["cluster_volume"]),
-                        "priority_score": priority_score(r), "season": r.get("season", ""),
-                        "occasion": r.get("occasion", ""), "recipient": r.get("recipient", ""),
-                        "interest": r.get("interest", ""), "product": r.get("product", ""), "craft": r.get("craft", ""),
-                        "keywords": r["keywords"], "parent_hint": "", "note": ""})
+                        "interest": "", "product": "", "craft": "", "theme": "", "keywords": "", "parent_hint": "",
+                        "note": "VIRTUAL pillar: no cluster is broad enough; research a head keyword, then write the hub",
+                        "merged_into": ""})
+        kept, merged = select_posts(chosen, members, max_posts, min_post_volume)
+        slug_of = {chosen["cluster_id"]: out[-1]["planned_slug"]} if chosen else {}
+        for r in sorted(kept, key=lambda r: -volume(r)):
+            row = post_row(base, r, "cluster", unique_slug(r["cluster_name"]))
+            slug_of[r["cluster_id"]] = row["planned_slug"]
+            out.append(row)
+        for r in sorted((m for m in members if m["cluster_id"] in merged), key=lambda r: -volume(r)):
+            target = merged[r["cluster_id"]]
+            out.append(post_row(base, r, "merged", "", merged_into=slug_of.get(target["cluster_id"], ""),
+                                note=f"merged into '{target['cluster_name']}': cover it as a section or as secondary keywords"))
         needs = {r["reader_need"] for r in members}
-        if ptype in EXPECTED_BY_TYPE:
+        if ptype in EXPECTED_BY_TYPE and not theme:
             missing = [s for s in EXPECTED_BY_TYPE[ptype] if not has_need(needs, s)]
             if missing:
                 gaps[pid] = [(s, GAP_HINT[s.split("|")[0]]) for s in missing]
 
+    # a split topic (one-occasion export): name the themes the blog would need but the file barely covers
+    first_pid = {}
+    for (market, ptype, key), pid in pillar_ids.items():
+        first_pid.setdefault((market, ptype, key.split("/", 1)[0]), pid)
+    for gkey, info in split_notes.items():
+        missing = [t for t in THEME_GAPS if t not in info["themes"]]
+        pid = first_pid.get(gkey)
+        if missing and pid:
+            label = pillar_title(gkey[1], gkey[2], gkey[0], tax).replace(" Gift Ideas", "")
+            gaps.setdefault(pid, []).extend((f"theme:{t}", THEME_GAPS[t].format(topic=label.lower())) for t in missing)
+
     keys_by_market = {(m, k): pid for (m, t, k), pid in pillar_ids.items()}
-    for r in sorted(leftovers, key=lambda r: -to_int(r["cluster_volume"])):
-        hint = ""
+    for (market, ptype, key), pid in first_pid.items():  # a split topic points to its biggest theme pillar
+        keys_by_market.setdefault((market, key), pid)
+    hint_of_extra = {id(r): first_pid.get(gkey, "") for r, gkey in extra_standalone}
+    for r in sorted(leftovers + [r for r, _ in extra_standalone], key=lambda r: -volume(r)):
+        hint = hint_of_extra.get(id(r), "")
         for facet in ("interest", "recipient", "occasion", "craft", "product"):
+            if hint:
+                break
             pid = keys_by_market.get((r["market"], r.get(facet, "")))
             if r.get(facet) and pid:
                 hint = pid
@@ -245,23 +413,31 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         out.append({"pillar_id": "", "pillar_type": "", "pillar_key": "", "pillar_name": "", "market": r["market"],
                     "role": "standalone", "cluster_id": r["cluster_id"], "primary_keyword": r["cluster_name"],
                     "planned_slug": unique_slug(r["cluster_name"]), "post_type": post_type(r, False),
-                    "reader_need": r["reader_need"], "cluster_volume": to_int(r["cluster_volume"]),
-                    "priority_score": priority_score(r), "season": r.get("season", ""),
-                    "occasion": r.get("occasion", ""), "recipient": r.get("recipient", ""),
-                    "interest": r.get("interest", ""), "product": r.get("product", ""), "craft": r.get("craft", ""),
+                    "reader_need": r["reader_need"], "cluster_volume": volume(r),
+                    "priority_score": priority_score(r), **facet_cols(r),
                     "keywords": r["keywords"], "parent_hint": hint,
-                    "note": "fewer than %d clusters in this group: write as a standalone post, link to the suggested pillar if there is one" % min_clusters})
-    for r in sorted(skipped, key=lambda r: -to_int(r["cluster_volume"])):
+                    "note": ("no theme pillar fits this post: write it on its own and link it to the suggested pillar"
+                             if id(r) in hint_of_extra else
+                             "fewer than %d clusters in this group: write as a standalone post, link to the suggested pillar if there is one" % min_clusters),
+                    "merged_into": ""})
+    for r in sorted(backlog, key=lambda r: -volume(r)):
+        out.append({"pillar_id": "", "pillar_type": "", "pillar_key": "", "pillar_name": "", "market": r["market"],
+                    "role": "backlog", "cluster_id": r["cluster_id"], "primary_keyword": r["cluster_name"],
+                    "planned_slug": "", "post_type": "backlog", "reader_need": r["reader_need"],
+                    "cluster_volume": volume(r), "priority_score": 0, **facet_cols(r),
+                    "keywords": r["keywords"], "parent_hint": "",
+                    "note": "long tail without a theme pillar: not planned; reuse as wording ideas or research it again",
+                    "merged_into": ""})
+    for r in sorted(skipped, key=lambda r: -volume(r)):
         out.append({"pillar_id": "", "pillar_type": "", "pillar_key": "", "pillar_name": "", "market": r["market"],
                     "role": "skip", "cluster_id": r["cluster_id"], "primary_keyword": r["cluster_name"],
                     "planned_slug": "", "post_type": "skip", "reader_need": r["reader_need"],
-                    "cluster_volume": to_int(r["cluster_volume"]), "priority_score": 0, "season": r.get("season", ""),
-                    "occasion": r.get("occasion", ""), "recipient": r.get("recipient", ""),
-                    "interest": r.get("interest", ""), "product": r.get("product", ""), "craft": r.get("craft", ""),
+                    "cluster_volume": volume(r), "priority_score": 0, **facet_cols(r),
                     "keywords": r["keywords"], "parent_hint": "",
-                    "note": "pure shopping intent: leave to the shop pages / content team, do not write a blog post"})
+                    "note": "pure shopping intent: leave to the shop pages / content team, do not write a blog post",
+                    "merged_into": ""})
 
-    ranked = sorted((o for o in out if o["role"] != "skip"), key=lambda o: -o["priority_score"])
+    ranked = sorted((o for o in out if o["role"] in PLANNED_ROLES), key=lambda o: -o["priority_score"])
     for i, o in enumerate(ranked):
         pct = (i + 1) / max(1, len(ranked))
         o["bucket"] = "A" if pct <= 0.2 else "B" if pct <= 0.5 else "C"
@@ -270,9 +446,19 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
     return out, gaps
 
 
+PLANNED_ROLES = ("pillar", "cluster", "standalone")
+THEME_GAPS = {
+    "gifts": "gift ideas, shirts and custom products for {topic} (the closest fit for Printerval): export seed keywords "
+             "such as '{topic} gifts', '{topic} shirts', 'personalized {topic} gifts'",
+    "messages": "sayings, quotes and card messages for {topic} (they lead naturally to custom products): export "
+                "'{topic} quotes', '{topic} sayings', '{topic} captions'",
+    "decor": "decor and table ideas for {topic}: export '{topic} decor', '{topic} decorations'",
+}
+
 FIELDS = ["pillar_id", "pillar_type", "pillar_key", "pillar_name", "role", "cluster_id", "primary_keyword",
           "planned_slug", "post_type", "reader_need", "cluster_volume", "priority_score", "bucket", "season",
-          "market", "occasion", "recipient", "interest", "product", "craft", "keywords", "parent_hint", "note"]
+          "market", "occasion", "recipient", "interest", "product", "craft", "keywords", "parent_hint", "note",
+          "theme", "merged_into"]
 
 
 def write_md(path: str, out: list[dict], gaps: dict) -> None:
@@ -285,13 +471,22 @@ def write_md(path: str, out: list[dict], gaps: dict) -> None:
         head = next(r for r in rows if r["role"] == "pillar")
         total = sum(r["cluster_volume"] for r in rows)
         season = f" · season: {head['season']}" if head["season"] else ""
+        merged = [r for r in rows if r["role"] == "merged"]
+        merged_vol: dict[str, int] = defaultdict(int)
+        merged_n: dict[str, int] = defaultdict(int)
+        for r in merged:
+            merged_vol[r["merged_into"]] += r["cluster_volume"]
+            merged_n[r["merged_into"]] += 1
         lines += [f"## {pid} · {head['pillar_name']}  ({head['pillar_type']} · {head['market']}{season})",
                   f"Total cluster volume: {total:,}. Pillar: `{head['planned_slug']}` – {head['primary_keyword']}"
                   + (" (virtual pillar)" if not head["cluster_id"] else ""), "",
-                  "| Role | Slug | Post type | Reader need | Volume | Priority |", "|---|---|---|---|---:|---|"]
+                  "| Role | Slug | Post type | Reader need | Volume | + merged clusters | Priority |", "|---|---|---|---|---:|---|---|"]
         for r in rows:
+            if r["role"] == "merged":
+                continue
+            extra = f"{merged_n[r['planned_slug']]} ({merged_vol[r['planned_slug']]:,})" if merged_n.get(r["planned_slug"]) else "-"
             lines.append(f"| {r['role']} | `{r['planned_slug']}` | {r['post_type']} | {r['reader_need']} | "
-                         f"{r['cluster_volume']:,} | {r['bucket']} |")
+                         f"{r['cluster_volume']:,} | {extra} | {r['bucket']} |")
         if pid in gaps:
             lines += ["", "**Content gaps:** " + "; ".join(f"missing *{s.replace('|', ' or ')}* ({h})" for s, h in gaps[pid])]
         lines.append("")
@@ -301,6 +496,12 @@ def write_md(path: str, out: list[dict], gaps: dict) -> None:
                   "| Slug | Post type | Volume | Priority | Suggested pillar |", "|---|---|---:|---|---|"]
         lines += [f"| `{o['planned_slug']}` | {o['post_type']} | {o['cluster_volume']:,} | {o['bucket']} | {o['parent_hint'] or '-'} |"
                   for o in stand]
+        lines.append("")
+    backlog = [o for o in out if o["role"] == "backlog"]
+    if backlog:
+        lines += [f"## Backlog ({len(backlog)} long-tail clusters, volume {sum(o['cluster_volume'] for o in backlog):,})", "",
+                  "No theme pillar fits them; they are not planned as posts. The largest:", ""]
+        lines += [f"- {o['primary_keyword']} ({o['cluster_volume']:,})" for o in backlog[:15]]
         lines.append("")
     skip = [o for o in out if o["role"] == "skip"]
     if skip:
@@ -317,6 +518,16 @@ def main(argv=None) -> int:
     ap.add_argument("--priority", default="occasion,interest,recipient,craft",
                     help="order of the facets that decide the pillar (default: occasion,interest,recipient,craft)")
     ap.add_argument("--min-clusters", type=int, default=3)
+    ap.add_argument("--max-pillar-size", type=int, default=30,
+                    help="split a pillar with more clusters than this into one pillar per theme (default 30)")
+    ap.add_argument("--max-posts", type=int, default=12,
+                    help="posts kept per pillar (hub included) when a pillar has more clusters; the rest are merged into the closest post")
+    ap.add_argument("--min-post-volume", type=int, default=100,
+                    help="in a pillar that is too big, a cluster below this volume is merged instead of being a post (default 100)")
+    ap.add_argument("--max-sub-pillars", type=int, default=10, help="maximum theme pillars per split topic (default 10)")
+    ap.add_argument("--target-posts", type=int, default=0,
+                    help="cap the plan size: in a pillar that is too big, a cluster must also be among the N largest "
+                         "clusters of the file to stay a post (default 0 = off)")
     ap.add_argument("--taxonomy", default=None)
     args = ap.parse_args(argv)
 
@@ -328,7 +539,8 @@ def main(argv=None) -> int:
     if tax is None:
         print("taxonomy.json not found: pillar names will be derived from the keys.", file=sys.stderr)
     priority = [p.strip() for p in args.priority.split(",") if p.strip()]
-    out, gaps = build(rows, priority, args.min_clusters, tax)
+    out, gaps = build(rows, priority, args.min_clusters, tax, args.max_pillar_size, args.max_posts,
+                      args.min_post_volume, args.max_sub_pillars, args.target_posts)
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "topic-map.csv"), "w", encoding="utf-8", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS)

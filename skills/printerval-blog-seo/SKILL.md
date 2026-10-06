@@ -1,6 +1,6 @@
 ---
 name: printerval-blog-seo
-description: Orchestrates the Printerval blog SEO skill suite (print-on-demand marketplace, US and UK markets, English content). Use when the user talks about the Printerval blog, keyword export CSV files from SEO specialists (Semrush, Ahrefs, Keyword Planner, Search Console), keyword clustering, pillar and cluster planning, topic maps, internal links between blog posts, content briefs, gift guides, seasonal content calendars (Mother's Day, Christmas), product slots, claim and IP checks, or whether a draft is helpful to readers. Not for technical audits, URLs or sitemaps, or links to product pages.
+description: Orchestrates the Printerval blog SEO skill suite (print-on-demand marketplace, US and UK markets, English content). Use when the user talks about the Printerval blog, keyword export files from SEO specialists (CSV or xlsx from Semrush, Ahrefs, Keyword Planner, Search Console), keyword clustering, pillar and cluster planning, topic maps, the final keyword plan sheet for the content team, internal links between blog posts, content briefs, gift guides, seasonal content calendars (Mother's Day, Christmas), product slots, claim and IP checks, or whether a draft is helpful to readers. Not for technical audits, URLs or sitemaps, or links to product pages.
 ---
 
 # Printerval Blog SEO: orchestration
@@ -24,6 +24,7 @@ This suite helps the Printerval SEO and content team turn a very broad keyword f
 | A link plan between blog posts, or an audit of existing links | `internal-link-planner` | `link-plan.csv`, `link-audit.csv` |
 | A US/UK seasonal publishing calendar | `editorial-calendar` | `occasion-calendar.csv`, `seasonal-plan.csv` |
 | Briefs for writers or AI | `content-brief` | `briefs/<slug>.md` |
+| The final keyword plan for the content team (one row per post, the team's 15 columns) | this skill: `scripts/export_plan.py` | `final-plan.xlsx` + `.csv` |
 | Review or rewrite a post so it is helpful, honest and natural | `helpful-content-editor` | report + edits |
 | Where to mention products, and the hand-off to the content team | `product-slot` | `slots.csv` |
 | Check price, delivery, review, environmental and IP claims | `claims-compliance-check` | risk-flag report |
@@ -38,6 +39,7 @@ CSV file (SEO specialist)
        └─ topic-map ──► topic-map.csv (pillars, clusters, priority, gaps)
             ├─ editorial-calendar ──► seasonal-plan.csv (publish dates for seasonal posts)
             ├─ internal-link-planner ──► link-plan.csv
+            │    └─ export_plan.py ──► final-plan.xlsx (the content team's sheet: posts, keywords, links, planned URLs)
             └─ content-brief ──► briefs/*.md   (fill the [TO FILL] parts after reviewing the real SERP)
                  └─ write the post ──► helpful-content-editor + claims-compliance-check
                       └─ product-slot (hand-off) ──► content team adds links ──► publish (--final)
@@ -52,7 +54,22 @@ python3 skills/editorial-calendar/scripts/occasion_calendar.py --topic-map outpu
 python3 skills/internal-link-planner/scripts/link_plan.py plan outputs/topic-map.csv --out outputs
 python3 skills/content-brief/scripts/make_brief.py --topic-map outputs/topic-map.csv \
     --link-plan outputs/link-plan.csv --seasonal-plan outputs/seasonal-plan.csv --bucket A --out outputs/briefs
+python3 skills/printerval-blog-seo/scripts/export_plan.py --topic-map outputs/topic-map.csv \
+    --keyword-map outputs/keyword-map.csv --link-plan outputs/link-plan.csv --out outputs/final-plan.xlsx
 ```
+
+A one-topic Semrush export (for example `thanksgiving-day_all-keywords_us.xlsx`, broad match, so it also holds other holidays) goes in as it is: `cluster_keywords.py file.xlsx --market us --only occasion=thanksgiving`.
+
+## The final plan (`export_plan.py`)
+
+One row per post, in the content team's column order: `STT | Main Keyword | Secondary Keyword | Volume | KD | Category | Category Kind | Thuộc Pillar | Title SEO | Meta Description SEO | Outline | Internal Link (Anchor || URL) | Related Post (Anchor || URL) | URL Blog | Trạng thái`.
+
+- **Left empty for the content team:** Category, Title SEO, Meta Description SEO, Outline, Trạng thái.
+- **Category Kind** is Pillar or Cluster; a Cluster names its pillar in **Thuộc Pillar** (the pillar's main keyword). Rows are grouped: each pillar, then its clusters by priority.
+- **Volume / KD** are the main keyword's (`--volume post` gives the post's total, an upper bound). **Secondary Keyword**: up to 10 other keywords of the post, including the clusters merged into it, largest first, without word-order/year duplicates, fixed typos or very long queries.
+- **Internal Link**: the body links from `link-plan.csv` (cluster -> its pillar, pillar -> every cluster, cross-pillar). **Related Post**: up to 3 siblings (for a pillar: the other pillars). Each line is `anchor || URL`.
+- **URL Blog** is the planned URL, `https://printerval.com/{slug}` by default (`--url-pattern`). Printerval's CMS adds `-n<id>.html` when the post is published: paste the real URL into URL Blog and, in the `.xlsx`, every link cell that points to that post updates (they are formulas that look the URL up by STT). The `.csv` copy has plain text; `--plain-links` writes text in the `.xlsx` too.
+- A second sheet, **Keyword Map**, lists every keyword placed in the plan (main, secondary, also covers, variant) with its post's STT.
 
 CSV schemas: `references/data-contracts.md`. Sources and verification levels: `references/sources.md`. Assumptions about Printerval and open questions: `references/printerval-context.md`.
 

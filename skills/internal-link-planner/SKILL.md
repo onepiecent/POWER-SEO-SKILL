@@ -18,6 +18,8 @@ python3 skills/internal-link-planner/scripts/link_plan.py plan outputs/topic-map
 python3 skills/internal-link-planner/scripts/link_plan.py audit links.csv --topic-map outputs/topic-map.csv --out outputs
 ```
 
+Only planned posts get links (`role` pillar, cluster, standalone); clusters merged into another post (`role=merged`) and the backlog have no page of their own. Anchors come from the target's own keywords and never contain a year (a seasonal post keeps one URL for years). The final plan for the content team (`printerval-blog-seo/scripts/export_plan.py`) turns this file into the "Internal Link (Anchor || URL)" and "Related Post (Anchor || URL)" columns.
+
 `published.csv`: one `slug` (or `url`) column listing the published posts. With this file, `status` shows which links **go into a new draft**, which ones **require updating an old post once the target is live**, and which already exist.
 
 ## Rules (with evidence levels)

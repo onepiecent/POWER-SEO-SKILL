@@ -11,6 +11,7 @@ This is an **organisational framework [Convention]**. The common rule: a pillar 
 | **inspiration** (wording ideas) | slogans, quotes, captions | "Slogans, Quotes & Caption Ideas" | by tone, relationship or occasion |
 | **product** (by product, the last tier) | shirts, mugs | "{Product}: Ideas & Guides" | gift guide + how-to |
 | **category** (user-defined) | Pets, Work & school | the name of your group | depends on the brief |
+| **theme pillar** (a big topic split by theme) | thanksgiving/history, thanksgiving/dates | "{Occasion} {Theme}": "Thanksgiving History & Origins", "Thanksgiving Dates & Calendar" | one hub (the broadest question of the theme) + its strongest posts; small clusters merged into the closest post |
 
 ## Why there are "craft" and "inspiration" pillars
 

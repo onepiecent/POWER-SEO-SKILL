@@ -235,7 +235,7 @@ class IndexMatchesBruteForce(unittest.TestCase):
                 if ck.part_key(seed) != ck.part_key(r):
                     continue
                 s = weighted_jaccard(r.tokset, seed.tokset, tax.weak)
-                if s >= sim_t and (best_score is None or (s, -i) > best_score):
+                if s >= sim_t and ck.cores_compatible(r.core, seed.core) and (best_score is None or (s, -i) > best_score):
                     best, best_score = i, (s, -i)
             if best is None:
                 clusters.append([r])

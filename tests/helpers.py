@@ -8,7 +8,7 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 EXAMPLES = os.path.join(ROOT, "examples")
 for sub in ("keyword-clustering", "topic-map", "internal-link-planner", "editorial-calendar", "content-brief",
-            "helpful-content-editor", "product-slot", "claims-compliance-check"):
+            "helpful-content-editor", "product-slot", "claims-compliance-check", "printerval-blog-seo"):
     path = os.path.join(ROOT, "skills", sub, "scripts")
     if path not in sys.path:
         sys.path.insert(0, path)

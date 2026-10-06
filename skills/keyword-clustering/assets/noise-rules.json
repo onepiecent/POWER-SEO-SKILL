@@ -1,5 +1,5 @@
 {
- "_comment": "Noise-exclusion rules for broad keyword exports. An excluded keyword is written to excluded.csv together with the reason. Each rule: name, on (norm = normalised text, raw = original lowercased text), patterns (regex). Edit or add rules per brief; run with --no-noise-filter to turn them off.",
+ "_comment": "Noise-exclusion rules for broad keyword exports. An excluded keyword is written to excluded.csv together with the reason. Each rule: name, on (norm = normalised text, raw = original lowercased text), patterns (regex). Language rules look at the text before typo fixes. Edit or add rules per brief; run with --no-noise-filter to turn them off.",
  "max_words": 12,
  "max_chars": 120,
  "non_ascii_ratio": 0.3,
@@ -48,7 +48,49 @@
    "on": "norm",
    "patterns": [
     "\\b(regalos?|cumplea\\w+|navidad|camisetas?|tazas?|personalizad[oa]s?|d[ií]a de|mam\\u00e1|pap\\u00e1)\\b",
-    "\\bpara (la|el|mi|ti|ella|ellos|hombres?|mujeres?)\\b"
+    "\\bpara (la|el|mi|ti|ella|ellos|hombres?|mujeres?)\\b",
+    "\\b(cuando|cu\\u00e1ndo|qu\\u00e9|que|c\\u00f3mo|d\\u00f3nde|porque|cuantos|cu\\u00e1ntos|cuantas|cu\\u00e1ntas|cu\\u00e1l|significado|significa|fecha|historia|origen|frases|feliz|celebra|celebran|celebramos|cae|espa\\u00f1ol|espanol|estados unidos|este a\\u00f1o|a\\u00f1o|mes|acci\\u00f3n|accion|gracias|pavo|cena|recetas?|im\\u00e1genes|imagenes|mensajes|deseos|oraci\\u00f3n|oracion|faltan|d\\u00edas|dias)\\b",
+    "\\b(es|en|el|la|se|de|del|los|las|q)\\s+(thanksgiving|halloween|christmas|easter|navidad|pascua|d[i\\u00ed]a|fecha|gracias)\\b",
+    "\\b(thanksgiving|halloween|christmas|easter)\\s+(en|es|de|del|d[i\\u00ed]a)\\b"
+   ]
+  },
+  {
+   "name": "other_language",
+   "on": "norm",
+   "patterns": [
+    "\\b(quando|qual|a\\u00e7\\u00e3o|acao|gra\\u00e7as|gracas|quand|f\\u00eate|jour de|action de gr\\u00e2ce|erntedank\\w*|wann ist)\\b",
+    "\\b(in|en) (spanish|espanol|español|french|german|italian|portuguese|chinese|japanese|korean)\\b|\\btranslat\\w*\\b|\\bhow (do you|to) say\\b"
+   ]
+  },
+  {
+   "name": "politics_news",
+   "on": "norm",
+   "patterns": [
+    "\\b(trump|trumps|biden|bidens|kamala|obama|obamas|pelosi|maga|democrats?|republicans?|gop|election)\\b"
+   ]
+  },
+  {
+   "name": "homework_answers",
+   "on": "norm",
+   "patterns": [
+    "\\b(answer keys?|achieve ?3000|achieve the core|commonlit|readworks|quizlet|brainly|newsela|edpuzzle|chegg|course hero|gradesaver|sparknotes|worksheet answers|answers worksheet)\\b",
+    "\\bfill in the blank\\b|^blank\\b"
+   ]
+  },
+  {
+   "name": "opening_hours",
+   "on": "norm",
+   "patterns": [
+    "\\b(is|are|whats|what is)\\b.*\\b(open|closed)\\b",
+    "\\b(stores?|shops?|banks?|museums?|restaurants?|post offices?|mail|usps|ups|fedex|stock market|markets?|pharmac(y|ies)|grocer(y|ies)|malls?|librar(y|ies)|dmv|courts?|schools?)\\b.*\\b(open|closed|hours)\\b",
+    "\\b(open|closed|hours)\\b.*\\b(stores?|shops?|banks?|museums?|restaurants?|post offices?|malls?|grocer(y|ies))\\b"
+   ]
+  },
+  {
+   "name": "wiki_navigational",
+   "on": "norm",
+   "patterns": [
+    "\\b(wiki|wikipedia)\\b"
    ]
   },
   {

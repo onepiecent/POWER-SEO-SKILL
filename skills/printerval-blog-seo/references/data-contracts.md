@@ -1,10 +1,10 @@
 # Data contracts: schema of the CSV files in the pipeline
 
-Every file is UTF-8 CSV with a header row. Column names are fixed so that the skills connect to one another.
+Every file is UTF-8 CSV with a header row (the final plan is also written as .xlsx). Column names are fixed so that the skills connect to one another; new columns are only ever added at the end.
 
 ## SEO specialist input (read directly by keyword-clustering)
 
-Only a keyword column is required. The other columns are detected by name automatically (case-insensitive, ignoring a trailing parenthesised part):
+CSV or Excel (`.xlsx`, the first sheet with a keyword column). Only a keyword column is required. The other columns are detected by name automatically (case-insensitive, ignoring a trailing parenthesised part):
 
 | Standard column | Column names recognised |
 |---|---|
@@ -23,9 +23,12 @@ Unusual columns: `--map keyword="Top queries" volume=Impressions`.
 
 ## keyword-clustering output
 
-**`clusters.csv`** (one row per cluster = one blog post): `cluster_id, market, cluster_name, keyword_count, seed_volume, cluster_volume, seed_kd, kd_min, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, category, season, market_terms, parent_topic, keywords`
+**`clusters.csv`** (one row per cluster = one blog post): `cluster_id, market, cluster_name, keyword_count, seed_volume, cluster_volume, seed_kd, kd_min, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, theme, core, category, season, market_terms, parent_topic, keywords`
 
-**`keyword-map.csv`** (one row per keyword): `cluster_id, market, keyword, volume, volume_estimated, kd, cpc, is_seed, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, category, market_terms, parent_topic, intent_source, variants, source_file`
+**`keyword-map.csv`** (one row per keyword): `cluster_id, market, keyword, volume, volume_estimated, kd, cpc, is_seed, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, theme, category, market_terms, parent_topic, intent_source, variants, source_file, spelling_fixed, variant_volumes`
+
+- `theme` ∈ the theme keys of `assets/taxonomy.json` (dates, history, meaning, facts, printables, humor, crafts, decor, images, world, gifts, events, activities, food, messages) or empty. `core` = the words that say what the keyword asks once the topic, the theme's generic words and stop words are removed (space-separated; empty = the broad question of the theme).
+- `variants` / `variant_volumes`: same-meaning variants merged into this keyword (word order, a year, a fixed typo) and their volumes, `|`-separated. `spelling_fixed` = 1 when a typo or split word was corrected before matching.
 
 Others: `excluded.csv` (keyword, volume, reason, source_file), `unclassified.csv`, `taxonomy-suggestions.csv`, `merge-candidates.csv`, `groups.csv/.md`, `cluster-report.md`.
 
@@ -33,9 +36,10 @@ Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop
 
 ## topic-map.csv
 
-`pillar_id, pillar_type, pillar_key, pillar_name, role, cluster_id, primary_keyword, planned_slug, post_type, reader_need, cluster_volume, priority_score, bucket, season, market, occasion, recipient, interest, product, craft, keywords, parent_hint, note`
+`pillar_id, pillar_type, pillar_key, pillar_name, role, cluster_id, primary_keyword, planned_slug, post_type, reader_need, cluster_volume, priority_score, bucket, season, market, occasion, recipient, interest, product, craft, keywords, parent_hint, note, theme, merged_into`
 
-- `role` ∈ pillar, cluster, standalone, skip. `post_type` ∈ pillar-hub, gift-guide, ideas-list, choose-guide, how-to, explainer, copy-ideas, skip.
+- `role` ∈ pillar, cluster, standalone (the planned posts), merged (covered by the post `merged_into`; no slug of its own), backlog (long tail with no theme pillar; not planned), skip (shopping intent). `post_type` ∈ pillar-hub, gift-guide, ideas-list, choose-guide, how-to, explainer, copy-ideas, merged, backlog, skip.
+- A split topic has `pillar_key` = `<topic>/<theme>` (for example `thanksgiving/history`).
 - `bucket` A/B/C by priority score (top 20% = A, up to 50% = B). `planned_slug` is a proposed slug (not a real URL).
 
 ## link-plan.csv
@@ -48,6 +52,16 @@ Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop
 ## seasonal-plan.csv
 
 `planned_slug, post_type, role, season, market, event_date, publish_new_by, refresh_existing_by, days_to_publish_by, status, note`; `status` ∈ upcoming, due_soon, overdue, no_calendar_rule.
+
+## final-plan.xlsx / final-plan.csv (export_plan.py)
+
+Sheet **Plan**, one row per planned post: `STT, Main Keyword, Secondary Keyword, Volume, KD, Category, Category Kind, Thuộc Pillar, Title SEO, Meta Description SEO, Outline, Internal Link (Anchor || URL), Related Post (Anchor || URL), URL Blog, Trạng thái`
+
+- Empty for the content team: Category, Title SEO, Meta Description SEO, Outline, Trạng thái.
+- `Category Kind` ∈ Pillar, Cluster; `Thuộc Pillar` = the pillar's Main Keyword for a Cluster, empty for a Pillar (or for a standalone post without a pillar).
+- `Secondary Keyword`, `Internal Link`, `Related Post`: one item per line (`anchor || URL` for links). In the .xlsx the link cells are formulas that read `URL Blog` of the target row by STT; the .csv has plain text (UTF-8 with BOM).
+
+Sheet **Keyword Map**: `STT, Main Keyword, Keyword, Volume, KD, Role` with Role ∈ main, secondary, also covers, variant.
 
 ## Markers in a post
 
