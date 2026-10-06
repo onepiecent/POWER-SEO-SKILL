@@ -1,0 +1,11 @@
+{
+  "_comment": "Cấu hình chạy lại được cho cluster_keywords.py. Khóa = tên tùy chọn (dùng _ thay cho -). Tùy chọn gõ trên dòng lệnh sẽ ghi đè file này. Đường dẫn tính từ thư mục chạy lệnh.",
+  "files": ["examples/synthetic-keywords-us.csv"],
+  "out": "outputs/demo",
+  "market": "us",
+  "granularity": "normal",
+  "group_by": "occasion,recipient",
+  "exclude": ["\\bfree\\b", "\\bpdf\\b"],
+  "min_volume": 100,
+  "max_kd": 70
+}

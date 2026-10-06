@@ -1,0 +1,62 @@
+# Danh sách theo dõi tên thương hiệu / franchise / nghệ sĩ có thể là nhãn hiệu hoặc có quyền nhân thân.
+# ĐÂY CHỈ LÀ DANH SÁCH KHỞI ĐẦU, KHÔNG ĐẦY ĐỦ. Team pháp chế/IP của Printerval cần duy trì danh sách thật.
+# Mỗi dòng một tên (không phân biệt hoa thường, bỏ dấu nháy/gạch nối). Tiền tố "re:" để dùng regex.
+# Công cụ chỉ GẮN CỜ để người quyết định; không kết luận hợp pháp hay vi phạm.
+disney
+pixar
+mickey mouse
+minnie mouse
+frozen
+marvel
+avengers
+spider man
+batman
+superman
+dc comics
+star wars
+mandalorian
+harry potter
+hogwarts
+lord of the rings
+game of thrones
+stranger things
+pokemon
+pikachu
+nintendo
+mario
+zelda
+minecraft
+roblox
+fortnite
+sanrio
+hello kitty
+barbie
+lego
+peanuts
+snoopy
+bluey
+paw patrol
+cocomelon
+sesame street
+nike
+adidas
+supreme
+gucci
+louis vuitton
+chanel
+coca cola
+pepsi
+budweiser
+jack daniels
+harley davidson
+ferrari
+lamborghini
+nfl
+nba
+mlb
+nhl
+fifa
+premier league
+taylor swift
+beyonce
+metallica

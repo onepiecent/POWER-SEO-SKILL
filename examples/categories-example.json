@@ -1,0 +1,7 @@
+{
+  "_comment": "Nhóm do SEO Specialist tự định nghĩa. Từ thường tự thêm biên từ và số nhiều; tiền tố re: để dùng regex. Keyword gán vào nhóm KHỚP ĐẦU TIÊN theo thứ tự trong file.",
+  "Pets": ["dog", "cat", "puppy", "kitten", "pet"],
+  "Family & relationships": ["mom", "mum", "dad", "grandma", "grandpa", "wife", "husband", "sister", "brother", "daughter", "son", "family"],
+  "Work & school": ["teacher", "nurse", "coworker", "boss", "graduation", "retirement", "re:\\bback to school\\b"],
+  "Hobbies": ["fishing", "camping", "golf", "gaming", "gardening", "cooking", "music", "book"]
+}

@@ -1,0 +1,64 @@
+{
+ "_comment": "Quy tắc loại nhiễu cho export từ khóa rộng. Keyword bị loại được ghi kèm lý do vào excluded.csv. Mỗi rule: name, on (norm = văn bản đã chuẩn hóa, raw = chữ thường nguyên bản), patterns (regex). Sửa/ thêm rule theo brief; chạy với --no-noise-filter để tắt.",
+ "max_words": 12,
+ "max_chars": 120,
+ "non_ascii_ratio": 0.3,
+ "rules": [
+  {
+   "name": "retailer_brand_navigational",
+   "on": "norm",
+   "patterns": [
+    "\\b(amazon|walmart|etsy|ebay|costco|walgreens|cvs|hobby lobby|michaels|kohls|macys|nordstrom|temu|shein|aliexpress|alibaba|wayfair|home depot|lowes|best buy|ikea|dollar tree|bath and body works|build a bear|vistaprint|shutterfly|snapfish|uncommon goods|things remembered|personalization mall)\\b",
+    "\\b(redbubble|teepublic|spreadshirt|zazzle|cafepress|printful|printify|gelato|customink|custom ink|teespring|printerval)\\b",
+    "\\b(argos|john lewis|marks and spencer|m and s|asda|tesco|notonthehighstreet|moonpig|funky pigeon)\\b"
+   ]
+  },
+  {
+   "name": "account_support_reputation",
+   "on": "norm",
+   "patterns": [
+    "\\b(login|log in|sign in|sign up|my account|track(ing)? (my )?order|order status|customer service|customer support|phone number|contact us|refund|return policy|legit|scam|complaints?)\\b"
+   ]
+  },
+  {
+   "name": "local_intent",
+   "on": "norm",
+   "patterns": [
+    "\\b(near me|nearby|open now|open today|in my area|closest|nearest)\\b"
+   ]
+  },
+  {
+   "name": "gift_card_balance",
+   "on": "norm",
+   "patterns": [
+    "\\bgift cards? (balance|check|number|scam|exchange|generator|codes?)\\b",
+    "\\bcheck (my )?gift card\\b",
+    "\\b(redeem|e ?gift cards?|visa gift cards?)\\b"
+   ]
+  },
+  {
+   "name": "adult_explicit",
+   "on": "norm",
+   "patterns": [
+    "\\b(porn\\w*|xxx|nsfw|nude|naked|erotic|sex toys?|fetish)\\b"
+   ]
+  },
+  {
+   "name": "spanish_language",
+   "on": "norm",
+   "patterns": [
+    "\\b(regalos?|cumplea\\w+|navidad|camisetas?|tazas?|personalizad[oa]s?|d[ií]a de|mam\\u00e1|pap\\u00e1)\\b",
+    "\\bpara (la|el|mi|ti|ella|ellos|hombres?|mujeres?)\\b"
+   ]
+  },
+  {
+   "name": "url_or_domain",
+   "on": "raw",
+   "patterns": [
+    "https?://",
+    "\\bwww\\.",
+    "\\.(com|net|org|co\\.uk|io)\\b"
+   ]
+  }
+ ]
+}

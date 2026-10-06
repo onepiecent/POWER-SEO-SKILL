@@ -1,0 +1,868 @@
+{
+  "_comment": "Taxonomy dùng chung cho gom nhóm keyword blog POD (US/UK). Pattern là regex chạy trên văn bản đã chuẩn hóa: chữ thường, bỏ dấu nháy đơn (mother's -> mothers), gạch nối -> khoảng trắng. Sửa file này để thêm niche/dịp; chạy tests để kiểm tra regex.",
+  "facets": {
+    "occasion": {
+      "title_template": "{label} Gift Ideas",
+      "values": {
+        "mothers-day": {
+          "label": "Mother's Day",
+          "patterns": [
+            "\\b(mother|mom|mum|mama)s? day\\b",
+            "\\bmothering sunday\\b"
+          ],
+          "seasonal": true
+        },
+        "fathers-day": {
+          "label": "Father's Day",
+          "patterns": [
+            "\\b(father|dad)s? day\\b"
+          ],
+          "seasonal": true
+        },
+        "valentines-day": {
+          "label": "Valentine's Day",
+          "patterns": [
+            "\\bvalentine\\w*\\b"
+          ],
+          "seasonal": true
+        },
+        "christmas": {
+          "label": "Christmas",
+          "patterns": [
+            "\\bchristmas\\b",
+            "\\bxmas\\b",
+            "\\bsecret santa\\b",
+            "\\bstocking stuffers?\\b"
+          ],
+          "seasonal": true
+        },
+        "halloween": {
+          "label": "Halloween",
+          "patterns": [
+            "\\bhalloween\\b",
+            "\\bspooky season\\b"
+          ],
+          "seasonal": true
+        },
+        "thanksgiving": {
+          "label": "Thanksgiving",
+          "patterns": [
+            "\\bthanksgiving\\b",
+            "\\bfriendsgiving\\b"
+          ],
+          "seasonal": true
+        },
+        "easter": {
+          "label": "Easter",
+          "patterns": [
+            "\\beaster\\b"
+          ],
+          "seasonal": true
+        },
+        "black-friday": {
+          "label": "Black Friday & Cyber Monday",
+          "patterns": [
+            "\\bblack friday\\b",
+            "\\bcyber monday\\b",
+            "\\bcyber week\\b"
+          ],
+          "seasonal": true
+        },
+        "new-year": {
+          "label": "New Year",
+          "patterns": [
+            "\\bnew years?\\b",
+            "\\bnye\\b"
+          ],
+          "seasonal": true
+        },
+        "st-patricks-day": {
+          "label": "St. Patrick's Day",
+          "patterns": [
+            "\\bst\\.? ?patricks?\\b",
+            "\\bsaint patricks?\\b"
+          ],
+          "seasonal": true
+        },
+        "independence-day": {
+          "label": "Fourth of July",
+          "patterns": [
+            "\\bfourth of july\\b",
+            "\\b4th of july\\b",
+            "\\bindependence day\\b",
+            "\\bjuly 4(th)?\\b"
+          ],
+          "seasonal": true
+        },
+        "bonfire-night": {
+          "label": "Bonfire Night",
+          "patterns": [
+            "\\bbonfire night\\b",
+            "\\bguy fawkes\\b"
+          ],
+          "seasonal": true
+        },
+        "graduation": {
+          "label": "Graduation",
+          "patterns": [
+            "\\bgraduat\\w*\\b"
+          ],
+          "seasonal": true
+        },
+        "back-to-school": {
+          "label": "Back to School",
+          "patterns": [
+            "\\bback to school\\b"
+          ],
+          "seasonal": true
+        },
+        "teacher-appreciation": {
+          "label": "Teacher Appreciation",
+          "patterns": [
+            "\\bteacher appreciation\\b",
+            "\\bend of year teacher\\b"
+          ],
+          "seasonal": true
+        },
+        "birthday": {
+          "label": "Birthday",
+          "patterns": [
+            "\\bbirthdays?\\b"
+          ],
+          "seasonal": false
+        },
+        "wedding": {
+          "label": "Wedding",
+          "patterns": [
+            "\\bwedding\\b",
+            "\\bbridal\\b",
+            "\\bbridesmaids?\\b",
+            "\\bgroomsm[ae]n\\b",
+            "\\bbride\\b",
+            "\\bgroom\\b"
+          ],
+          "seasonal": false
+        },
+        "anniversary": {
+          "label": "Anniversary",
+          "patterns": [
+            "\\banniversar\\w*\\b"
+          ],
+          "seasonal": false
+        },
+        "baby-shower": {
+          "label": "Baby Shower & New Baby",
+          "patterns": [
+            "\\bbaby shower\\b",
+            "\\bnew baby\\b",
+            "\\bnewborn\\b",
+            "\\bgender reveal\\b"
+          ],
+          "seasonal": false
+        },
+        "retirement": {
+          "label": "Retirement",
+          "patterns": [
+            "\\bretire\\w*\\b"
+          ],
+          "seasonal": false
+        },
+        "housewarming": {
+          "label": "Housewarming",
+          "patterns": [
+            "\\bhouse ?warming\\b",
+            "\\bnew home\\b"
+          ],
+          "seasonal": false
+        },
+        "bachelorette": {
+          "label": "Bachelorette & Hen Parties",
+          "patterns": [
+            "\\bbachelorette\\b",
+            "\\bhen (do|party|night|weekend)\\b",
+            "\\bbachelor party\\b",
+            "\\bstag (do|party|weekend)\\b"
+          ],
+          "seasonal": false
+        },
+        "family-reunion": {
+          "label": "Family Reunion",
+          "patterns": [
+            "\\bfamily reunions?\\b"
+          ],
+          "seasonal": false
+        }
+      }
+    },
+    "interest": {
+      "title_template": "Gift Ideas for {label}",
+      "values": {
+        "dogs": {
+          "label": "Dog Lovers",
+          "patterns": [
+            "\\b(dogs?|puppy|puppies|pups?|doggos?)\\b"
+          ]
+        },
+        "cats": {
+          "label": "Cat Lovers",
+          "patterns": [
+            "\\b(cats?|kittens?|kitty)\\b"
+          ]
+        },
+        "horses": {
+          "label": "Horse Lovers",
+          "patterns": [
+            "\\b(horses?|equestrian)\\b"
+          ]
+        },
+        "fishing": {
+          "label": "Anglers",
+          "patterns": [
+            "\\b(fish|fishing|fisher|fishers|fisherm[ae]n|fisherwom[ae]n|angler|anglers)\\b"
+          ]
+        },
+        "camping": {
+          "label": "Campers",
+          "patterns": [
+            "\\b(camp|camping|campers?|rv|rving|glamping)\\b"
+          ]
+        },
+        "hiking": {
+          "label": "Hikers & Outdoor Fans",
+          "patterns": [
+            "\\b(hike|hiking|hikers?|outdoors?|trail)\\b"
+          ]
+        },
+        "hunting": {
+          "label": "Hunters",
+          "patterns": [
+            "\\b(hunt|hunting|hunters?|deer)\\b"
+          ]
+        },
+        "golf": {
+          "label": "Golfers",
+          "patterns": [
+            "\\b(golf|golfers?)\\b"
+          ]
+        },
+        "gaming": {
+          "label": "Gamers",
+          "patterns": [
+            "\\b(gamers?|gaming|video games?)\\b"
+          ]
+        },
+        "music": {
+          "label": "Music Lovers",
+          "patterns": [
+            "\\b(music|band|concert|guitar|vinyl|country music|rock and roll)\\b"
+          ]
+        },
+        "books": {
+          "label": "Book Lovers",
+          "patterns": [
+            "\\b(books?|reading|bookworms?|librarians?)\\b"
+          ]
+        },
+        "gardening": {
+          "label": "Gardeners",
+          "patterns": [
+            "\\b(garden|gardens|gardening|gardeners?|plant lady|plant mom|plant dad)\\b"
+          ]
+        },
+        "cooking": {
+          "label": "Home Cooks & Bakers",
+          "patterns": [
+            "\\b(cook|cooking|baking|bakers?|chefs?|bbq|grill\\w*)\\b"
+          ]
+        },
+        "fitness": {
+          "label": "Runners & Gym-Goers",
+          "patterns": [
+            "\\b(gym|workout|fitness|running|runners?|yoga|marathon|lifting)\\b"
+          ]
+        },
+        "cars": {
+          "label": "Car & Motorcycle Fans",
+          "patterns": [
+            "\\b(cars?|trucks?|motorcycles?|bikers?|mechanics?)\\b"
+          ]
+        },
+        "travel": {
+          "label": "Travelers",
+          "patterns": [
+            "\\b(travel\\w*|road trip|adventure)\\b"
+          ]
+        },
+        "coffee": {
+          "label": "Coffee Lovers",
+          "patterns": [
+            "\\bcoffee\\b"
+          ]
+        },
+        "wine-beer": {
+          "label": "Wine & Beer Lovers",
+          "patterns": [
+            "\\b(wine|beer|brewery|craft beer)\\b"
+          ]
+        },
+        "sports": {
+          "label": "Sports Fans",
+          "patterns": [
+            "\\b(football|baseball|basketball|soccer|hockey|softball|volleyball|lacrosse|rugby|cricket)\\b"
+          ]
+        },
+        "military": {
+          "label": "Veterans & Military Families",
+          "patterns": [
+            "\\b(military|veterans?|army|navy|marines?)\\b"
+          ]
+        },
+        "faith": {
+          "label": "People of Faith",
+          "patterns": [
+            "\\b(faith|christian|bible|jesus|church)\\b"
+          ]
+        },
+        "farm-country": {
+          "label": "Farm & Country Life",
+          "patterns": [
+            "\\b(farm\\w*|country life|western|cowboy|cowgirl)\\b"
+          ]
+        },
+        "crafting": {
+          "label": "Crafters",
+          "patterns": [
+            "\\b(crochet|crocheters?|knitting|knitters?|sewing|sewers?|quilting|quilters?|crafts?|crafting|crafters?)\\b"
+          ]
+        }
+      }
+    },
+    "recipient": {
+      "title_template": "Gift Ideas for {label}",
+      "values": {
+        "mom": {
+          "label": "Mom",
+          "label_uk": "Mum",
+          "patterns": [
+            "\\b(mom|mum|mother|mama|mommy|mummy)s?\\b"
+          ]
+        },
+        "dad": {
+          "label": "Dad",
+          "patterns": [
+            "\\b(dad|father|daddy|papa)s?\\b"
+          ]
+        },
+        "grandma": {
+          "label": "Grandma",
+          "label_uk": "Nan & Grandma",
+          "patterns": [
+            "\\b(grandma|grandmother|nana|nanna|nan|granny|gran)s?\\b"
+          ]
+        },
+        "grandpa": {
+          "label": "Grandpa",
+          "label_uk": "Grandad",
+          "patterns": [
+            "\\b(grandpa|grandfather|grandad|granddad|papaw|pops)s?\\b"
+          ]
+        },
+        "wife": {
+          "label": "Wife",
+          "patterns": [
+            "\\bwives\\b",
+            "\\bwife\\b"
+          ]
+        },
+        "husband": {
+          "label": "Husband",
+          "patterns": [
+            "\\bhusbands?\\b"
+          ]
+        },
+        "girlfriend": {
+          "label": "Girlfriend",
+          "patterns": [
+            "\\bgirlfriends?\\b"
+          ]
+        },
+        "boyfriend": {
+          "label": "Boyfriend",
+          "patterns": [
+            "\\bboyfriends?\\b"
+          ]
+        },
+        "sister": {
+          "label": "Sister",
+          "patterns": [
+            "\\bsisters?\\b"
+          ]
+        },
+        "brother": {
+          "label": "Brother",
+          "patterns": [
+            "\\bbrothers?\\b"
+          ]
+        },
+        "daughter": {
+          "label": "Daughter",
+          "patterns": [
+            "\\bdaughters?\\b"
+          ]
+        },
+        "son": {
+          "label": "Son",
+          "patterns": [
+            "\\bsons?\\b"
+          ]
+        },
+        "kids": {
+          "label": "Kids",
+          "patterns": [
+            "\\b(kids?|children|toddlers?|boys|girls|little ones)\\b"
+          ]
+        },
+        "teens": {
+          "label": "Teens",
+          "patterns": [
+            "\\b(teens?|teenagers?|tweens?)\\b"
+          ]
+        },
+        "teacher": {
+          "label": "Teachers",
+          "patterns": [
+            "\\bteachers?\\b"
+          ]
+        },
+        "nurse": {
+          "label": "Nurses",
+          "patterns": [
+            "\\bnurses?\\b|\\bnursing\\b"
+          ]
+        },
+        "coworker": {
+          "label": "Coworkers & Bosses",
+          "patterns": [
+            "\\b(coworkers?|co workers?|colleagues?|boss|bosses|manager)\\b"
+          ]
+        },
+        "friend": {
+          "label": "Friends",
+          "patterns": [
+            "\\b(friends?|bff|bestie)s?\\b"
+          ]
+        },
+        "couple": {
+          "label": "Couples",
+          "patterns": [
+            "\\bcouples?\\b"
+          ]
+        },
+        "her": {
+          "label": "Her",
+          "patterns": [
+            "\\bfor her\\b",
+            "\\bwomen\\b",
+            "\\bwomens\\b",
+            "\\bladies\\b"
+          ]
+        },
+        "him": {
+          "label": "Him",
+          "patterns": [
+            "\\bfor him\\b",
+            "\\bmen\\b",
+            "\\bmens\\b",
+            "\\bguys\\b"
+          ]
+        }
+      }
+    },
+    "product": {
+      "values": {
+        "tshirt": {
+          "label": "T-Shirts",
+          "patterns": [
+            "\\b(tshirts?|tees?|t shirts?|tee shirts?)\\b"
+          ]
+        },
+        "shirt": {
+          "label": "Shirts",
+          "patterns": [
+            "\\bshirts?\\b"
+          ]
+        },
+        "hoodie": {
+          "label": "Hoodies",
+          "patterns": [
+            "\\b(hoodies?|hooded sweatshirts?)\\b"
+          ]
+        },
+        "sweatshirt": {
+          "label": "Sweatshirts",
+          "patterns": [
+            "\\b(sweatshirts?|crewnecks?|jumpers?)\\b"
+          ]
+        },
+        "mug": {
+          "label": "Mugs",
+          "patterns": [
+            "\\b(mugs?|coffee cups?)\\b"
+          ]
+        },
+        "tumbler": {
+          "label": "Tumblers",
+          "patterns": [
+            "\\b(tumblers?|water bottles?)\\b"
+          ]
+        },
+        "tote": {
+          "label": "Tote Bags",
+          "patterns": [
+            "\\b(tote bags?|totes?)\\b"
+          ]
+        },
+        "canvas": {
+          "label": "Canvas Art",
+          "patterns": [
+            "\\b(canvas|canvases)\\b"
+          ]
+        },
+        "poster": {
+          "label": "Posters & Wall Art",
+          "patterns": [
+            "\\b(posters?|wall art|prints?)\\b"
+          ]
+        },
+        "blanket": {
+          "label": "Blankets",
+          "patterns": [
+            "\\b(blankets?|throws?)\\b"
+          ]
+        },
+        "pillow": {
+          "label": "Pillows",
+          "patterns": [
+            "\\b(pillows?|cushions?)\\b"
+          ]
+        },
+        "phone-case": {
+          "label": "Phone Cases",
+          "patterns": [
+            "\\bphone cases?\\b"
+          ]
+        },
+        "hat": {
+          "label": "Hats & Caps",
+          "patterns": [
+            "\\b(hats?|caps?|beanies?)\\b"
+          ]
+        },
+        "socks": {
+          "label": "Socks",
+          "patterns": [
+            "\\bsocks?\\b"
+          ]
+        },
+        "ornament": {
+          "label": "Ornaments",
+          "patterns": [
+            "\\bornaments?\\b"
+          ]
+        },
+        "sticker": {
+          "label": "Stickers",
+          "patterns": [
+            "\\bstickers?\\b"
+          ]
+        },
+        "shoes": {
+          "label": "Shoes & Clogs",
+          "patterns": [
+            "\\b(shoes?|sneakers?|trainers?|clogs?|slippers?)\\b"
+          ]
+        },
+        "jersey": {
+          "label": "Jerseys",
+          "patterns": [
+            "\\bjerseys?\\b"
+          ]
+        }
+      }
+    },
+    "style": {
+      "values": {
+        "personalized": {
+          "label": "Personalized",
+          "patterns": [
+            "\\bpersonali[sz]ed?\\b",
+            "\\bcustomi[sz]ed?\\b",
+            "\\bcustom\\b",
+            "\\bmonogram\\w*\\b"
+          ]
+        },
+        "photo": {
+          "label": "Photo",
+          "patterns": [
+            "\\b(photo|picture|portrait)s?\\b"
+          ]
+        },
+        "matching": {
+          "label": "Matching",
+          "patterns": [
+            "\\bmatching\\b",
+            "\\bcoordinating\\b"
+          ]
+        },
+        "embroidered": {
+          "label": "Embroidered",
+          "patterns": [
+            "\\bembroider\\w*\\b"
+          ]
+        },
+        "funny": {
+          "label": "Funny",
+          "patterns": [
+            "\\b(funny|humou?r\\w*|hilarious|sarcastic)\\b"
+          ]
+        },
+        "vintage": {
+          "label": "Vintage & Retro",
+          "patterns": [
+            "\\b(vintage|retro|90s|80s|y2k)\\b"
+          ]
+        }
+      }
+    },
+    "craft": {
+      "title_template": "{label}",
+      "values": {
+        "sizing": {
+          "label": "Sizing & Fit Guide",
+          "patterns": [
+            "\\b(size|sizes|sizing|fit|fits|measure|measurements?|size chart)\\b"
+          ]
+        },
+        "care": {
+          "label": "Care & Washing Guide",
+          "patterns": [
+            "\\b(wash|washing|care|shrink\\w*|stain\\w*|iron\\w*|dry|drying|fade|fading|crack\\w*|peel\\w*|wrinkle\\w*)\\b"
+          ]
+        },
+        "materials": {
+          "label": "Fabric & Materials Guide",
+          "patterns": [
+            "\\b(cotton|polyester|blend|fabric|material|gsm|heavyweight|organic|tri blend)\\b"
+          ]
+        },
+        "print-methods": {
+          "label": "Print Methods Explained",
+          "patterns": [
+            "\\b(dtg|direct to garment|screen print\\w*|sublimation|embroider\\w*|heat transfer|vinyl|dtf)\\b"
+          ]
+        },
+        "design": {
+          "label": "Design & Personalization Tips",
+          "patterns": [
+            "\\b(design\\w*|template|mockup|font|resolution|dpi|image size)\\b"
+          ]
+        },
+        "gifting-etiquette": {
+          "label": "Gifting Etiquette & Messages",
+          "patterns": [
+            "\\bgift (etiquette|wrapping|wrap|message|card)s?\\b",
+            "\\bwhat to write\\b"
+          ]
+        },
+        "shipping": {
+          "label": "Ordering & Delivery (needs ops data)",
+          "patterns": [
+            "\\b(shipping|delivery|deliver|arrive|arrival)\\b"
+          ],
+          "claims_sensitive": true
+        }
+      }
+    }
+  },
+  "reader_need_rules": [
+    {
+      "need": "shop",
+      "patterns": [
+        "\\b(buy|shop|order|cheap|cheapest|discount|coupon|promo code|on sale|for sale|near me|price|prices|wholesale|bulk)\\b"
+      ]
+    },
+    {
+      "need": "how_to",
+      "patterns": [
+        "\\bhow (to|do i|do you|can i|can you|should i)\\b",
+        "\\bdiy\\b",
+        "\\bsteps? to\\b",
+        "\\bways to\\b",
+        "\\btutorial\\b"
+      ]
+    },
+    {
+      "need": "copy_ideas",
+      "patterns": [
+        "\\b(slogans?|quotes?|captions?|sayings?|puns?|phrases|taglines?|what to write|name ideas|names for|message ideas|messages? for)\\b"
+      ]
+    },
+    {
+      "need": "choose",
+      "patterns": [
+        "\\b(best|vs|versus|which|reviews?|compare|comparison|worth it|better|buying guide|alternatives?)\\b",
+        "\\btop (\\d+|ten|gifts?|picks?|rated)\\b"
+      ]
+    },
+    {
+      "need": "solve",
+      "patterns": [
+        "\\b(fix|fixing|remove|removing|shrink\\w*|fade|fading|stain\\w*|wash\\w*|iron\\w*|care|size|sizing|fit|fits|measure|measurements?|crack\\w*|peel\\w*|wrinkle\\w*)\\b"
+      ]
+    },
+    {
+      "need": "inspire",
+      "patterns": [
+        "\\b(ideas?|gifts?|presents?|what to get|what to buy)\\b"
+      ]
+    },
+    {
+      "need": "info",
+      "patterns": [
+        "^(what|why|when|where|who|is|are|does|do|can|should|meaning of|history of)\\b",
+        "\\bmeaning\\b",
+        "\\bhistory\\b",
+        "\\bwhat day\\b",
+        "\\bdate\\b"
+      ]
+    }
+  ],
+  "blog_fit": {
+    "inspire": "high",
+    "choose": "high",
+    "how_to": "high",
+    "solve": "high",
+    "copy_ideas": "high",
+    "info": "medium",
+    "shop": "low"
+  },
+  "weak_tokens": [
+    "best",
+    "top",
+    "good",
+    "great",
+    "cool",
+    "cute",
+    "unique",
+    "creative",
+    "thoughtful",
+    "ideas",
+    "idea",
+    "gift",
+    "gifts",
+    "present",
+    "presents",
+    "for",
+    "the",
+    "a",
+    "an",
+    "of",
+    "to",
+    "in",
+    "on",
+    "and",
+    "with",
+    "your",
+    "you",
+    "that",
+    "who",
+    "are",
+    "is",
+    "my",
+    "our"
+  ],
+  "variants": {
+    "mum": "mom",
+    "mums": "moms",
+    "mummy": "mommy",
+    "mother": "mom",
+    "mothers": "moms",
+    "father": "dad",
+    "fathers": "dads",
+    "nan": "grandma",
+    "nana": "grandma",
+    "nanna": "grandma",
+    "granny": "grandma",
+    "grandmother": "grandma",
+    "grandad": "grandpa",
+    "granddad": "grandpa",
+    "grandfather": "grandpa",
+    "personalised": "personalized",
+    "customised": "customized",
+    "colour": "color",
+    "colours": "colors",
+    "favourite": "favorite",
+    "favourites": "favorites",
+    "jumper": "sweater",
+    "jumpers": "sweaters",
+    "trainers": "sneakers",
+    "trousers": "pants",
+    "humour": "humor",
+    "licence": "license"
+  },
+  "phrase_variants": {
+    "t shirt": "tshirt",
+    "t shirts": "tshirts",
+    "tee shirt": "tshirt",
+    "tee shirts": "tshirts",
+    "tees": "tshirts",
+    "tee": "tshirt",
+    "hen do": "bachelorette",
+    "hen party": "bachelorette",
+    "stag do": "bachelor party",
+    "boxing day": "boxing day",
+    "mothering sunday": "mothers day"
+  },
+  "us_only_terms": [
+    "mom",
+    "moms",
+    "sneakers",
+    "sweater",
+    "pants",
+    "vacation",
+    "diaper",
+    "cell phone",
+    "zip code",
+    "bachelorette",
+    "bachelor party",
+    "fourth of july",
+    "4th of july",
+    "thanksgiving",
+    "independence day",
+    "gotten"
+  ],
+  "uk_only_terms": [
+    "mum",
+    "mums",
+    "trainers",
+    "jumper",
+    "jumpers",
+    "trousers",
+    "nappy",
+    "postcode",
+    "hen do",
+    "hen party",
+    "stag do",
+    "boxing day",
+    "bonfire night",
+    "mothering sunday",
+    "nan",
+    "nana",
+    "granny",
+    "pushchair",
+    "fancy dress",
+    "personalised",
+    "customised",
+    "colour"
+  ]
+}

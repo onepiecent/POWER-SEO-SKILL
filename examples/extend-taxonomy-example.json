@@ -1,0 +1,16 @@
+{
+  "_comment": "Mở rộng taxonomy mặc định (dùng với --extend-taxonomy). Giá trị mới được thêm; nếu key đã có thì pattern được nối thêm. Pattern là regex chạy trên văn bản đã chuẩn hóa: chữ thường, bỏ dấu nháy, gạch nối thành khoảng trắng.",
+  "facets": {
+    "interest": {
+      "values": {
+        "pickleball": {"label": "Pickleball Players", "patterns": ["\\bpickleball\\w*\\b"]},
+        "birding": {"label": "Bird Watchers", "patterns": ["\\b(birding|bird watch\\w*|birdwatch\\w*|bird lovers?)\\b"]}
+      }
+    },
+    "recipient": {
+      "values": {
+        "nurse": {"patterns": ["\\bnurse practitioners?\\b"]}
+      }
+    }
+  }
+}
