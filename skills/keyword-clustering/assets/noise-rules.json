@@ -24,7 +24,8 @@
    "name": "local_intent",
    "on": "norm",
    "patterns": [
-    "\\b(near me|nearby|open now|open today|in my area|closest|nearest)\\b"
+    "\\b(near me|nearby|open now|open today|in my area|closest|nearest)\\b",
+    "\\b(in|near|around) (dc|d c|washington dc|nyc|new york city|manhattan|brooklyn|chicago|los angeles|la|boston|philadelphia|philly|san francisco|sf|seattle|atlanta|dallas|houston|miami|las vegas|vegas|orlando|nashville|denver|san diego|austin|portland|phoenix|detroit|minneapolis|new orleans|charlotte|baltimore|pittsburgh|st louis|tampa|san antonio|indianapolis|kansas city|sacramento|honolulu|london|manchester|birmingham|glasgow|edinburgh)\\b"
    ]
   },
   {
@@ -84,6 +85,31 @@
     "\\b(is|are|whats|what is)\\b.*\\b(open|closed)\\b",
     "\\b(stores?|shops?|banks?|museums?|restaurants?|post offices?|mail|usps|ups|fedex|stock market|markets?|pharmac(y|ies)|grocer(y|ies)|malls?|librar(y|ies)|dmv|courts?|schools?)\\b.*\\b(open|closed|hours)\\b",
     "\\b(open|closed|hours)\\b.*\\b(stores?|shops?|banks?|museums?|restaurants?|post offices?|malls?|grocer(y|ies))\\b"
+   ]
+  },
+  {
+   "name": "media_brand_navigational",
+   "on": "norm",
+   "patterns": [
+    "\\b(good morning america|today show|nbc today|tonight show|kelly clarkson|drew barrymore|jimmy fallon|jimmy kimmel|ellen show|ellen degeneres)\\b",
+    "\\bgma\\b.*\\b(recipes?|deals|steals|show|today)\\b|\\b(recipes?|deals|steals)\\b.*\\bgma\\b",
+    "\\b(food network|hallmark channel|hgtv|martha stewart|pioneer woman|ina garten|barefoot contessa|joanna gaines|bon appetit|nyt cooking|allrecipes|betty crocker|pillsbury|butterball)\\b"
+   ]
+  },
+  {
+   "name": "restaurant_grocery_navigational",
+   "on": "norm",
+   "patterns": [
+    "\\b(restaurants?|cafe|bistro|grill|tavern|diner|steakhouse|inn|hotel|resort|casino|country club|room|reel|catering)\\b.*\\bmenus?\\b(?!.*\\b(ideas?|templates?|planner|planning|printables?)\\b)",
+    "\\b(cracker barrel|bob evans|boston market|golden corral|dennys|ihop|olive garden|texas roadhouse|lubys|marie callenders|honey ?baked ham|whole foods|wegmans|publix|safeway|kroger|harris teeter|heb|sprouts|trader joes|fresh market|sams club|bjs|aldi|lidl|sainsburys|waitrose|morrisons|starbucks|dunkin|mcdonalds|chick fil a|popeyes|kfc)\\b"
+   ]
+  },
+  {
+   "name": "school_calendar_navigational",
+   "on": "norm",
+   "patterns": [
+    "\\b(county|parish|isd|cisd|usd|unified|school district|(?!(?:do|does|are|all|most|the|why|when)\\b)\\w+ public schools|university of \\w+|state university)\\b.*\\b(break|calendar|schedule|days? off)\\b",
+    "\\b(break|calendar|schedule)\\b.*\\b(county|parish|isd|cisd|usd|school district|public schools)\\b"
    ]
   },
   {

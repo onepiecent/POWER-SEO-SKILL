@@ -1,0 +1,39 @@
+{
+  "_comment": "Themes a Printerval blog plan for one occasion should cover, and the seed keywords to export from Semrush/Ahrefs when the file barely covers them. {topic} is the occasion as people search it (labels below). 'match' is a regex run on the lowercase keywords of the topic to measure coverage. Order = importance for a print-on-demand blog [Convention]. export_plan.py writes the result to the 'Research Next' sheet.",
+  "labels": {
+    "mothers-day": "mother's day",
+    "fathers-day": "father's day",
+    "valentines-day": "valentine's day",
+    "st-patricks-day": "st patrick's day",
+    "independence-day": "4th of july",
+    "new-year": "new year",
+    "back-to-school": "back to school"
+  },
+  "themes": [
+    {"theme": "gifts", "why": "gift guides lead straight to custom products (the closest fit for Printerval)",
+     "match": "\\b(gifts?|presents?|hostess)\\b",
+     "seeds": ["{topic} gifts", "{topic} gift ideas", "personalized {topic} gifts", "{topic} gifts for teachers", "{topic} hostess gifts"]},
+    {"theme": "apparel", "why": "shirts, hoodies and matching family outfits are Printerval's core products",
+     "match": "\\b(shirts?|t ?shirts?|tees?|sweatshirts?|hoodies?|outfits?|pajamas?|matching)\\b",
+     "seeds": ["{topic} shirts", "funny {topic} shirts", "family {topic} shirts", "{topic} sweatshirts", "matching {topic} outfits"]},
+    {"theme": "messages", "why": "quotes, sayings and wishes are words people put on cards, mugs and shirts",
+     "match": "\\b(quotes?|sayings?|wishes|messages?|captions?|prayers?|blessings?|poems?|greetings?)\\b",
+     "seeds": ["{topic} quotes", "{topic} sayings", "{topic} wishes", "{topic} messages", "{topic} captions", "{topic} prayers"]},
+    {"theme": "humor", "why": "puns and jokes become funny designs",
+     "match": "\\b(funny|puns?|jokes?|memes?|humou?r)\\b",
+     "seeds": ["{topic} puns", "{topic} jokes", "funny {topic} quotes", "{topic} memes"]},
+    {"theme": "decor", "why": "table and home decor ideas lead to printed decor products",
+     "match": "\\b(decor\\w*|decorat\\w*|centerpieces?|table ?scapes?|table settings?|wreaths?|signs?|banners?)\\b",
+     "seeds": ["{topic} decorations", "{topic} decor ideas", "{topic} table decor", "{topic} centerpieces"]},
+    {"theme": "crafts", "why": "crafts and printables bring families and teachers who also buy kids' products",
+     "match": "\\b(crafts?|diy|coloring|colouring|printables?|worksheets?)\\b",
+     "seeds": ["{topic} crafts", "{topic} crafts for kids", "{topic} coloring pages", "{topic} printables"]}
+  ],
+  "occasion_extras": {
+    "thanksgiving": ["friendsgiving ideas", "friendsgiving gifts", "thanksgiving family photo ideas"],
+    "christmas": ["ugly christmas sweater ideas", "christmas family pajamas", "secret santa gift ideas"],
+    "halloween": ["halloween costume ideas", "family halloween costumes", "halloween shirts"],
+    "mothers-day": ["mother's day card messages", "gifts for new moms"],
+    "fathers-day": ["father's day card messages", "gifts for new dads"]
+  }
+}

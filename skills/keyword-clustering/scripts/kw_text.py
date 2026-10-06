@@ -6,6 +6,7 @@ Shared module for cluster_keywords.py. Standard library only.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from collections import Counter, defaultdict
@@ -30,6 +31,9 @@ GIVER_RX = re.compile(
     r"team|class|students?)\b")
 # "when's" / "whens" -> "when is" (the apostrophe is often dropped in searches)
 CONTRACTION_RX = re.compile(r"\b(what|when|where|who|how|that|there)s\b")
+# "google when is thanksgiving" / "hey siri what day is thanksgiving" is the same question typed into an assistant
+ASSISTANT_PREFIX_RX = re.compile(r"^(?:(?:hey|ok|okay|ask) )?(?:google|alexa|siri|bing|chatgpt)\s+"
+                                 r"(?=(?:what|when|where|who|why|how|which|is|are|do|does|did|can)\b)")
 
 
 # --------------------------------------------------------------------------- text helpers
@@ -55,6 +59,7 @@ def normalize_text(s: str) -> str:
     s = s.replace("&", " and ")
     s = re.sub(r"\.(?!\d)|(?<!\d)\.", " ", s)  # keep decimals (1.5) but split 'thanksgiving.2025'
     s = CONTRACTION_RX.sub(r"\1 is", s)
+    s = ASSISTANT_PREFIX_RX.sub("", s.strip())
     return " ".join(collapse_repeats(s.split()))
 
 
@@ -328,15 +333,20 @@ def osa_distance(a: str, b: str, cap: int = 3) -> int:
 
 class Respeller:
     """Typos and split words learned from the whole file, applied before facets and filters:
-    'thanksgivng' / 'thankgiving' -> 'thanksgiving', 'thanks giving' -> 'thanksgiving'.
+    'thanksgivng' / 'thankgiving' -> 'thanksgiving', 'thanks giving' -> 'thanksgiving', 'thanksgivi g' -> 'thanksgiving'
+    (a space typed inside the word), 'whenis' -> 'when is' (a missing space), 'thanksgiving da' -> 'thanksgiving day'
+    (an autocomplete query cut off in its last word).
 
     Only frequent words (in >= max(30, 0.3% of the keywords)) can be targets, the typo must be at least 10x rarer,
     6+ letters long, within 1 edit (2 for targets of 9+ letters) and share the first or the last letter, so rare
-    real words are left alone. Split words are joined only when the joined form is clearly the usual spelling."""
+    real words are left alone. Split words are joined only when the joined form is clearly the usual spelling; a rare
+    word is split or a cut-off last word completed only when the result is a pair of words the file uses 10x more."""
     MIN_LEN = 6
 
-    def __init__(self, typos: dict[str, str] | None = None, joins: dict[tuple[str, str], str] | None = None):
+    def __init__(self, typos: dict[str, str] | None = None, joins: dict[tuple[str, str], str] | None = None,
+                 splits: dict[str, tuple[str, str]] | None = None, completions: dict[tuple[str, str], str] | None = None):
         self.typos, self.joins = typos or {}, joins or {}
+        self.splits, self.completions = splits or {}, completions or {}
 
     @classmethod
     def learn(cls, docs: list[list[str]]) -> "Respeller":
@@ -360,10 +370,8 @@ class Respeller:
                 if len(t) >= 9:
                     for d2 in _deletes(d1):
                         index[d2].add(t)
-        typos = {}
-        for word, n in df.items():
-            if word in targets or len(word) < cls.MIN_LEN or not word.isalpha():
-                continue
+
+        def correct(word: str, n: int) -> str | None:
             cands = set(index.get(word, ()))
             for d1 in _deletes(word):
                 cands |= index.get(d1, set())
@@ -374,22 +382,105 @@ class Respeller:
                 dist = osa_distance(word, t, 2)
                 if dist <= (1 if len(t) < 9 else 2) and (best is None or (dist, -df[t], t) < (best[0], -df[best[1]], best[1])):
                     best = (dist, t)
-            if best:
-                typos[word] = best[1]
-        return cls(typos, joins)
+            return best[1] if best else None
+
+        typos = {}
+        for word, n in df.items():
+            if word in targets or len(word) < cls.MIN_LEN or not word.isalpha():
+                continue
+            fixed = correct(word, n)
+            if fixed:
+                typos[word] = fixed
+        common = {t for t, n in df.items() if n >= min_df and t.isalpha()}
+        rare = max(2, min_df // 10)
+
+        def fragment(x: str) -> bool:  # a stray letter, or a piece almost never used on its own
+            return (len(x) == 1 and x not in ("a", "i")) or (len(x) >= 3 and df[x] <= 2 and x not in common)
+        # a space typed inside a word: 'thanksgivi g' -> 'thanksgivig' -> 'thanksgiving'. One side must be a fragment and
+        # neither side a short real word ('is', 'on', 'vs'), so 'is real' never becomes 'israel'.
+        for (a, b), n in bigrams.items():
+            if (a, b) in joins or not (a + b).isalpha() or len(a + b) < cls.MIN_LEN or a + b in targets:
+                continue
+            if not (fragment(a) or fragment(b)) or any(len(x) == 2 or x in ("a", "i") for x in (a, b)):
+                continue
+            if (a in typos and b in common) or (b in typos and a in common):
+                continue  # 'haloween costume': the typo fix is enough, the other word stays
+            fixed = correct(a + b, n)
+            if fixed and fixed not in (a, b):
+                joins[(a, b)] = fixed
+        # a missing space: 'whenis' -> 'when is', only for a rare word whose two halves are a common pair of words
+        splits = {}
+        for word, n in df.items():
+            if n > rare or len(word) < 4 or not word.isalpha() or word in typos or word in common:
+                continue
+            best = max(((bigrams.get((word[:i], word[i:]), 0), word[:i], word[i:]) for i in range(1, len(word))
+                        if word[:i] in common and word[i:] in common), default=None)
+            if best and best[0] >= max(20, 10 * n):
+                splits[word] = (best[1], best[2])
+        # an autocomplete query cut off in its last word: 'thanksgiving da' -> 'thanksgiving day', when one completion
+        # is by far the most common next word after the previous one
+        by_prefix: dict[str, list[str]] = defaultdict(list)
+        for w in common:
+            for i in range(2, len(w)):
+                by_prefix[w[:i]].append(w)
+        completions = {}
+        for (a, b), n in bigrams.items():
+            if df[b] > rare or len(b) < 2 or not b.isalpha() or b not in by_prefix:
+                continue
+            ranked = sorted(((bigrams.get((a, w), 0), w) for w in by_prefix[b]), reverse=True)
+            top = ranked[0][0]
+            runner_up = ranked[1][0] if len(ranked) > 1 else 0
+            if top >= max(20, 10 * n) and top >= 3 * runner_up:
+                completions[(a, b)] = ranked[0][1]
+        return cls(typos, joins, splits, completions)
 
     def apply(self, norm: str) -> str:
-        if not self.typos and not self.joins:
+        if not (self.typos or self.joins or self.splits or self.completions):
             return norm
         toks, out, i = norm.split(), [], 0
         while i < len(toks):
             if i + 1 < len(toks) and (toks[i], toks[i + 1]) in self.joins:
                 out.append(self.joins[(toks[i], toks[i + 1])])
                 i += 2
+            elif toks[i] in self.splits:
+                out.extend(self.splits[toks[i]])
+                i += 1
             else:
                 out.append(toks[i])
                 i += 1
-        return " ".join(self.typos.get(t, t) for t in out)
+        fixed = [self.typos.get(t, t) for t in out]
+        if len(out) >= 2:  # only the LAST word can be cut off
+            for prev in (out[-2], fixed[-2]):
+                if (prev, out[-1]) in self.completions:
+                    fixed[-1] = self.completions[(prev, out[-1])]
+                    break
+        return " ".join(fixed)
+
+
+# --------------------------------------------------------------------------- how natural a phrasing is
+class Fluency:
+    """A word-pair model learned from the file's own keywords: how usual each step from one word to the next is.
+    'true story of thanksgiving' (common pairs: 'true story', 'story of', 'of thanksgiving') scores higher than
+    'real story thanksgiving'; 'thanksgiving facts for kids' higher than '... for kindergarteners'. Used only to choose
+    between phrasings of one question with similar volume. Score = mean log probability per step (higher = better)."""
+    LAMBDA = 0.8
+
+    def __init__(self, phrases):
+        self.c1: Counter = Counter()
+        self.c2: Counter = Counter()
+        for text in phrases:
+            toks = ["<s>"] + normalize_text(text).split() + ["</s>"]
+            self.c1.update(toks)
+            self.c2.update(zip(toks, toks[1:]))
+        self.total = sum(self.c1.values()) + len(self.c1)
+
+    def score(self, text: str) -> float:
+        toks = ["<s>"] + normalize_text(text).split() + ["</s>"]
+        logp = 0.0
+        for a, b in zip(toks, toks[1:]):
+            pair = self.c2[(a, b)] / self.c1[a] if self.c1[a] else 0.0
+            logp += math.log(self.LAMBDA * pair + (1 - self.LAMBDA) * (self.c1[b] + 1) / self.total)
+        return logp / (len(toks) - 1)
 
 
 # --------------------------------------------------------------------------- noise filter

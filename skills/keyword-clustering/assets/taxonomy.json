@@ -779,7 +779,8 @@
           "generic": [
             "\\b(history|historical|historic|histories|origins?|originated?|originates|beginnings?|began|begin|start(ed|s)?|came from|come from|story|stories|behind)\\b",
             "\\b(formed|created|invented|founded|came up with|(national|federal|official) holiday)\\b",
-            "\\b(celebrat\\w*|years?|what year|take place|took place|taken place|held|located|location|site)\\b"
+            "\\b(celebrat\\w*|years?|what year|take place|took place|taken place|held|located|location|site)\\b",
+            "\\b(lasts?|lasted)\\b"
           ]
         },
         "images": {
@@ -805,7 +806,8 @@
           ],
           "generic": [
             "\\b(countries|country|around the world|worldwide|other|only)\\b",
-            "\\bcelebrat\\w*"
+            "\\bcelebrat\\w*",
+            "\\bjust\\b"
           ],
           "fallback": "meaning"
         },
@@ -873,7 +875,8 @@
             "\\bfor (kids|children|toddlers|preschoolers|students|families)\\b"
           ],
           "generic": [
-            "\\b(activities|activity|things to do|what to do|ideas?|fun|celebrat\\w*|ways to)\\b"
+            "\\b(activities|activity|things to do|what to do|ideas?|fun|celebrat\\w*|ways to)\\b",
+            "\\b(to )?play(ing)?\\b"
           ]
         },
         "food": {
@@ -1047,7 +1050,20 @@
     "hen party": "bachelorette",
     "stag do": "bachelor party",
     "boxing day": "boxing day",
-    "mothering sunday": "mothers day"
+    "mothering sunday": "mothers day",
+    "this or that": "thisorthat",
+    "would you rather": "wouldyourather",
+    "place cards": "placecards",
+    "place card": "placecard",
+    "places to visit": "travel",
+    "place to visit": "travel",
+    "places to go": "travel",
+    "place to go": "travel",
+    "places to travel": "travel",
+    "place to travel": "travel",
+    "where to go": "travel",
+    "where to travel": "travel",
+    "where to visit": "travel"
   },
   "core_stopwords": [
     "a",
@@ -1177,7 +1193,10 @@
     "quick",
     "not",
     "people",
-    "americans"
+    "americans",
+    "during",
+    "over",
+    "happy"
   ],
   "core_synonyms": {
     "until": "countdown",
@@ -1321,7 +1340,22 @@
     "students": "kids",
     "designated": "become",
     "historical": "history",
-    "historic": "history"
+    "historic": "history",
+    "original": "first",
+    "latest": "earliest",
+    "vocabulary": "term",
+    "vocab": "term",
+    "picture": "image",
+    "pic": "image",
+    "photo": "image",
+    "vacation": "travel",
+    "trip": "travel",
+    "getaway": "travel",
+    "destination": "travel",
+    "visit": "travel",
+    "traveling": "travel",
+    "travelling": "travel",
+    "mythology": "real"
   },
   "us_only_terms": [
     "mom",

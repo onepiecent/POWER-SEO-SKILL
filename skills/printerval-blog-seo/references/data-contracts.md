@@ -23,12 +23,13 @@ Unusual columns: `--map keyword="Top queries" volume=Impressions`.
 
 ## keyword-clustering output
 
-**`clusters.csv`** (one row per cluster = one blog post): `cluster_id, market, cluster_name, keyword_count, seed_volume, cluster_volume, seed_kd, kd_min, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, theme, core, category, season, market_terms, parent_topic, keywords`
+**`clusters.csv`** (one row per cluster = one blog post): `cluster_id, market, cluster_name, keyword_count, seed_volume, cluster_volume, seed_kd, kd_min, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, theme, core, category, season, market_terms, parent_topic, keywords, name_fluency`
 
 **`keyword-map.csv`** (one row per keyword): `cluster_id, market, keyword, volume, volume_estimated, kd, cpc, is_seed, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, theme, category, market_terms, parent_topic, intent_source, variants, source_file, spelling_fixed, variant_volumes`
 
 - `theme` ∈ the theme keys of `assets/taxonomy.json` (dates, history, meaning, facts, printables, humor, crafts, decor, images, world, gifts, events, activities, food, messages) or empty. `core` = the words that say what the keyword asks once the topic, the theme's generic words and stop words are removed (space-separated; empty = the broad question of the theme).
 - `variants` / `variant_volumes`: same-meaning variants merged into this keyword (word order, a year, a fixed typo) and their volumes, `|`-separated. `spelling_fixed` = 1 when a typo or split word was corrected before matching.
+- `name_fluency`: how natural the cluster's name reads (mean log probability per word pair, learned from the file; higher = more natural, usually -1 to -4). topic-map uses it to break ties when naming a post.
 
 Others: `excluded.csv` (keyword, volume, reason, source_file), `unclassified.csv`, `taxonomy-suggestions.csv`, `merge-candidates.csv`, `groups.csv/.md`, `cluster-report.md`.
 
@@ -38,7 +39,7 @@ Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop
 
 `pillar_id, pillar_type, pillar_key, pillar_name, role, cluster_id, primary_keyword, planned_slug, post_type, reader_need, cluster_volume, priority_score, bucket, season, market, occasion, recipient, interest, product, craft, keywords, parent_hint, note, theme, merged_into`
 
-- `role` ∈ pillar, cluster, standalone (the planned posts), merged (covered by the post `merged_into`; no slug of its own), backlog (long tail with no theme pillar; not planned), skip (shopping intent). `post_type` ∈ pillar-hub, gift-guide, ideas-list, choose-guide, how-to, explainer, copy-ideas, merged, backlog, skip.
+- `role` ∈ pillar, cluster, standalone (the planned posts), merged (covered by the post `merged_into`, which may sit in another theme pillar of the same topic; no slug of its own), backlog (long tail that matches no theme pillar; not planned), skip (shopping intent). `post_type` ∈ pillar-hub, gift-guide, ideas-list, choose-guide, how-to, explainer, copy-ideas, merged, backlog, skip.
 - A split topic has `pillar_key` = `<topic>/<theme>` (for example `thanksgiving/history`).
 - `bucket` A/B/C by priority score (top 20% = A, up to 50% = B). `planned_slug` is a proposed slug (not a real URL).
 
@@ -46,7 +47,7 @@ Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop
 
 `source_slug, source_keyword, target_slug, link_type, anchor, anchor_alternatives, placement, priority, status, reason`
 
-- `link_type` ∈ to_pillar, from_pillar, sibling, cross_pillar, orphan_fix, related, backlink_old_post.
+- `link_type` ∈ to_pillar, from_pillar, contextual, sibling, cross_pillar, orphan_fix, related, backlink_old_post. The final plan's Internal Link column takes every type except `sibling`; Related Post takes the siblings.
 - `status` ∈ include_in_draft, include_in_draft_target_not_live_yet, existing_verify_present, update_old_post_after_target_live.
 
 ## seasonal-plan.csv
@@ -62,6 +63,16 @@ Sheet **Plan**, one row per planned post: `STT, Main Keyword, Secondary Keyword,
 - `Secondary Keyword`, `Internal Link`, `Related Post`: one item per line (`anchor || URL` for links). In the .xlsx the link cells are formulas that read `URL Blog` of the target row by STT; the .csv has plain text (UTF-8 with BOM).
 
 Sheet **Keyword Map**: `STT, Main Keyword, Keyword, Volume, KD, Role` with Role ∈ main, secondary, also covers, variant.
+
+Sheet **Schedule**: `Order, STT, Main Keyword, Category Kind, Priority, Volume, KD, Season, Event Date, Publish By, Status, Note`; Status ∈ late: publish ASAP, due soon, on time, no date rule, evergreen.
+
+Sheet **Research Next** (one-topic exports only): `Topic, Theme, Why It Matters, Keywords In File, Volume In File, Status, Seeds To Export`; Status ∈ covered, thin, missing, suggested (occasion ideas).
+
+Sheet **Published Match** (with `--published`): `STT, Main Keyword, Match, Published Title, URL, Category, Score, Advice`; Match ∈ update this post, also published, covers part of it, related live post, duplicate published posts, IP check. The published-posts input is any CSV/.xlsx whose header (within the first 20 rows of a sheet) has a URL column (`URL`, `Link`, `Permalink`...) and a title column (`Title`, `Tiêu đề`...); optional `Category` and a focus keyword column.
+
+Sheet **Changes** (with `--previous`): `STT, Main Keyword, Change, Detail`; Change ∈ kept, renamed, new, dropped, kept from the previous plan.
+
+Sheet **QA**: `Severity, Check, STT, Main Keyword, Detail, Suggestion`; Severity ∈ high, medium, low, info; Check ∈ overlap, misplaced, year_in_main, slug, overloaded, thin_links, weak_post, hard_keyword (`scripts/plan_qa.py`; heuristics for a person to review).
 
 ## Markers in a post
 

@@ -13,12 +13,13 @@ This repo is an SEO content skill set for the **Printerval blog** (print-on-dema
 ## Commands
 
 ```bash
-python3 -W error::ResourceWarning -m unittest discover -s tests     # 96 tests, runs in a few seconds
+python3 -W error::ResourceWarning -m unittest discover -s tests     # 125 tests, runs in a few seconds
 python3 scripts/package_skills.py                                    # dist/<skill>.zip
 python3 skills/printerval-blog-seo/scripts/export_plan.py --help     # final plan (.xlsx) for the content team
+python3 skills/printerval-blog-seo/scripts/run_plan.py --help        # the whole pipeline in one command
 ```
 
-The scripts use only the Python 3 standard library (tested on 3.13). Each skill is self-contained in `skills/<name>/` (SKILL.md, scripts/, references/, assets/); do not import across skills (one exception, with a fallback: `topic-map` looks for `keyword-clustering`'s `taxonomy.json` to name pillars).
+The scripts use only the Python 3 standard library (tested on 3.13). Each skill is self-contained in `skills/<name>/` (SKILL.md, scripts/, references/, assets/); do not import across skills. Two data files are read across skills, each with a fallback when missing: `topic-map` reads `keyword-clustering`'s `taxonomy.json` to name pillars, and `printerval-blog-seo/scripts/published.py` reads `claims-compliance-check`'s `ip-watchlist.txt` to flag published posts that name a brand. `run_plan.py` runs the other skills' scripts as separate processes (no import).
 
 ## When editing
 
