@@ -2,6 +2,7 @@
 """Read "real" keyword export files from SEO specialists. Standard library only.
 
 Situations handled:
+  * Excel workbooks (.xlsx/.xlsm, the default Semrush export): the first sheet with a keyword column is read;
   * UTF-16 + tab (Google Keyword Planner, some Ahrefs exports), UTF-8 with BOM, cp1252;
   * the header row is not the first line (Keyword Planner has 2-3 description lines above it);
   * delimiters , ; tab |;
@@ -11,8 +12,11 @@ Situations handled:
 from __future__ import annotations
 
 import csv
+import posixpath
 import re
+import zipfile
 from typing import Iterator
+from xml.etree import ElementTree as ET
 
 DELIMS = [",", "\t", ";", "|"]
 SCAN_LINES = 40
@@ -113,6 +117,114 @@ def norm_market(raw) -> str:
     return MARKET_MAP.get(s, s or "")
 
 
+# --------------------------------------------------------------------------- xlsx (zip + XML, no third-party library)
+def _local(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def is_xlsx(path: str) -> bool:
+    if path.lower().endswith((".xlsx", ".xlsm")):
+        return True
+    try:
+        with open(path, "rb") as fh:
+            if fh.read(4) != b"PK\x03\x04":
+                return False
+        with zipfile.ZipFile(path) as zf:
+            return "xl/workbook.xml" in zf.namelist()
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
+def _col_index(ref: str) -> int:
+    n = 0
+    for ch in ref:
+        if not ch.isalpha():
+            break
+        n = n * 26 + (ord(ch.upper()) - 64)
+    return n - 1
+
+
+def _xlsx_sheets(zf: zipfile.ZipFile) -> list[tuple[str, str]]:
+    """(sheet name, path of the sheet XML inside the zip), in workbook order."""
+    rels = {}
+    if "xl/_rels/workbook.xml.rels" in zf.namelist():
+        for rel in ET.fromstring(zf.read("xl/_rels/workbook.xml.rels")):
+            target = rel.get("Target", "")
+            rels[rel.get("Id")] = target.lstrip("/") if target.startswith("/") else posixpath.normpath(posixpath.join("xl", target))
+    sheets = []
+    for el in ET.fromstring(zf.read("xl/workbook.xml")).iter():
+        if _local(el.tag) != "sheet":
+            continue
+        rid = next((v for k, v in el.attrib.items() if _local(k) == "id"), None)
+        path = rels.get(rid) or f"xl/worksheets/sheet{len(sheets) + 1}.xml"
+        sheets.append((el.get("name") or f"Sheet{len(sheets) + 1}", path))
+    return sheets
+
+
+def _xlsx_shared_strings(zf: zipfile.ZipFile) -> list[str]:
+    if "xl/sharedStrings.xml" not in zf.namelist():
+        return []
+    out = []
+    for si in ET.fromstring(zf.read("xl/sharedStrings.xml")):
+        if _local(si.tag) != "si":
+            continue
+        parts = []
+        for child in si:  # plain <t>, or rich-text runs <r><t>; phonetic hints <rPh> are skipped
+            name = _local(child.tag)
+            if name == "t":
+                parts.append(child.text or "")
+            elif name == "r":
+                parts += [t.text or "" for t in child if _local(t.tag) == "t"]
+        out.append("".join(parts))
+    return out
+
+
+def _xlsx_rows(zf: zipfile.ZipFile, sheet_path: str, shared: list[str]) -> Iterator[list[str]]:
+    with zf.open(sheet_path) as fh:
+        for _, el in ET.iterparse(fh, events=("end",)):
+            if _local(el.tag) != "row":
+                continue
+            cells: dict[int, str] = {}
+            nxt = 0
+            for c in el:
+                if _local(c.tag) != "c":
+                    continue
+                idx = _col_index(c.get("r")) if c.get("r") else nxt
+                nxt = idx + 1
+                kind = c.get("t", "n")
+                if kind == "inlineStr":
+                    val = "".join(x.text or "" for x in c.iter() if _local(x.tag) == "t")
+                else:
+                    v = next((x for x in c if _local(x.tag) == "v"), None)
+                    raw = v.text if v is not None and v.text is not None else ""
+                    if kind == "s":
+                        val = shared[int(raw)] if raw.isdigit() and int(raw) < len(shared) else ""
+                    elif kind == "b":
+                        val = "TRUE" if raw == "1" else "FALSE"
+                    else:
+                        val = raw
+                cells[idx] = val
+            el.clear()
+            yield [cells.get(i, "") for i in range(max(cells) + 1)] if cells else []
+
+
+def _read_xlsx(path: str, keyword_names: set[str]) -> tuple[str, int, list[list[str]]]:
+    """Return (sheet name, header row index, rows) for the first sheet that has a keyword column near the top."""
+    with zipfile.ZipFile(path) as zf:
+        shared = _xlsx_shared_strings(zf)
+        preview = []
+        for name, sheet_path in _xlsx_sheets(zf):
+            if sheet_path not in zf.namelist():
+                continue
+            rows = list(_xlsx_rows(zf, sheet_path, shared))
+            for i, cells in enumerate(rows[:SCAN_LINES]):
+                if any(v in keyword_names for c in cells for v in header_variants(c)):
+                    return name, i, rows
+            preview = preview or [f"[{name}] " + " | ".join(r) for r in rows[:5]]
+    raise SystemExit("No sheet has a header row with a keyword/query column in its first 40 rows.\n"
+                     "Use --map keyword=<column name> if the column has an unusual name. First rows:\n" + "\n".join(preview))
+
+
 # --------------------------------------------------------------------------- reading
 class Table:
     """Result of reading one file: info (what was detected) and an iterator of records with normalised column names."""
@@ -141,12 +253,19 @@ def _find_header(lines: list[str], keyword_names: set[str]) -> tuple[int, str]:
 
 def read_keywords(path: str, overrides: dict | None = None) -> Table:
     overrides = {k: norm_header(v) for k, v in (overrides or {}).items()}
-    with open(path, "rb") as fh:
-        text, encoding = decode_bytes(fh.read())
-    lines = text.splitlines()
     keyword_names = set(ALIASES["keyword"]) | ({overrides["keyword"]} if "keyword" in overrides else set())
-    header_idx, delim = _find_header(lines, keyword_names)
-    header = split_line(lines[header_idx], delim)
+    if is_xlsx(path):
+        sheet, header_idx, xrows = _read_xlsx(path, keyword_names)
+        header, body = xrows[header_idx], iter(xrows[header_idx + 1:])
+        encoding, delim_label = "xlsx", f"sheet '{sheet}'"
+    else:
+        with open(path, "rb") as fh:
+            text, encoding = decode_bytes(fh.read())
+        lines = text.splitlines()
+        header_idx, delim = _find_header(lines, keyword_names)
+        header = split_line(lines[header_idx], delim)
+        body = csv.reader(lines[header_idx + 1:], delimiter=delim)
+        delim_label = {"\t": "TAB"}.get(delim, delim)
     colmap: dict[str, int] = {}
     used_headers: dict[str, str] = {}
     for canon in ALIASES:
@@ -160,13 +279,12 @@ def read_keywords(path: str, overrides: dict | None = None) -> Table:
             if canon in colmap:
                 break
     volume_source = next((c for c in VOLUME_FALLBACK_ORDER if c in colmap), "none")
-    info = {"path": path, "encoding": encoding, "delimiter": {"\t": "TAB"}.get(delim, delim),
+    info = {"path": path, "encoding": encoding, "delimiter": delim_label,
             "header_row": header_idx + 1, "columns": used_headers, "volume_source": volume_source,
             "rows": 0, "skipped_blank": 0}
 
     def generate() -> Iterator[dict]:
-        reader = csv.reader(lines[header_idx + 1:], delimiter=delim)
-        for cells in reader:
+        for cells in body:
             if not any(c.strip() for c in cells):
                 info["skipped_blank"] += 1
                 continue

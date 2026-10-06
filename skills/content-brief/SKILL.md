@@ -15,6 +15,7 @@ A brief is the **quality contract** between SEO and the writer: what the reader 
        --link-plan outputs/link-plan.csv --seasonal-plan outputs/seasonal-plan.csv --bucket A --limit 10 --out outputs/briefs
    python3 skills/content-brief/scripts/make_brief.py --topic-map outputs/topic-map.csv --slug mothers-day-gifts-for-grandma
    ```
+   A post that absorbed other clusters in the topic map (`role=merged`) lists them under **"Also covers"** in the Keywords section: answer them as sections or FAQs of the same post, never as separate thin pages.
 2. **Fill in the `[TO FILL]` sections** (see `references/serp-review.md`):
    - Who the reader is and what situation they are in; what would make them close the tab disappointed.
    - The real SERP on google.com (US) or google.co.uk (UK), **never searched from a Vietnamese IP**: the winning format, what the competitors do well and **what they miss** (the content gap), and the People Also Ask / AI Overview questions to answer **inside the same post** (not split into thin pages).

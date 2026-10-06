@@ -419,7 +419,7 @@
         "kids": {
           "label": "Kids",
           "patterns": [
-            "\\b(kids?|children|toddlers?|boys|girls|little ones)\\b"
+            "\\b(kids?|children|toddlers?|boys|girls|little ones|kindergarten(ers)?|kindergartners?|preschool(ers)?|students?|classroom)\\b"
           ]
         },
         "teens": {
@@ -641,19 +641,22 @@
           "label": "Sizing & Fit Guide",
           "patterns": [
             "\\b(size|sizes|sizing|fit|fits|measure|measurements?|size chart)\\b"
-          ]
+          ],
+          "requires": "\\b(shirts?|tshirts?|tees?|t shirts?|hoodies?|sweatshirts?|sweaters?|clothes|clothing|garments?|fabrics?|apparel|jerseys?|socks|hats?|caps?|leggings|pants|jeans|dress(es)?|onesies?|pajamas|prints?|printed|printing|vinyl|mugs?|tumblers?|blankets?|pillows?|canvas|posters?|merch\\w*)\\b"
         },
         "care": {
           "label": "Care & Washing Guide",
           "patterns": [
-            "\\b(wash|washing|care|shrink\\w*|stain\\w*|iron\\w*|dry|drying|fade|fading|crack\\w*|peel\\w*|wrinkle\\w*)\\b"
-          ]
+            "\\b(wash|washing|care|shrink(s|ing|age)?|stain(s|ed|ing)?|iron(s|ed|ing)?|dry|drying|fade|fading|crack(s|ed|ing)?|peel(s|ed|ing)?|wrinkle(s|d)?)\\b"
+          ],
+          "requires": "\\b(shirts?|tshirts?|tees?|t shirts?|hoodies?|sweatshirts?|sweaters?|clothes|clothing|garments?|fabrics?|apparel|jerseys?|socks|hats?|caps?|leggings|pants|jeans|dress(es)?|onesies?|pajamas|prints?|printed|printing|vinyl|mugs?|tumblers?|blankets?|pillows?|canvas|posters?|merch\\w*)\\b"
         },
         "materials": {
           "label": "Fabric & Materials Guide",
           "patterns": [
             "\\b(cotton|polyester|blend|fabric|material|gsm|heavyweight|organic|tri blend)\\b"
-          ]
+          ],
+          "requires": "\\b(shirts?|tshirts?|tees?|t shirts?|hoodies?|sweatshirts?|sweaters?|clothes|clothing|garments?|fabrics?|apparel|jerseys?|socks|hats?|caps?|leggings|pants|jeans|dress(es)?|onesies?|pajamas|prints?|printed|printing|vinyl|mugs?|tumblers?|blankets?|pillows?|canvas|posters?|merch\\w*)\\b"
         },
         "print-methods": {
           "label": "Print Methods Explained",
@@ -664,7 +667,7 @@
         "design": {
           "label": "Design & Personalization Tips",
           "patterns": [
-            "\\b(design\\w*|template|mockup|font|resolution|dpi|image size)\\b"
+            "\\b(design(s|er|ers|ing|ed)?|template|mockup|font|resolution|dpi|image size)\\b"
           ]
         },
         "gifting-etiquette": {
@@ -680,6 +683,227 @@
             "\\b(shipping|delivery|deliver|arrive|arrival)\\b"
           ],
           "claims_sensitive": true
+        }
+      },
+      "_comment": "Know-how about printed products. 'requires': the value only applies when this regex also matches or the keyword names a product, so 'turkey size' or 'dry turkey' are not read as sizing or care questions."
+    },
+    "theme": {
+      "_comment": "Sub-topic of the keyword, used to split one big topic (a single occasion export) into pillars and to merge question variants into one post. Checked in this order: the first 'patterns' match wins; 'weak_patterns' are only tried when no theme matched strongly. 'generic' words are ignored when deciding whether two keywords ask the same thing ('when is thanksgiving' = 'what day is thanksgiving'). 'need' is the reader need used when the reader-need rules find nothing. year_only: theme for an occasion keyword that only adds a year ('thanksgiving 2026'). 'fallback': when topic-map splits a big pillar by theme and this theme is too small to be a pillar of its own, its posts join the fallback theme's pillar.",
+      "year_only": "dates",
+      "product_theme": "gifts",
+      "values": {
+        "messages": {
+          "label": "Quotes, Messages & Prayers",
+          "need": "copy_ideas",
+          "patterns": [
+            "\\b(quotes?|quotations?|sayings?|messages?|wishes|greetings?|captions?|poems?|poetry|prayers?|blessings?|grace|toasts?|speech(es)?|verses?|bible|scriptures?|psalms?|devotions?|devotionals?|sermons?|thank you notes?|card messages?|what to write|things to say|ways to say|thankful for|grateful for|gratitude|affirmations?|words|vocabulary|vocab|terms|hashtags?)\\b",
+            "\\b(another name|other names?|names? for|synonyms?|another word|other words|good morning|good night)\\b"
+          ],
+          "weak_patterns": [
+            "\\bhappy\\b"
+          ],
+          "generic": [
+            "\\b(quotes?|quotations?|sayings?|messages?|wishes|greetings?|words|happy)\\b",
+            "\\b(related|associated|with)\\b"
+          ]
+        },
+        "facts": {
+          "label": "Facts & Trivia",
+          "need": "inspire",
+          "patterns": [
+            "\\b(facts?|trivia|quiz(zes)?|questions?|jeopardy|did you know|statistics|stats|true or false|fact or fiction|riddles?)\\b"
+          ],
+          "generic": [
+            "\\b(facts?|trivia|quiz(zes)?|questions?|answers?|and answers|fun)\\b",
+            "\\bprintables?\\b"
+          ],
+          "fallback": "meaning"
+        },
+        "printables": {
+          "label": "Printables & Coloring Pages",
+          "need": "inspire",
+          "patterns": [
+            "\\b(printables?|coloring|colouring|color sheets?|worksheets?|word ?search(es)?|crosswords?|puzzles?|templates?|place cards?|bingo|mad ?libs|scavenger hunts?|activity sheets?)\\b"
+          ],
+          "generic": [
+            "\\b(printables?|free)\\b"
+          ],
+          "fallback": "activities"
+        },
+        "humor": {
+          "label": "Jokes & Funny Ideas",
+          "need": "copy_ideas",
+          "patterns": [
+            "\\b(jokes?|puns?|memes?|one liners?|knock knock)\\b"
+          ],
+          "weak_patterns": [
+            "\\b(funny|hilarious|humou?r)\\b"
+          ],
+          "generic": [
+            "\\b(jokes?|funny|hilarious|humou?r)\\b"
+          ],
+          "fallback": "messages"
+        },
+        "crafts": {
+          "label": "Crafts & DIY",
+          "need": "inspire",
+          "patterns": [
+            "\\b(crafts?|crafting|diy|handprints?|homemade|handmade|art projects?|paper plates?|pine ?cones?)\\b"
+          ],
+          "generic": [
+            "\\b(crafts?|crafting|diy|ideas?)\\b"
+          ],
+          "fallback": "activities"
+        },
+        "decor": {
+          "label": "Decor & Table Ideas",
+          "need": "inspire",
+          "patterns": [
+            "\\b(decor|decorations?|decorating|decorate|decorative|centerpieces?|table ?scapes?|table settings?|table decor|place settings?|wreaths?|front porch|porch|mantel|mantle|banners?|garlands?|napkins?|tablecloths?|table runners?|placemats?|door decor|signs?)\\b"
+          ],
+          "generic": [
+            "\\b(decor|decorations?|decorating|decorate|ideas?)\\b"
+          ],
+          "fallback": "activities"
+        },
+        "history": {
+          "label": "History & Origins",
+          "need": "info",
+          "patterns": [
+            "\\b(history|historical|historic|histories|origins?|originated?|originates|beginnings?|began|begin|start(ed|s)?|founded|founder|invented|inventor|came from|come from|first|pilgrims?|wampanoag|plymouth|plimoth|mayflower|1621|1623|1789|1863|1939|1941|proclamations?|proclaimed|declared|established|lincoln|sarah (josepha )?hale|george washington|squanto|tisquantum|massasoit|real story|true story|truth|myths?|natives?|native americans?|indians?|indigenous|tribes?|original|created|creation|became|become|day of mourning|story|stories)\\b",
+            "\\b(made|formed|official|officially|really|actually|happened|ago|1st|civil war|war|controvers\\w*|problematic|offensive|colonial\\w*|genocide|massacre)\\b",
+            "^(?!.*\\bpardon).*\\bpresidents?\\b",
+            "\\b(real|true)\\b(?!\\s+(meaning|spirit|purpose))",
+            "\\b(fdr|roosevelt|franklin|came up with|designated|thought of)\\b"
+          ],
+          "generic": [
+            "\\b(history|historical|historic|histories|origins?|originated?|originates|beginnings?|began|begin|start(ed|s)?|came from|come from|story|stories|behind)\\b",
+            "\\b(formed|created|invented|founded|came up with|(national|federal|official) holiday)\\b",
+            "\\b(celebrat\\w*|years?|what year|take place|took place|taken place|held|located|location|site)\\b"
+          ]
+        },
+        "images": {
+          "label": "Images, Clipart & Wallpapers",
+          "need": "inspire",
+          "patterns": [
+            "\\b(images?|pictures?|pics|photos?|clip ?arts?|gifs?|wallpapers?|backgrounds?|drawings?|draw|cartoons?|emojis?|png|svg|icons?|artwork)\\b"
+          ],
+          "generic": [
+            "\\b(images?|pictures?|pics|photos?|free)\\b"
+          ],
+          "fallback": "messages"
+        },
+        "world": {
+          "label": "Around the World",
+          "need": "info",
+          "patterns": [
+            "\\b(canada|canadian|other countries|countries|country|around the world|worldwide|global|international|japan|japanese|germany|german|liberia|grenada|uk|britain|british|england|europe|european|mexico|australia|brazil|philippines|only in america|only (an )?american|who celebrate[sd]?|which countries|celebrated in)\\b",
+            "\\bwhere\\b.*\\bcelebrat\\w*",
+            "\\bcelebrat\\w*\\b.*\\bwhere\\b",
+            "\\b(united kingdom|second monday)\\b",
+            "\\bjust (an )?american\\b"
+          ],
+          "generic": [
+            "\\b(countries|country|around the world|worldwide|other|only)\\b",
+            "\\bcelebrat\\w*"
+          ],
+          "fallback": "meaning"
+        },
+        "gifts": {
+          "label": "Gifts, Shirts & Custom Ideas",
+          "need": "inspire",
+          "patterns": [
+            "\\b(gifts?|presents?|hostess|gift baskets?|gift bags?|party favors?|favors|what to get|what to bring|what to wear|outfits?|clothes|clothing|attire|apparel|shirts?|tshirts?|tees?|sweaters?|sweatshirts?|hoodies?|pajamas?|pjs|socks|onesies?|costumes?|hats?|aprons?|mugs?|tumblers?|blankets?|pillows?|ornaments?|stickers?)\\b"
+          ],
+          "generic": [
+            "\\b(gifts?|presents?|ideas?)\\b"
+          ]
+        },
+        "meaning": {
+          "label": "Meaning & Symbols",
+          "need": "info",
+          "patterns": [
+            "\\b(meaning|means|mean|definition|define|purpose|significance|significant|symbols?|symbolism|symbolize\\w*|represents?|explained|explanation)\\b",
+            "\\bwhy\\b.*\\bcelebrat\\w*",
+            "\\bcelebrat\\w*\\b.*\\bwhy\\b",
+            "\\breasons? (for|to|why)\\b",
+            "\\bimportan(t|ce)\\b",
+            "\\bwhat (do|does|did)\\b.*\\bcelebrat\\w*",
+            "\\b(defined|true meaning|real meaning|true spirit|spirit of)\\b"
+          ],
+          "weak_patterns": [
+            "\\b(what is|whats|what does|about)\\b",
+            "\\bwhy\\b"
+          ],
+          "generic": [
+            "\\b(meaning|means|mean|definition|define|purpose|significance|explained|celebrat\\w*|why|what is|about|all about)\\b",
+            "\\b(important|importance)\\b",
+            "\\b(reasons?|the reason)\\b",
+            "\\bbehind\\b"
+          ]
+        },
+        "events": {
+          "label": "Events, Parades & Travel",
+          "need": "info",
+          "patterns": [
+            "\\b(parades?|football|nfl|kickoff|dog show|turkey trot|5k|10k|races?|tv|television|channel|where to watch|how to watch|stream(ing)?|lineup|performers?|balloons?|weather|travel(ing)?|traffic|flights?|airports?|events?|fireworks|concerts?)\\b",
+            "\\b(places?|visit\\w*|vacations?|getaways?|trips?|destinations?|cruises?|hotels?)\\b"
+          ],
+          "generic": [
+            "\\b(events?)\\b",
+            "\\b(best places?|places? to (go|visit))\\b"
+          ],
+          "fallback": "activities"
+        },
+        "activities": {
+          "label": "Traditions, Activities & Games",
+          "need": "inspire",
+          "patterns": [
+            "\\b(activities|activity|things to do|what to do|games?|party|parties|traditions?|customs?|volunteer\\w*|movies?|films?|songs?|music|books?|read alouds?|story ?time|ways to celebrate|how to celebrate|pardon\\w*|friendsgiving|hosting|host|conversation starters?)\\b",
+            "\\bhow (do|did|does) \\w+ ?\\w* celebrate\\b",
+            "\\b(videos?|documentar(y|ies)|articles?|podcasts?)\\b",
+            "\\bwhat (do|does|did) (people|americans|we|you|families|they) do\\b",
+            "\\bthings (to|you|associated)\\b",
+            "\\bhow (is|was|are|do|does|did|should)\\b.*\\bcelebrat\\w*",
+            "\\bwhat people do\\b"
+          ],
+          "weak_patterns": [
+            "\\b(ideas?|fun|family|celebrate|celebrating|celebrates)\\b",
+            "\\bcelebrations?\\b",
+            "\\bfor (kids|children|toddlers|preschoolers|students|families)\\b"
+          ],
+          "generic": [
+            "\\b(activities|activity|things to do|what to do|ideas?|fun|celebrat\\w*|ways to)\\b"
+          ]
+        },
+        "food": {
+          "label": "Food & Recipes",
+          "need": "inspire",
+          "patterns": [
+            "\\b(foods?|dinners?|lunch|menus?|meals?|recipes?|pies?|stuffing|side dish(es)?|sides|desserts?|appetizers?|casseroles?|gravy|cranberr(y|ies)|mashed potato(es)?|sweet potato(es)?|potato(es)?|yams?|leftovers?|potluck|cook(ing|ed)?|baking|bake|drinks?|cocktails?|wine|brunch|breakfast|snacks?|charcuterie|buffet|catering|turducken|brine|brining|roast(ed|ing)?|smoked|deep fried|thaw(ing)?|carv(e|ing)|breads?|rolls|salads?|soups?|eat|eats|eaten|eating|ate|feast|turkeys?)\\b"
+          ],
+          "generic": [
+            "\\b(foods?|ideas?|recipes?)\\b",
+            "\\b(eat|eats|eaten|eating|ate|served|serve|people)\\b"
+          ],
+          "fallback": "activities"
+        },
+        "dates": {
+          "label": "Dates & Calendar",
+          "need": "info",
+          "patterns": [
+            "\\b(when|whens|what day|what days|which day|what date|dates?|calendar|this year|next year|last year|how many days|how long until|days until|days till|days left|until|till|countdown|today|tomorrow|tonight|fall on|falls on|fell on|lands? on|always on|every year|thursdays?|weekends?|weeks?|november|nov|month|federal holiday|national holiday|public holiday|bank holiday|days? off|holiday schedule|determined|eve|day after|day before|night before|what time)\\b",
+            "\\b(years|by year|earliest|latest|after|before|falls?|fell|occurs?|happens?|\\d+(st|nd|rd|th))\\b",
+            "\\b(always|determin\\w*|season|coming|upcoming|soon|how long)\\b",
+            "\\btime\\b",
+            "\\b(calander|calender)\\b"
+          ],
+          "generic": [
+            "\\b(when|whens|what day|what days|which day|what date|dates?|this year|next year|last year|days?|november|nov|what time|time|calendar|fall on|falls on|fell on|lands? on|every year|today|month|on)\\b",
+            "\\b(falls?|fell|occurs?|happens?|celebrat\\w*|tomorrow|tonight|yesterday|each year|will be)\\b",
+            "\\blast\\b",
+            "\\bnext(?= \\d+ years?\\b)"
+          ]
         }
       }
     }
@@ -710,14 +934,15 @@
     {
       "need": "choose",
       "patterns": [
-        "\\b(best|vs|versus|which|reviews?|compare|comparison|worth it|better|buying guide|alternatives?)\\b",
-        "\\btop (\\d+|ten|gifts?|picks?|rated)\\b"
+        "\\b(best|vs|versus|reviews?|compare|comparison|worth it|better|buying guide|alternatives?)\\b",
+        "\\btop (\\d+|ten|gifts?|picks?|rated)\\b",
+        "\\bwhich (one|is better|is best|to (buy|choose|get|pick)|should i)\\b"
       ]
     },
     {
       "need": "solve",
       "patterns": [
-        "\\b(fix|fixing|remove|removing|shrink\\w*|fade|fading|stain\\w*|wash\\w*|iron\\w*|care|size|sizing|fit|fits|measure|measurements?|crack\\w*|peel\\w*|wrinkle\\w*)\\b"
+        "\\b(fix|fixing|remove|removing|shrink(s|ing|age)?|fade|fading|stain(s|ed|ing)?|wash(es|ed|ing)?|iron(s|ed|ing)?|care|size|sizing|fit|fits|measure|measurements?|crack(s|ed|ing)?|peel(s|ed|ing)?|wrinkle(s|d)?)\\b"
       ]
     },
     {
@@ -733,7 +958,8 @@
         "\\bmeaning\\b",
         "\\bhistory\\b",
         "\\bwhat day\\b",
-        "\\bdate\\b"
+        "\\bdate\\b",
+        "\\bwhy\\b"
       ]
     }
   ],
@@ -822,6 +1048,280 @@
     "stag do": "bachelor party",
     "boxing day": "boxing day",
     "mothering sunday": "mothers day"
+  },
+  "core_stopwords": [
+    "a",
+    "an",
+    "the",
+    "of",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "from",
+    "by",
+    "with",
+    "and",
+    "or",
+    "as",
+    "into",
+    "than",
+    "then",
+    "this",
+    "that",
+    "these",
+    "those",
+    "it",
+    "its",
+    "there",
+    "their",
+    "they",
+    "them",
+    "we",
+    "us",
+    "our",
+    "you",
+    "your",
+    "my",
+    "me",
+    "i",
+    "he",
+    "she",
+    "his",
+    "him",
+    "her",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "am",
+    "do",
+    "does",
+    "did",
+    "has",
+    "have",
+    "had",
+    "will",
+    "would",
+    "can",
+    "could",
+    "should",
+    "shall",
+    "may",
+    "might",
+    "must",
+    "what",
+    "when",
+    "where",
+    "who",
+    "whom",
+    "whose",
+    "why",
+    "how",
+    "which",
+    "whats",
+    "whens",
+    "day",
+    "holiday",
+    "usa",
+    "america",
+    "american",
+    "united",
+    "state",
+    "u",
+    "s",
+    "many",
+    "much",
+    "some",
+    "any",
+    "all",
+    "every",
+    "each",
+    "about",
+    "get",
+    "free",
+    "list",
+    "fun",
+    "ever",
+    "happen",
+    "happened",
+    "happens",
+    "go",
+    "goes",
+    "come",
+    "comes",
+    "more",
+    "isnt",
+    "arent",
+    "wasnt",
+    "dont",
+    "doesnt",
+    "didnt",
+    "occur",
+    "thing",
+    "take",
+    "took",
+    "taken",
+    "held",
+    "another",
+    "other",
+    "vs",
+    "versus",
+    "easy",
+    "hard",
+    "simple",
+    "quick",
+    "not",
+    "people",
+    "americans"
+  ],
+  "core_synonyms": {
+    "until": "countdown",
+    "till": "countdown",
+    "left": "countdown",
+    "away": "countdown",
+    "countdown": "countdown",
+    "always": "thursday",
+    "thursday": "thursday",
+    "fourth": "thursday",
+    "4th": "thursday",
+    "third": "thursday",
+    "3rd": "thursday",
+    "weekend": "week",
+    "week": "week",
+    "1621": "first",
+    "pilgrim": "first",
+    "plymouth": "first",
+    "plimoth": "first",
+    "mayflower": "first",
+    "native": "native",
+    "indian": "native",
+    "indigenou": "native",
+    "indigenous": "native",
+    "tribe": "native",
+    "wampanoag": "native",
+    "squanto": "native",
+    "tisquantum": "native",
+    "massasoit": "native",
+    "mourning": "native",
+    "true": "real",
+    "truth": "real",
+    "actual": "real",
+    "actually": "real",
+    "myth": "real",
+    "really": "real",
+    "president": "become",
+    "lincoln": "become",
+    "proclamation": "become",
+    "proclaimed": "become",
+    "declared": "become",
+    "established": "become",
+    "official": "become",
+    "officially": "become",
+    "made": "become",
+    "became": "become",
+    "signed": "become",
+    "law": "become",
+    "feast": "food",
+    "meal": "food",
+    "menu": "food",
+    "eat": "food",
+    "ate": "food",
+    "eaten": "food",
+    "eating": "food",
+    "dinner": "food",
+    "kid": "kids",
+    "children": "kids",
+    "child": "kids",
+    "toddler": "kids",
+    "preschool": "kids",
+    "preschooler": "kids",
+    "kindergarten": "kids",
+    "student": "kids",
+    "classroom": "kids",
+    "school": "kids",
+    "elementary": "kids",
+    "adult": "adults",
+    "grown": "adults",
+    "families": "family",
+    "determined": "thursday",
+    "determine": "thursday",
+    "determines": "thursday",
+    "decided": "thursday",
+    "decide": "thursday",
+    "decides": "thursday",
+    "calculated": "thursday",
+    "calculate": "thursday",
+    "chosen": "thursday",
+    "set": "thursday",
+    "change": "thursday",
+    "changed": "thursday",
+    "same": "thursday",
+    "different": "thursday",
+    "differ": "thursday",
+    "alway": "thursday",
+    "federal": "federal",
+    "national": "federal",
+    "public": "federal",
+    "bank": "federal",
+    "off": "federal",
+    "paid": "federal",
+    "year": "years",
+    "past": "years",
+    "future": "years",
+    "upcoming": "years",
+    "previous": "years",
+    "1st": "first",
+    "george": "become",
+    "washington": "become",
+    "abraham": "become",
+    "roosevelt": "become",
+    "fdr": "become",
+    "served": "food",
+    "serve": "food",
+    "dish": "food",
+    "dishes": "food",
+    "aloud": "book",
+    "alouds": "book",
+    "read": "book",
+    "reading": "book",
+    "book": "book",
+    "controversy": "real",
+    "controversial": "real",
+    "problematic": "real",
+    "offensive": "real",
+    "genocide": "real",
+    "massacre": "real",
+    "colonial": "real",
+    "colonialism": "real",
+    "synonym": "name",
+    "synonyms": "name",
+    "name": "name",
+    "names": "name",
+    "uk": "uk",
+    "britain": "uk",
+    "british": "uk",
+    "england": "uk",
+    "english": "uk",
+    "kingdom": "uk",
+    "scotland": "uk",
+    "wales": "uk",
+    "ireland": "uk",
+    "canadian": "canada",
+    "kindergartener": "kids",
+    "kindergarteners": "kids",
+    "kindergartner": "kids",
+    "kindergartners": "kids",
+    "preschoolers": "kids",
+    "toddlers": "kids",
+    "students": "kids",
+    "designated": "become",
+    "historical": "history",
+    "historic": "history"
   },
   "us_only_terms": [
     "mom",

@@ -116,8 +116,8 @@ def seasonal_plan(topic_rows: list[dict], cal: list[dict], today: dt.date, lead_
     plan = []
     for t in topic_rows:
         season = ALIAS.get(t.get("season", ""), t.get("season", ""))
-        if not season or t.get("role") == "skip":
-            continue
+        if not season or t.get("role") in ("skip", "merged", "backlog") or not t.get("planned_slug"):
+            continue  # merged clusters are covered by the post they were merged into
         mk = t.get("market", "us")
         mk = "us" if mk in ("all", "") else mk
         occ = sorted(by_key.get((mk, season), []), key=lambda r: r["date"])

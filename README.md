@@ -8,9 +8,9 @@ Scope: **blog content**. No technical audit, no URL or sitemap work (being optim
 
 | Skill | What it does | Main output |
 |---|---|---|
-| [`printerval-blog-seo`](skills/printerval-blog-seo/SKILL.md) | Orchestration, workflow, CSV schemas, research sources | - |
-| [`keyword-clustering`](skills/keyword-clustering/SKILL.md) | Reads real exports (Semrush, Ahrefs, Keyword Planner, Search Console; up to hundreds of thousands of rows), filters noise transparently, clusters and groups **on request** | `clusters.csv`, `cluster-report.md`, `groups.md` |
-| [`topic-map`](skills/topic-map/SKILL.md) | Pillar/cluster structure by occasion, interest, recipient, know-how and inspiration; A/B/C priority; content gaps | `topic-map.csv/.md` |
+| [`printerval-blog-seo`](skills/printerval-blog-seo/SKILL.md) | Orchestration, workflow, CSV schemas, research sources; **the final plan for the content team** | `final-plan.xlsx` |
+| [`keyword-clustering`](skills/keyword-clustering/SKILL.md) | Reads real exports (CSV or Excel from Semrush, Ahrefs, Keyword Planner, Search Console; up to hundreds of thousands of rows), fixes typos, filters noise transparently, merges question variants into one post, clusters and groups **on request** | `clusters.csv`, `cluster-report.md`, `groups.md` |
+| [`topic-map`](skills/topic-map/SKILL.md) | Pillar/cluster structure by occasion, interest, recipient, know-how and inspiration; splits a one-topic export into theme pillars and merges small clusters into the closest post; A/B/C priority; content gaps | `topic-map.csv/.md` |
 | [`internal-link-planner`](skills/internal-link-planner/SKILL.md) | Links between blog posts, anchors, orphan posts; audit of an existing link export | `link-plan.csv`, `link-audit.csv` |
 | [`editorial-calendar`](skills/editorial-calendar/SKILL.md) | US/UK holiday dates **computed by rule**, publish and refresh deadlines for seasonal posts | `seasonal-plan.csv` |
 | [`content-brief`](skills/content-brief/SKILL.md) | English briefs for writers or AI, seven post formats (gift guide, how-to, and more) | `briefs/<slug>.md` |
@@ -21,11 +21,12 @@ Scope: **blog content**. No technical audit, no URL or sitemap work (being optim
 ## Workflow
 
 ```
-CSV from the SEO specialist
+CSV or .xlsx from the SEO specialist
   -> keyword-clustering -> clusters.csv + cluster-report.md   (read the report first)
     -> topic-map -> topic-map.csv
         |- editorial-calendar -> seasonal-plan.csv
         |- internal-link-planner -> link-plan.csv
+        |    '- export_plan.py -> final-plan.xlsx   (the content team's sheet)
         '- content-brief -> briefs/*.md -> write the article
               -> helpful-content-editor + claims-compliance-check
               -> product-slot (content team adds the links) -> publish
@@ -48,13 +49,32 @@ python3 skills/internal-link-planner/scripts/link_plan.py plan outputs/topic-map
 python3 skills/content-brief/scripts/make_brief.py --topic-map outputs/topic-map.csv \
     --link-plan outputs/link-plan.csv --seasonal-plan outputs/seasonal-plan.csv --bucket A --out outputs/briefs
 
-# 3. Check a draft
+# 3. The final plan for the content team (one row per post, 15 columns, .xlsx + .csv)
+python3 skills/printerval-blog-seo/scripts/export_plan.py --topic-map outputs/topic-map.csv \
+    --keyword-map outputs/keyword-map.csv --link-plan outputs/link-plan.csv --out outputs/final-plan.xlsx
+
+# 4. Check a draft
 python3 skills/helpful-content-editor/scripts/helpful_check.py draft.md --market us --post-type gift-guide --keyword "mother's day gifts for grandma"
 python3 skills/product-slot/scripts/slot_check.py draft.md --post-type gift-guide --export slots.csv
 python3 skills/claims-compliance-check/scripts/claims_check.py draft.md --market us
 ```
 
 `examples/` contains **synthetic** data (not real figures) and two sample drafts (`draft-weak-demo.md` has deliberate flaws, `draft-good-demo.md` is a passing example) to try the tools on.
+
+### A one-topic Semrush export (for example "thanksgiving day", all keywords)
+
+```bash
+python3 skills/keyword-clustering/scripts/cluster_keywords.py thanksgiving-day_all-keywords_us.xlsx --market us \
+    --only occasion=thanksgiving --out outputs
+```
+
+Semrush's "all keywords" is broad match, so the file also holds other holidays; `--only` keeps the topic (typos such as `thanksgivng` are fixed first, so they are kept). The questions are merged into posts (`when is thanksgiving` = `what day is thanksgiving 2026`) and topic-map splits the topic into theme pillars (Dates & Calendar, History & Origins, Meaning, Facts & Trivia, Traditions & Activities, Quotes & Messages, Around the World). On a real 30,000-row export this gave 7 pillars and about 35 posts, with every other cluster merged into the closest post as secondary keywords.
+
+### The final plan (`final-plan.xlsx`)
+
+`STT | Main Keyword | Secondary Keyword | Volume | KD | Category | Category Kind | Thuộc Pillar | Title SEO | Meta Description SEO | Outline | Internal Link (Anchor || URL) | Related Post (Anchor || URL) | URL Blog | Trạng thái`
+
+Category, Title SEO, Meta Description SEO, Outline and Trạng thái are left for the content team. Category Kind is Pillar or Cluster, and a Cluster names its pillar. URL Blog is the planned URL (`https://printerval.com/{slug}`, change it with `--url-pattern`); the link cells in the .xlsx look the target's URL Blog up, so pasting the real URL after publishing updates every link to that post. A second sheet, Keyword Map, shows where every keyword went.
 
 ## Clustering "on request"
 
@@ -66,10 +86,11 @@ SEO specialists describe what they need in plain words; the skill turns that int
 | Custom groups (Family, Pets, Work, ...) | `--categories categories.json --group-by category` |
 | Only some occasions, drop terms, limit volume or difficulty | `--only occasion=mothers-day`, `--exclude "\bfree\b"`, `--min-volume 100`, `--max-kd 60` |
 | Finer or broader clusters | `--granularity tight` / `loose` |
+| By sub-topic (dates, history, quotes...) | `--group-by theme`, `--only theme=history` |
 | US and UK | `us.csv::us uk.csv::uk`, or a Country column |
 | New niches | `--extend-taxonomy extra.json` (suggestions are written to `taxonomy-suggestions.csv`) |
 
-The script handles UTF-16/tab files (Keyword Planner), description lines above the header, `, ; tab |` delimiters and numbers such as `1K - 10K` or `1.234`. It drops noisy keywords (retailers, "near me", Spanish, and similar) **with a reason for each** in `excluded.csv`. 150,000 keywords take about a minute.
+The script reads Excel files and UTF-16/tab files (Keyword Planner), description lines above the header, `, ; tab |` delimiters and numbers such as `1K - 10K` or `1.234`. It fixes typos learned from the file itself and drops noisy keywords (retailers, "near me", Spanish, politics, homework answer keys, opening hours, and similar) **with a reason for each** in `excluded.csv`. 150,000 keywords take about 70 seconds.
 
 ## Content principles
 
@@ -97,7 +118,7 @@ python3 -W error::ResourceWarning -m unittest discover -s tests
 python3 tests/make_big_fixture.py 150000 /tmp/big.csv   # performance check
 ```
 
-77 tests: multi-format file reading, facet detection, clustering (checked against pairwise comparison), filters, topic map, link plan and audit, holiday dates checked against the real calendar, briefs and the three checkers.
+96 tests: multi-format file reading (including .xlsx), spelling fixes, facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, filters, topic map with theme pillars and merged posts, link plan and audit, the final plan export, holiday dates checked against the real calendar, briefs and the three checkers.
 
 ## Layout
 
@@ -111,7 +132,7 @@ scripts/    package_skills.py
 
 ## Maintenance
 
-- **Taxonomy** (`skills/keyword-clustering/assets/taxonomy.json`): add niches and occasions when `taxonomy-suggestions.csv` shows unclassified keywords.
+- **Taxonomy** (`skills/keyword-clustering/assets/taxonomy.json`): add niches and occasions when `taxonomy-suggestions.csv` shows unclassified keywords; add theme patterns or `core_synonyms` when two phrasings of one question still land in two posts.
 - **Noise rules** (`assets/noise-rules.json`) and the **IP list** (`claims-compliance-check/assets/ip-watchlist.txt`, only a starting sample; legal should maintain the real list).
 - **Calendar** (`occasion_calendar.py`, `OCCASIONS`): add new occasions together with a test against the real date.
 - Guidance from Google, the FTC, the CMA and the ASA changes: update `references/sources.md` and re-check the original pages.
