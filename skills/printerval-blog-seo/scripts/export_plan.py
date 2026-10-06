@@ -11,13 +11,15 @@ Columns (the team's template, in this order):
   * Category, Title SEO, Meta Description SEO, Outline and Trạng thái are left empty: the content team fills them.
   * Category Kind is Pillar or Cluster; a Cluster names its pillar (the pillar's main keyword) in Thuộc Pillar.
   * Volume and KD are those of the main keyword (--volume post puts the post's total instead, an upper bound).
-  * Secondary Keyword: the post's other keywords (including clusters merged into it), largest first, without
-    duplicates that only differ by word order, a year or a fixed typo.
+  * Secondary Keyword: the post's other keywords (including clusters merged into it), largest first: at most 3 that
+    only rephrase the main keyword, the rest add new angles; no duplicates that only differ by word order, a year or
+    a fixed typo, and no past years (--year).
   * URL Blog is the PLANNED URL (--url-pattern). In the .xlsx the two link columns are formulas that read URL Blog
     of the target row (matched by STT), so pasting the real URL after publishing updates every link to that post.
     The .csv copy has plain text.
 
-A second sheet, Keyword Map, lists every keyword placed in the plan and the post (STT) it belongs to.
+A second sheet, Keyword Map, lists every keyword placed in the plan and the post (STT) it belongs to. A QA sheet lists
+what a person should review before handing the plan over (overlapping posts, misplaced keywords, orphans...).
 """
 from __future__ import annotations
 
@@ -31,6 +33,9 @@ import zipfile
 from collections import defaultdict
 from xml.sax.saxutils import escape
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import plan_qa  # noqa: E402
+
 COLUMNS = ["STT", "Main Keyword", "Secondary Keyword", "Volume", "KD", "Category", "Category Kind", "Thuộc Pillar",
            "Title SEO", "Meta Description SEO", "Outline", "Internal Link (Anchor || URL)",
            "Related Post (Anchor || URL)", "URL Blog", "Trạng thái"]
@@ -42,8 +47,16 @@ PLANNED = ("pillar", "cluster", "standalone")
 BODY_LINKS = ("to_pillar", "cross_pillar", "from_pillar", "orphan_fix", "related", "backlink_old_post")
 STOP = {"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was", "were", "do", "does", "did", "and"}
 YEAR_RX = re.compile(r"^(19|20)\d\d$")
+YEAR_IN_TEXT_RX = re.compile(r"\b(19|20)\d\d\b")
+ORDINALS = {"1st": "first", "2nd": "second", "3rd": "third", "4th": "fourth", "5th": "fifth"}
+# words that do not make a new angle: 'what day is thanksgiving' only rephrases 'when is thanksgiving'
+LIGHT = {"what", "when", "where", "why", "how", "who", "which", "whats", "whens", "it", "its", "be", "will", "can",
+         "should", "would", "there", "this", "that", "day", "days", "date", "dates", "year", "years", "holiday",
+         "holidays", "happy", "we", "you", "your", "our", "my", "me", "us", "usa", "america", "american", "about",
+         "with", "at", "from", "by", "or", "as", "much", "many", "ever", "really", "exactly", "always"}
 MAX_FORMULA = 8000
 MAX_SECONDARY_WORDS = 8  # longer queries stay in the Keyword Map sheet ('also covers')
+MAX_REPHRASINGS = 3  # secondary keywords that only rephrase the main keyword; the other slots go to new angles
 
 
 def read_csv(path: str) -> list[dict]:
@@ -63,17 +76,25 @@ def signature(keyword: str) -> frozenset:
     toks = re.sub(r"[^a-z0-9 ]+", " ", keyword.lower().replace("'", "")).split()
     out = set()
     for t in toks:
-        if t in STOP or YEAR_RX.match(t):
+        if t in STOP or YEAR_RX.match(t) or len(t) == 1:  # 'u.s.' -> 'u', 's'
             continue
-        out.add(t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith("ss") else t)
+        t = ORDINALS.get(t, t)
+        plural = len(t) > 3 and t.endswith("s") and not t.endswith(("ss", "us", "is", "ys")) and t not in LIGHT
+        out.add(t[:-1] if plural else t)  # 'this' and 'always' stay as they are
     return frozenset(out)
+
+
+def stale_year(keyword: str, year: int) -> bool:
+    """'thanksgiving bank holiday 2025' is out of date in a plan for 2026: keep it out of the secondary keywords."""
+    return any(int(y.group()) < year for y in YEAR_IN_TEXT_RX.finditer(keyword))
 
 
 # --------------------------------------------------------------------------- plan rows
 class Plan:
     def __init__(self, topic: list[dict], keywords: list[dict] | None, links: list[dict] | None, url_pattern: str,
-                 max_secondary: int, volume_mode: str, max_related: int):
+                 max_secondary: int, volume_mode: str, max_related: int, year: int | None = None):
         self.url_pattern, self.max_secondary, self.volume_mode, self.max_related = url_pattern, max_secondary, volume_mode, max_related
+        self.year = year or dt.date.today().year
         self.topic = topic
         self.links = links or []
         self.kw_by_cluster: dict[str, list[dict]] = defaultdict(list)
@@ -147,8 +168,13 @@ class Plan:
         return [{"keyword": n, "volume": vols[i] if i < len(vols) else "", "kd": ""} for i, n in enumerate(names)]
 
     def secondary(self, post: dict) -> tuple[list[str], list[tuple[dict, str]]]:
+        """Up to max_secondary keywords, largest first: at most MAX_REPHRASINGS that only rephrase what is already
+        listed ('what day is thanksgiving' next to 'when is thanksgiving'), the other slots for keywords that add a new
+        angle ('day after thanksgiving', 'how many days until thanksgiving'). Never a duplicate that only differs by
+        word order, a year or a plural, a fixed typo, a query of more than 8 words or a past year."""
         seen = {signature(post["primary_keyword"])}
-        listed, roles = [], []
+        covered = set(signature(post["primary_keyword"])) | LIGHT
+        picked, rephrasings, roles = [], 0, []
         rows = sorted(self.keywords_of(post), key=lambda k: -(to_int(k.get("volume"), 0) or 0))
         for k in rows:
             roles += [(v, "variant") for v in self.variants_of(k)]
@@ -156,14 +182,20 @@ class Plan:
                 roles.append((k, "main"))
                 continue
             sig = signature(k["keyword"])
-            if (len(listed) < self.max_secondary and sig and sig not in seen and k.get("spelling_fixed", "0") != "1"
-                    and len(k["keyword"].split()) <= MAX_SECONDARY_WORDS):
-                listed.append(k["keyword"])
+            ok = (len(picked) < self.max_secondary and sig and sig not in seen and k.get("spelling_fixed", "0") != "1"
+                  and len(k["keyword"].split()) <= MAX_SECONDARY_WORDS and not stale_year(k["keyword"], self.year))
+            content = sig - LIGHT
+            new_angle = bool(content) and len(content - covered) / len(content) > 0.25  # 'which president made ...'
+            # after 'what president declared ...' only rephrases it
+            if ok and (new_angle or rephrasings < MAX_REPHRASINGS):
+                picked.append(k)
                 seen.add(sig)
+                covered |= sig
+                rephrasings += not new_angle
                 roles.append((k, "secondary"))
             else:
                 roles.append((k, "also covers"))
-        return listed, roles
+        return [k["keyword"] for k in picked], roles
 
     def link_targets(self, post: dict) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
         """(internal links, related posts) as (anchor, target slug)."""
@@ -338,10 +370,25 @@ def write_xlsx(path: str, sheets: list[tuple[str, str]]) -> None:
 
 
 # --------------------------------------------------------------------------- main
-def build_outputs(plan: Plan, plain_links: bool):
+def qa_rows(plan: Plan, rows: list[dict]) -> list[list]:
+    merged_counts = {slug: len(ms) for slug, ms in plan.merged_into.items()}
+    owned = {}
+    for r in rows:
+        slug = r["post"]["planned_slug"]
+        owned[slug] = to_int(r["post"]["cluster_volume"], 0) + sum(to_int(m["cluster_volume"], 0)
+                                                                   for m in plan.merged_into.get(slug, []))
+    inbound: dict[str, int] = defaultdict(int)
+    for r in rows:
+        for _, target in r["internal"] + r["related"]:
+            if target != r["post"]["planned_slug"]:
+                inbound[target] += 1
+    return plan_qa.check(rows, signature, LIGHT, merged_counts, owned, inbound)
+
+
+def build_outputs(plan: Plan, plain_links: bool, rows: list[dict] | None = None):
     url_col, stt_col = col_letter(COL["URL Blog"]), col_letter(COL["STT"])
     xlsx_rows, csv_rows, map_rows = [], [], []
-    for r in plan.rows():
+    for r in rows if rows is not None else plan.rows():
         cells = [""] * len(COLUMNS)
         cells[COL["STT"]] = r["n"]
         cells[COL["Main Keyword"]] = r["post"]["primary_keyword"]
@@ -381,6 +428,8 @@ def main(argv=None) -> int:
                     help="Volume column: the main keyword's volume (default) or the post's total (an upper bound)")
     ap.add_argument("--market", help="only export posts of this market (us|uk)")
     ap.add_argument("--plain-links", action="store_true", help="write the link columns as text instead of formulas")
+    ap.add_argument("--year", type=int, help="plan year: keywords with an earlier year are not listed as secondary "
+                                             "(default: this year)")
     args = ap.parse_args(argv)
     if "{slug}" not in args.url_pattern:
         ap.error("--url-pattern must contain {slug}")
@@ -390,15 +439,18 @@ def main(argv=None) -> int:
         topic = [r for r in topic if r["market"] == args.market]
     keywords = read_csv(args.keyword_map) if args.keyword_map else None
     links = read_csv(args.link_plan) if args.link_plan else None
-    plan = Plan(topic, keywords, links, args.url_pattern, args.max_secondary, args.volume, args.max_related)
+    plan = Plan(topic, keywords, links, args.url_pattern, args.max_secondary, args.volume, args.max_related, args.year)
     if not plan.posts:
         raise SystemExit("No planned posts (pillar/cluster/standalone) in the topic map.")
-    xlsx_rows, csv_rows, map_rows = build_outputs(plan, args.plain_links)
+    rows = list(plan.rows())
+    xlsx_rows, csv_rows, map_rows = build_outputs(plan, args.plain_links, rows)
+    qa = qa_rows(plan, rows)
 
     out = args.out if args.out.lower().endswith(".xlsx") else args.out + ".xlsx"
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     write_xlsx(out, [("Plan", sheet_xml(COLUMNS, xlsx_rows, WIDTHS, [(col_letter(COL["Category Kind"]), ["Pillar", "Cluster"])])),
-                     ("Keyword Map", sheet_xml(MAP_COLUMNS, map_rows, MAP_WIDTHS))])
+                     ("Keyword Map", sheet_xml(MAP_COLUMNS, map_rows, MAP_WIDTHS)),
+                     ("QA", sheet_xml(plan_qa.QA_COLUMNS, qa, plan_qa.QA_WIDTHS))])
     csv_path = out[:-5] + ".csv"
     with open(csv_path, "w", encoding="utf-8-sig", newline="") as fh:  # BOM: Excel opens the Vietnamese headers correctly
         w = csv.writer(fh)
@@ -406,6 +458,7 @@ def main(argv=None) -> int:
         w.writerows(csv_rows)
     pillars = sum(1 for r in csv_rows if r[COL["Category Kind"]] == "Pillar")
     print(f"{len(csv_rows)} posts ({pillars} pillars, {len(csv_rows) - pillars} clusters), {len(map_rows):,} keywords placed")
+    print(plan_qa.summary(qa) + " (sheet QA)")
     if not args.keyword_map:
         print("No --keyword-map: Volume/KD are empty and secondary keywords come from topic-map.csv (15 per cluster).", file=sys.stderr)
     if not args.link_plan:

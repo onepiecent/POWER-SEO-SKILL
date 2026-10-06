@@ -37,8 +37,8 @@ from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kw_ingest import ALIASES, norm_market, parse_number, read_keywords  # noqa: E402
-from kw_text import (FACET_ORDER, IMPLIED_RECIPIENT, Categories, NoiseRules, Respeller, Taxonomy,  # noqa: E402
-                     normalize_text, weighted_jaccard)
+from kw_text import (FACET_ORDER, IMPLIED_RECIPIENT, Categories, Fluency, NoiseRules, Respeller,  # noqa: E402
+                     Taxonomy, normalize_text, weighted_jaccard)
 
 GRANULARITY = {"tight": (0.75, 5), "normal": (0.6, 4), "loose": (0.45, 3)}
 LIST_NEEDS = {"inspire", "choose"}  # these two usually share one listicle post
@@ -213,7 +213,8 @@ def ingest(args, tax: Taxonomy, noise, cats):
             kept.append(k)
         if info["rows"] == 0:
             warnings.append(f"{src}: no data rows could be read.")
-    respell = {"typos": respeller.typos, "joins": respeller.joins, "keywords_changed": respelled}
+    respell = {"typos": respeller.typos, "joins": respeller.joins, "splits": respeller.splits,
+               "completions": respeller.completions, "keywords_changed": respelled}
     return kept, excluded, reasons, infos, warnings, total_rows, respell
 
 
@@ -405,22 +406,37 @@ def consolidate(clusters: list[list[KW]]) -> tuple[list[list[KW]], list[int]]:
 
 
 QUESTION_LAST_RX = re.compile(r"\b(why|how|what|when|where|who|which)\s*$")
+NATURAL_BAND = 0.8     # a more natural phrasing may name the post when it has >= 80% of the chosen keyword's volume
+NATURAL_MARGIN = 0.3   # ... and is clearly more natural (Fluency score, mean log probability per word pair)
 
 
-def evergreen_seed(cl: list[KW]) -> list[KW]:
+def evergreen_seed(cl: list[KW], fluency: Fluency | None = None) -> list[KW]:
     """Choose the cluster's name (main keyword and slug) among its strong keywords:
     * without a year when one has at least 20% of the top volume: a seasonal post keeps one URL and is refreshed
       every year, so 'when is thanksgiving' beats 'thanksgiving 2025';
+    * never a keyword typed with a typo when a correctly spelled one exists;
     * then, among keywords with at least half of the best volume, prefer a natural phrase over an inverted one
-      ('why do we eat turkey on thanksgiving' over 'turkey thanksgiving why')."""
+      ('why do we eat turkey on thanksgiving' over 'turkey thanksgiving why');
+    * finally, a phrasing with >= 80% of that volume that reads clearly more naturally wins: 'true story of
+      thanksgiving' (1,300) over 'real story thanksgiving' (1,600), 'thanksgiving facts for kids' over
+      '... for kindergarteners'. Semrush rounds volumes into steps, so such pairs are often tied or one step apart."""
     top = cl[0]
     pool = [r for r in cl if not YEAR_KW_RX.search(r.keyword)]
     if not pool or max(r.volume for r in pool) < 0.2 * top.volume:
         pool = cl
+    pool = [r for r in pool if not r.fixed] or pool
     best_vol = max(r.volume for r in pool)
     strong = [r for r in pool if r.volume >= 0.5 * best_vol]
-    seed = max(strong, key=lambda r: (not QUESTION_LAST_RX.search(r.keyword.lower()), not any(ch.isdigit() for ch in r.keyword),
-                                      r.volume, -len(r.keyword)))
+
+    def plain(r: KW) -> bool:
+        return not QUESTION_LAST_RX.search(r.keyword.lower()) and not any(ch.isdigit() for ch in r.keyword)
+    seed = max(strong, key=lambda r: (plain(r), r.volume, -len(r.keyword)))
+    if fluency is not None and plain(seed):
+        band = [r for r in strong if r is seed or (plain(r) and r.volume >= NATURAL_BAND * seed.volume
+                                                    and len(r.keyword.split()) <= 8)]
+        natural = max(band, key=lambda r: (fluency.score(r.keyword), r.volume, -len(r.keyword)))
+        if fluency.score(natural.keyword) >= fluency.score(seed.keyword) + NATURAL_MARGIN:
+            seed = natural
     if seed is not top:
         cl.remove(seed)
         cl.insert(0, seed)
@@ -434,10 +450,10 @@ KW_FIELDS = ["cluster_id", "market", "keyword", "volume", "volume_estimated", "k
              "variant_volumes"]
 CL_FIELDS = ["cluster_id", "market", "cluster_name", "keyword_count", "seed_volume", "cluster_volume", "seed_kd",
              "kd_min", "reader_need", "blog_fit", "occasion", "recipient", "interest", "product", "style", "craft",
-             "theme", "core", "category", "season", "market_terms", "parent_topic", "keywords"]
+             "theme", "core", "category", "season", "market_terms", "parent_topic", "keywords", "name_fluency"]
 
 
-def build_rows(clusters: list[list[KW]], tax: Taxonomy):
+def build_rows(clusters: list[list[KW]], tax: Taxonomy, fluency: Fluency | None = None):
     kw_rows, cl_rows, ids = [], [], {}
     ordered = sorted(clusters, key=lambda c: (-sum(r.volume + r.var_vol for r in c), c[0].keyword))
     for n, cl in enumerate(ordered, 1):
@@ -464,7 +480,8 @@ def build_rows(clusters: list[list[KW]], tax: Taxonomy):
                         "core": " ".join(sorted(seed.core)), "category": seed.category,
                         "season": seed.occasion if seed.occasion in tax.seasonal else "",
                         "market_terms": "mixed" if len(terms) > 1 else (next(iter(terms)) if terms else "none"),
-                        "parent_topic": seed.parent, "keywords": "|".join(r.keyword for r in cl[:15])})
+                        "parent_topic": seed.parent, "keywords": "|".join(r.keyword for r in cl[:15]),
+                        "name_fluency": f"{fluency.score(seed.keyword):.2f}" if fluency else ""})
     return kw_rows, cl_rows, ids, ordered
 
 
@@ -549,10 +566,14 @@ def write_report(path, args, infos, warnings, total_rows, reasons, n_kept, merge
     if warnings:
         L += ["", "**Warnings:**"] + [f"- {w}" for w in warnings]
     typos, joins = respell["typos"], respell["joins"]
-    if typos or joins:
-        examples = [f"{a}→{b}" for a, b in list(typos.items())[:12]] + [f"'{a} {b}'→{j}" for (a, b), j in list(joins.items())[:3]]
+    splits, completions = respell.get("splits", {}), respell.get("completions", {})
+    if typos or joins or splits or completions:
+        examples = ([f"{a}→{b}" for a, b in list(typos.items())[:12]] + [f"'{a} {b}'→{j}" for (a, b), j in list(joins.items())[:3]]
+                    + [f"{w}→'{a} {b}'" for w, (a, b) in list(splits.items())[:2]]
+                    + [f"'{a} {b}'→'{a} {w}'" for (a, b), w in list(completions.items())[:2]])
         L += ["", f"**Spelling fixed from the file itself:** {respell['keywords_changed']:,} keywords changed by "
-              f"{len(typos):,} typo corrections and {len(joins):,} joined words (e.g. {', '.join(examples)}). "
+              f"{len(typos):,} typo corrections, {len(joins):,} joined words, {len(splits):,} split words and "
+              f"{len(completions):,} completed cut-off words (e.g. {', '.join(examples)}). "
               "Turn off with `--no-respell` if a correction is wrong."]
     L += ["", "## 2. Filters", "", f"- Read {total_rows:,} rows; kept {n_kept:,} keywords; excluded {sum(reasons.values()):,}."]
     if reasons:
@@ -674,14 +695,15 @@ def main(argv=None) -> int:
         clusters, owner = lexical, list(range(len(lexical)))
     else:
         clusters, owner = consolidate(lexical)
-    clusters = [evergreen_seed(c) for c in clusters]
+    fluency = Fluency(k.keyword for k in kept if not k.fixed)
+    clusters = [evergreen_seed(c, fluency) for c in clusters]
     pairs, seen = [], set()
     for s, a, b, why in raw_pairs:  # map pairs onto the consolidated clusters; drop pairs that are now one post
         a, b = owner[a], owner[b]
         if a != b and (min(a, b), max(a, b)) not in seen:
             seen.add((min(a, b), max(a, b)))
             pairs.append((s, a, b, why))
-    kw_rows, cl_rows, ids, _ = build_rows(clusters, tax)
+    kw_rows, cl_rows, ids, _ = build_rows(clusters, tax, fluency)
 
     os.makedirs(args.out, exist_ok=True)
     write_csv(os.path.join(args.out, "keyword-map.csv"), KW_FIELDS, kw_rows)
@@ -711,9 +733,10 @@ def main(argv=None) -> int:
     fit = Counter(k.fit for k in rows)
     print(f"Read {total_rows:,} rows -> kept {n_kept:,} -> {len(rows):,} after merging variants -> {len(lexical):,} lexical "
           f"clusters -> {len(clusters):,} clusters ({time.time() - started:.1f}s)")
-    if respell["typos"] or respell["joins"]:
+    if respell["typos"] or respell["joins"] or respell["splits"] or respell["completions"]:
         print(f"Spelling fixed from the file: {respell['keywords_changed']:,} keywords "
-              f"({len(respell['typos']):,} typos, {len(respell['joins']):,} joined words)")
+              f"({len(respell['typos']):,} typos, {len(respell['joins']):,} joined, {len(respell['splits']):,} split, "
+              f"{len(respell['completions']):,} completed words)")
     print(f"Excluded {sum(reasons.values()):,} keywords: " + (", ".join(f"{r}={n:,}" for r, n in reasons.most_common(4)) or "none"))
     print("Blog fit: " + ", ".join(f"{k}={fit[k]:,}" for k in ("high", "medium", "low")) +
           f" | unclassified: {len(unclassified):,} | pairs to review: {len(pairs)}")

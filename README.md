@@ -74,7 +74,7 @@ Semrush's "all keywords" is broad match, so the file also holds other holidays; 
 
 `STT | Main Keyword | Secondary Keyword | Volume | KD | Category | Category Kind | Thuộc Pillar | Title SEO | Meta Description SEO | Outline | Internal Link (Anchor || URL) | Related Post (Anchor || URL) | URL Blog | Trạng thái`
 
-Category, Title SEO, Meta Description SEO, Outline and Trạng thái are left for the content team. Category Kind is Pillar or Cluster, and a Cluster names its pillar. URL Blog is the planned URL (`https://printerval.com/{slug}`, change it with `--url-pattern`); the link cells in the .xlsx look the target's URL Blog up, so pasting the real URL after publishing updates every link to that post. A second sheet, Keyword Map, shows where every keyword went.
+Category, Title SEO, Meta Description SEO, Outline and Trạng thái are left for the content team. Category Kind is Pillar or Cluster, and a Cluster names its pillar. URL Blog is the planned URL (`https://printerval.com/{slug}`, change it with `--url-pattern`); the link cells in the .xlsx look the target's URL Blog up, so pasting the real URL after publishing updates every link to that post. A second sheet, Keyword Map, shows where every keyword went, and a QA sheet lists what to check before handing the plan over (overlapping posts, misplaced keywords, orphans, weak posts).
 
 ## Clustering "on request"
 
@@ -90,7 +90,7 @@ SEO specialists describe what they need in plain words; the skill turns that int
 | US and UK | `us.csv::us uk.csv::uk`, or a Country column |
 | New niches | `--extend-taxonomy extra.json` (suggestions are written to `taxonomy-suggestions.csv`) |
 
-The script reads Excel files and UTF-16/tab files (Keyword Planner), description lines above the header, `, ; tab |` delimiters and numbers such as `1K - 10K` or `1.234`. It fixes typos learned from the file itself and drops noisy keywords (retailers, "near me", Spanish, politics, homework answer keys, opening hours, and similar) **with a reason for each** in `excluded.csv`. 150,000 keywords take about 70 seconds.
+The script reads Excel files and UTF-16/tab files (Keyword Planner), description lines above the header, `, ; tab |` delimiters and numbers such as `1K - 10K` or `1.234`. It fixes typos learned from the file itself and drops noisy keywords (retailers, "near me", Spanish, politics, homework answer keys, opening hours, TV shows, restaurant menus, school calendars, and similar) **with a reason for each** in `excluded.csv`. 150,000 keywords take about 80 seconds.
 
 ## Content principles
 
@@ -118,7 +118,7 @@ python3 -W error::ResourceWarning -m unittest discover -s tests
 python3 tests/make_big_fixture.py 150000 /tmp/big.csv   # performance check
 ```
 
-96 tests: multi-format file reading (including .xlsx), spelling fixes, facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, filters, topic map with theme pillars and merged posts, link plan and audit, the final plan export, holiday dates checked against the real calendar, briefs and the three checkers.
+116 tests: multi-format file reading (including .xlsx), spelling fixes (typos, split, glued and cut-off words), facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, natural post names, filters, topic map with theme pillars, sub-topic posts and merged posts, link plan and audit, the final plan export (secondary keywords, QA sheet), holiday dates checked against the real calendar, briefs and the three checkers.
 
 ## Layout
 

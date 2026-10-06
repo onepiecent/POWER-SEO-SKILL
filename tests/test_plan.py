@@ -311,7 +311,10 @@ class OneTopicExport(unittest.TestCase):
             posts = [r for r in self.topic if r["pillar_id"] == pid and r["role"] in ("pillar", "cluster")]
             self.assertLessEqual(len(posts), 4, pid)
         backlog = {r["primary_keyword"] for r in self.topic if r["role"] == "backlog"}
-        self.assertIn("thanksgiving long tail alpha", backlog)
+        self.assertIn("thanksgiving jeopardy", backlog)  # a theme too small for a pillar, with no fallback pillar
+        # long tail without a theme joins the pillar of a cluster that asks the same thing ('long tail november')
+        alpha = next(r for r in self.topic if r["primary_keyword"] == "thanksgiving long tail alpha")
+        self.assertEqual((alpha["role"], alpha["pillar_name"]), ("merged", "Thanksgiving Dates & Calendar"))
 
     def test_links_skip_merged_rows(self):
         links = read_csv(os.path.join(self.dir, "link-plan.csv"))

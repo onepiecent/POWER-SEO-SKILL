@@ -13,7 +13,7 @@ This repo is an SEO content skill set for the **Printerval blog** (print-on-dema
 ## Commands
 
 ```bash
-python3 -W error::ResourceWarning -m unittest discover -s tests     # 96 tests, runs in a few seconds
+python3 -W error::ResourceWarning -m unittest discover -s tests     # 116 tests, runs in a few seconds
 python3 scripts/package_skills.py                                    # dist/<skill>.zip
 python3 skills/printerval-blog-seo/scripts/export_plan.py --help     # final plan (.xlsx) for the content team
 ```
