@@ -1,7 +1,7 @@
-# Danh sách theo dõi tên thương hiệu / franchise / nghệ sĩ có thể là nhãn hiệu hoặc có quyền nhân thân.
-# ĐÂY CHỈ LÀ DANH SÁCH KHỞI ĐẦU, KHÔNG ĐẦY ĐỦ. Team pháp chế/IP của Printerval cần duy trì danh sách thật.
-# Mỗi dòng một tên (không phân biệt hoa thường, bỏ dấu nháy/gạch nối). Tiền tố "re:" để dùng regex.
-# Công cụ chỉ GẮN CỜ để người quyết định; không kết luận hợp pháp hay vi phạm.
+# Watchlist of brand / franchise / artist names that may be trademarks or carry personality rights.
+# THIS IS ONLY A STARTING LIST AND IS NOT EXHAUSTIVE. Printerval's legal/IP team needs to maintain the real list.
+# One name per line (case-insensitive; apostrophes and hyphens ignored). Use the "re:" prefix for a regex.
+# The tool only FLAGS so that a person can decide; it does not conclude that something is lawful or infringing.
 disney
 pixar
 mickey mouse

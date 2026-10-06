@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Lập kế hoạch internal link blog <-> blog, hoặc audit danh sách link hiện có. Chỉ dùng thư viện chuẩn.
+"""Plan internal links blog <-> blog, or audit an existing list of links. Standard library only.
 
-Chế độ lập kế hoạch:
+Planning mode:
     link_plan.py plan topic-map.csv [--published published.csv] [--out outputs]
-      -> link-plan.csv (mỗi dòng một link đề xuất) + link-summary.md
+      -> link-plan.csv (one proposed link per row) + link-summary.md
 
-Chế độ audit:
+Audit mode:
     link_plan.py audit links.csv [--topic-map topic-map.csv] [--out outputs]
-      links.csv cần cột source,target,anchor (chấp nhận from/to/anchor text/link text).
-      -> link-audit.csv + in tóm tắt
+      links.csv needs the columns source,target,anchor (from/to/anchor text/link text are also accepted).
+      -> link-audit.csv + a printed summary
 
-Phạm vi: chỉ link giữa các bài blog. Link tới trang bán hàng KHÔNG thuộc phạm vi (team content xử lý
-qua product-slot). Quy tắc dựa trên Google (link crawl được, anchor mô tả) và quy ước ngành; con số
-như 3-5 link/1.000 từ hay ngưỡng ~50 link trỏ tới là heuristic từ nghiên cứu tương quan (Zyppy).
+Scope: links between blog posts only. Links to shop pages are NOT in scope (the content team handles them
+through product-slot). The rules rest on Google guidance (crawlable links, descriptive anchors) and industry
+convention; figures such as 3-5 links per 1,000 words or a ~50 inbound-link threshold are heuristics from correlational research (Zyppy).
 """
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ class Planner:
         self.published = published
         self.max_siblings, self.max_cross = max_siblings, max_cross
         self.links: dict[tuple[str, str], dict] = {}
-        self.unresolved: list[tuple[str, str]] = []  # (slug, lý do) bài không có nơi link tự nhiên
+        self.unresolved: list[tuple[str, str]] = []  # (slug, reason) posts with no natural place to link
         self.anchor_owner: dict[str, str] = {}
         self.anchor_use: dict[str, int] = defaultdict(int)
         self.pillar_slug = {r["pillar_id"]: r["planned_slug"] for r in self.posts.values() if r["role"] == "pillar"}
@@ -128,7 +128,7 @@ class Planner:
         return sum(1 for (s, _) in self.links if s == slug)
 
     def related(self, post: dict, exclude: set[str]) -> list[dict]:
-        """Chỉ trả bài có ít nhất một facet chung: không ép link giữa hai bài không liên quan."""
+        """Return only posts that share at least one facet: never force links between unrelated posts."""
         cands = [p for s, p in self.posts.items()
                  if s not in exclude and p["market"] == post["market"] and self.shared(post, p) >= 1]
         cands.sort(key=lambda p: (-self.shared(post, p), -(p["role"] == "pillar"), -to_int(p["cluster_volume"])))
@@ -187,7 +187,7 @@ class Planner:
                     if len(self.links) > before:
                         break
                 else:
-                    self.unresolved.append((slug, "chưa có link đi vào và không có bài cùng chủ đề để link tự nhiên"))
+                    self.unresolved.append((slug, "no inbound link and no post on the same topic to link from naturally"))
             if self.outbound(slug) == 0:
                 for dst in self.related(p, {slug}):
                     before = len(self.links)
@@ -196,7 +196,7 @@ class Planner:
                     if len(self.links) > before:
                         break
                 else:
-                    self.unresolved.append((slug, "chưa có link đi ra và không có bài cùng chủ đề để link tự nhiên"))
+                    self.unresolved.append((slug, "no outbound link and no post on the same topic to link to naturally"))
 
     def _backlink_queue(self) -> None:
         if not self.published:
@@ -236,30 +236,30 @@ def run_plan(args) -> int:
     out_counts = defaultdict(int)
     for l in links:
         out_counts[l["source_slug"]] += 1
-    warn = [f"- `{s}` có {n} link đi ra: kiểm tra mật độ khi viết (tham khảo ~3-5 link ngữ cảnh/1.000 từ)"
+    warn = [f"- `{s}` has {n} outgoing links: check the density when writing (reference ~3-5 contextual links per 1,000 words)"
             for s, n in sorted(out_counts.items(), key=lambda kv: -kv[1])
             if n > (PILLAR_OUTBOUND_WARN if pl.posts[s]["role"] == "pillar" else OUTBOUND_REVIEW_MAX)]
     types = defaultdict(int)
     for l in links:
         types[l["link_type"]] += 1
-    lines = ["# Tóm tắt kế hoạch internal link", "",
-             f"- {len(pl.posts)} bài, {len(links)} link đề xuất", "- Theo loại: " +
+    lines = ["# Internal link plan summary", "",
+             f"- {len(pl.posts)} posts, {len(links)} proposed links", "- By type: " +
              ", ".join(f"{k}={v}" for k, v in sorted(types.items())),
-             f"- Bài không có link đi vào: {sum(1 for s in pl.posts if pl.inbound(s) == 0)}",
-             f"- Bài không có link đi ra: {sum(1 for s in pl.posts if pl.outbound(s) == 0)}", ""]
+             f"- Posts with no inbound link: {sum(1 for s in pl.posts if pl.inbound(s) == 0)}",
+             f"- Posts with no outbound link: {sum(1 for s in pl.posts if pl.outbound(s) == 0)}", ""]
     if pl.unresolved:
-        lines += ["## Chưa giải quyết được bằng link tự nhiên (khoảng trống nội dung)", "",
-                  "Không ép link giữa các bài không liên quan. Cần thêm bài cùng chủ đề hoặc người biên tập tự quyết:", ""]
+        lines += ["## Not resolvable with natural links (content gap)", "",
+                  "Links are not forced between unrelated posts. Add a post on the same topic or let the editor decide:", ""]
         lines += [f"- `{s}`: {why}" for s, why in pl.unresolved] + [""]
     if warn:
-        lines += ["## Cần kiểm tra mật độ", *warn, ""]
-    lines += ["## Lưu ý khi viết", "- Anchor chỉ là gợi ý; viết lại cho khớp câu, 2-8 từ, mô tả đúng trang đích.",
-              "- Mỗi bài chỉ link tới một URL đích một lần; đặt 1-2 link quan trọng nhất ở nửa đầu bài.",
-              "- Với bản UK dùng chính tả Anh trong anchor (mum, personalised)."]
+        lines += ["## Density to check", *warn, ""]
+    lines += ["## Notes for writers", "- Anchors are suggestions only: rewrite them to fit the sentence (2-8 words) and to describe the target page accurately.",
+              "- Link to each target URL only once per post; put the 1-2 most important links in the first half of the post.",
+              "- For UK posts use British spelling in anchors (mum, personalised)."]
     with open(os.path.join(args.out, "link-summary.md"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
-    print(f"{len(pl.posts)} bài -> {len(links)} link đề xuất | " + ", ".join(f"{k}={v}" for k, v in sorted(types.items())))
-    print(f"Đã ghi vào: {os.path.abspath(args.out)}")
+    print(f"{len(pl.posts)} posts -> {len(links)} proposed links | " + ", ".join(f"{k}={v}" for k, v in sorted(types.items())))
+    print(f"Written to: {os.path.abspath(args.out)}")
     return 0
 
 
@@ -303,31 +303,31 @@ def run_audit(args) -> int:
         if a.lower() in GENERIC_ANCHORS:
             issues.append(("high", "generic_anchor", f"{s} -> {t}", f"anchor chung chung: '{a}'"))
         elif not a:
-            issues.append(("medium", "empty_anchor", f"{s} -> {t}", "anchor rỗng (nếu là ảnh, ALT làm anchor)"))
+            issues.append(("medium", "empty_anchor", f"{s} -> {t}", "empty anchor (for an image link the ALT text is the anchor)"))
         elif not re.match(r"^https?://", a) and (n_words < 2 or n_words > 8):
-            issues.append(("low", "anchor_length", f"{s} -> {t}", f"anchor {n_words} từ: '{a}' (nên 2-8 từ)"))
+            issues.append(("low", "anchor_length", f"{s} -> {t}", f"anchor has {n_words} words: '{a}' (should be 2-8)"))
     for (s, t), n in pair_count.items():
         if n > 1:
-            issues.append(("low", "duplicate_link", f"{s} -> {t}", f"{n} link cùng đích trong một bài"))
+            issues.append(("low", "duplicate_link", f"{s} -> {t}", f"{n} links to the same target in one post"))
     for a, targets in anchor_targets.items():
         if len(targets) > 1:
-            issues.append(("medium", "anchor_reused", a, "cùng anchor cho nhiều đích: " + ", ".join(sorted(targets))))
+            issues.append(("medium", "anchor_reused", a, "same anchor used for several targets: " + ", ".join(sorted(targets))))
     for n in sorted(nodes):
         if inbound[n] == 0:
-            issues.append(("high", "orphan", n, "không có link nội bộ đi vào"))
+            issues.append(("high", "orphan", n, "no inbound internal link"))
         if outbound[n] == 0:
-            issues.append(("medium", "dead_end", n, "không có link nội bộ đi ra"))
+            issues.append(("medium", "dead_end", n, "no outbound internal link"))
         if inbound[n] > INBOUND_HEURISTIC_MAX:
-            issues.append(("low", "many_inbound", n, f"{inbound[n]} link đi vào (> ~{INBOUND_HEURISTIC_MAX}: heuristic Zyppy, xem lại thủ công)"))
+            issues.append(("low", "many_inbound", n, f"{inbound[n]} inbound links (> ~{INBOUND_HEURISTIC_MAX}: Zyppy heuristic, review manually)"))
         if outbound[n] > OUTBOUND_REVIEW_MAX:
-            issues.append(("low", "many_outbound", n, f"{outbound[n]} link đi ra, kiểm tra mật độ"))
+            issues.append(("low", "many_outbound", n, f"{outbound[n]} outbound links, check the density"))
     present = {(s, t) for s, t, _ in links}
     for pid, pslug in pillars.items():
         for c in members[pid]:
             if (c, pslug) not in present:
-                issues.append(("high", "cluster_missing_pillar_link", c, f"chưa link lên pillar {pslug}"))
+                issues.append(("high", "cluster_missing_pillar_link", c, f"does not link up to pillar {pslug}"))
             if (pslug, c) not in present:
-                issues.append(("high", "pillar_missing_cluster_link", pslug, f"chưa link xuống cluster {c}"))
+                issues.append(("high", "pillar_missing_cluster_link", pslug, f"does not link down to cluster {c}"))
     order = {"high": 0, "medium": 1, "low": 2}
     issues.sort(key=lambda i: (order[i[0]], i[1]))
     os.makedirs(args.out, exist_ok=True)
@@ -338,24 +338,24 @@ def run_audit(args) -> int:
     counts = defaultdict(int)
     for sev, rule, _, _ in issues:
         counts[(sev, rule)] += 1
-    print(f"{len(links)} link, {len(nodes)} bài -> {len(issues)} vấn đề")
+    print(f"{len(links)} links, {len(nodes)} posts -> {len(issues)} issues")
     for (sev, rule), n in sorted(counts.items(), key=lambda kv: (order[kv[0][0]], kv[0][1])):
         print(f"  [{sev}] {rule}: {n}")
-    print(f"Đã ghi vào: {os.path.abspath(args.out)}")
+    print(f"Written to: {os.path.abspath(args.out)}")
     return 1 if any(i[0] == "high" for i in issues) else 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("plan", help="lập kế hoạch link từ topic-map.csv")
+    p = sub.add_parser("plan", help="plan links from topic-map.csv")
     p.add_argument("topic_map")
-    p.add_argument("--published", help="CSV các bài đã xuất bản (cột slug hoặc url)")
+    p.add_argument("--published", help="CSV of published posts (slug or url column)")
     p.add_argument("--max-siblings", type=int, default=3)
     p.add_argument("--max-cross", type=int, default=1)
     p.add_argument("--out", default="outputs")
     p.set_defaults(fn=run_plan)
-    a = sub.add_parser("audit", help="audit file link hiện có")
+    a = sub.add_parser("audit", help="audit an existing link file")
     a.add_argument("links")
     a.add_argument("--topic-map")
     a.add_argument("--out", default="outputs")

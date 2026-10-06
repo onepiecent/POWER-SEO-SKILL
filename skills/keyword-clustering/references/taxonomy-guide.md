@@ -1,16 +1,16 @@
-# Mở rộng taxonomy, nhóm tự định nghĩa và quy tắc nhiễu
+# Extending the taxonomy, custom groups and noise rules
 
-Ba cấu hình có thể chỉnh mà không sửa code:
+Three configurations can be changed without touching the code:
 
-| Mục đích | File | Dùng |
+| Purpose | File | Use |
 |---|---|---|
-| Thêm niche/dịp/người nhận/sản phẩm mới cho facet | JSON mở rộng | `--extend-taxonomy file.json` (hoặc sửa thẳng `assets/taxonomy.json`) |
-| Nhóm theo cách riêng của brief (Family, Pets, Work...) | `categories.json` | `--categories categories.json --group-by category` |
-| Thêm/bớt quy tắc loại nhiễu | `assets/noise-rules.json` | `--noise-rules file.json` hoặc `--no-noise-filter` |
+| Add a new niche/occasion/recipient/product to a facet | an extension JSON | `--extend-taxonomy file.json` (or edit `assets/taxonomy.json` directly) |
+| Group in the brief's own way (Family, Pets, Work...) | `categories.json` | `--categories categories.json --group-by category` |
+| Add or remove noise-exclusion rules | `assets/noise-rules.json` | `--noise-rules file.json` or `--no-noise-filter` |
 
-## 1. Mở rộng taxonomy
+## 1. Extending the taxonomy
 
-Cấu trúc: `facets -> <facet> -> values -> <key> -> {label, patterns, seasonal?}`. Facet: `occasion`, `interest`, `recipient`, `product`, `style`, `craft`.
+Structure: `facets -> <facet> -> values -> <key> -> {label, patterns, seasonal?}`. Facets: `occasion`, `interest`, `recipient`, `product`, `style`, `craft`.
 
 ```json
 {
@@ -21,17 +21,17 @@ Cấu trúc: `facets -> <facet> -> values -> <key> -> {label, patterns, seasonal
 }
 ```
 
-- **Key mới** được thêm; **key đã có** thì pattern được nối thêm (và các trường khác như label được ghi đè).
-- Pattern là **regex Python chạy trên văn bản đã chuẩn hóa**: chữ thường, bỏ dấu nháy (`mother's` -> `mothers`), gạch nối -> khoảng trắng (`t-shirt` -> `t shirt`). Luôn dùng biên từ `\b` và nhớ dạng số nhiều/biến thể (`fisherm[ae]n`, `anglers?`).
-- `label` dùng để đặt tên pillar ("Gift Ideas for Pickleball Players"). Người nhận có biến thể UK thì thêm `label_uk` (vd Mum, Nan & Grandma).
-- `"seasonal": true` cho dịp lễ có ngày cụ thể; sau đó thêm quy tắc ngày vào `editorial-calendar/scripts/occasion_calendar.py` (OCCASIONS), nếu không `seasonal-plan.csv` sẽ báo `no_calendar_rule`.
-- Ngoài facet còn có thể thêm `weak_tokens`, `variants` (UK->US cho so khớp), `phrase_variants`, `us_only_terms`, `uk_only_terms`, `blog_fit`, và `reader_need_rules_prepend` (quy tắc nhu cầu đặt lên đầu).
+- A **new key** is added; for an **existing key** the patterns are appended (and other fields such as the label are overwritten).
+- A pattern is a **Python regex run on normalised text**: lowercase, apostrophes removed (`mother's` -> `mothers`), hyphens -> spaces (`t-shirt` -> `t shirt`). Always use the word boundary `\b` and remember plurals and variants (`fisherm[ae]n`, `anglers?`).
+- `label` is used to name the pillar ("Gift Ideas for Pickleball Players"). For a recipient with a UK variant, add `label_uk` (for example Mum, Nan & Grandma).
+- `"seasonal": true` is for an occasion with a specific date; then add a date rule to `editorial-calendar/scripts/occasion_calendar.py` (OCCASIONS), otherwise `seasonal-plan.csv` will report `no_calendar_rule`.
+- Besides facets you can add `weak_tokens`, `variants` (UK->US, for matching), `phrase_variants`, `us_only_terms`, `uk_only_terms`, `blog_fit`, and `reader_need_rules_prepend` (need rules placed first).
 
-**Quy trình đề xuất khi file có nhiều keyword chưa phân loại:** mở `taxonomy-suggestions.csv` (n-gram phổ biến trong keyword chưa nhận diện, sắp theo volume), nhóm các gợi ý có nghĩa thành niche/dịp, viết JSON mở rộng, chạy lại và so sánh tỷ lệ chưa phân loại. Với mỗi niche mới, kiểm tra trên một mẫu keyword thật rằng regex không khớp nhầm (ví dụ "bird" trong "bird watching" nhưng không phải "birdie" của golf).
+**Suggested workflow when a file has many unclassified keywords:** open `taxonomy-suggestions.csv` (frequent n-grams among unrecognised keywords, sorted by volume), group the meaningful suggestions into niches/occasions, write an extension JSON, run again and compare the unclassified rate. For every new niche, check on a sample of real keywords that the regex does not match by mistake (for example "bird" in "bird watching" but not golf's "birdie").
 
-**Thứ tự dò và "che":** dịp lễ rồi sở thích được dò trước, và đoạn đã khớp bị che đi để facet sau không đếm lại ("dog mom" -> `interest=dogs`, `recipient=mom`; "mother's day" không làm `recipient=mom`). "Gifts from daughter" không tính daughter là người nhận.
+**Matching order and "masking":** occasions and then interests are matched first, and the matched span is masked so later facets do not count it again ("dog mom" -> `interest=dogs`, `recipient=mom`; "mother's day" does not produce `recipient=mom`). "Gifts from daughter" does not count the daughter as the recipient.
 
-## 2. `categories.json` (nhóm tự định nghĩa)
+## 2. `categories.json` (custom groups)
 
 ```json
 {
@@ -41,13 +41,13 @@ Cấu trúc: `facets -> <facet> -> values -> <key> -> {label, patterns, seasonal
 }
 ```
 
-- Mỗi từ tự thêm biên từ và số nhiều (`dog` khớp `dogs`); tiền tố `re:` dùng regex thô.
-- Keyword gán vào nhóm **khớp đầu tiên theo thứ tự trong file**; không khớp = `(none)`. Đặt nhóm cụ thể lên trước nhóm rộng.
-- `--group-by category` cần file này. Có thể kết hợp: `--group-by category,occasion`.
-- `topic-map` hiểu `category` như một facet: `topic_map.py clusters.csv --priority category,occasion`.
+- Each term automatically gets word boundaries and plurals (`dog` matches `dogs`); the `re:` prefix uses a raw regex.
+- A keyword goes into the **first group that matches, in file order**; no match = `(none)`. Put specific groups before broad ones.
+- `--group-by category` needs this file. Groupings can be combined: `--group-by category,occasion`.
+- `topic-map` understands `category` as a facet: `topic_map.py clusters.csv --priority category,occasion`.
 
-## 3. Quy tắc loại nhiễu
+## 3. Noise rules
 
-`assets/noise-rules.json`: danh sách `rules`, mỗi rule có `name` (hiện trong `excluded.csv`), `on` (`norm` hoặc `raw`) và `patterns`. Mặc định: retailer/brand điều hướng (kể cả đối thủ POD và retailer UK), tài khoản/hỗ trợ/uy tín thương hiệu (login, scam, legit...), ý định local (near me), gift-card balance, nội dung người lớn, tiếng Tây Ban Nha, URL/domain; cộng giới hạn độ dài (12 từ/120 ký tự) và tỷ lệ ký tự không phải Latin.
+`assets/noise-rules.json`: a list of `rules`, each with a `name` (shown in `excluded.csv`), `on` (`norm` or `raw`) and `patterns`. Defaults: navigational retailer/brand queries (including POD competitors and UK retailers), account/support/brand-reputation queries (login, scam, legit...), local intent (near me), gift-card balance, adult content, Spanish, URLs/domains; plus a length limit (12 words / 120 characters) and a limit on the share of non-Latin characters.
 
-Nguyên tắc chỉnh: mỗi rule chỉ nên loại thứ **chắc chắn không thuộc blog**; những gì chỉ "ít phù hợp" thì để `blog_fit` xử lý. Sau khi sửa rule, đọc lại `excluded.csv` sắp theo volume để chắc chắn không loại nhầm keyword lớn.
+Rule of thumb: a rule should only exclude what **certainly does not belong on a blog**; anything that is merely "a weaker fit" should be left to `blog_fit`. After editing a rule, re-read `excluded.csv` sorted by volume to make sure no large keyword was dropped by mistake.

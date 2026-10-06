@@ -1,33 +1,33 @@
-# Ghi chú từng dịp (US/UK)
+# Notes per occasion (US/UK)
 
-Quy tắc ngày được cài trong `scripts/occasion_calendar.py`. Mục "Lưu ý nội dung" là hướng dẫn biên tập **[Quy ước]**.
+The date rules are implemented in `scripts/occasion_calendar.py`. The "Content notes" column is editorial guidance **[Convention]**.
 
-| Dịp (`season`) | Quy tắc ngày | Thị trường | Lưu ý nội dung |
+| Occasion (`season`) | Date rule | Market | Content notes |
 |---|---|---|---|
-| valentines-day | 14/2 cố định | US, UK | Quà cho cặp đôi, bạn bè, gia đình; nhiều người tìm "for him/for her". |
-| st-patricks-day | 17/3 cố định | US, UK | Nội dung vui; tránh khuôn mẫu về người Ireland. |
-| easter | Chủ nhật Easter (thuật toán Gregorian) | US, UK | Ngày đổi theo năm; cũng là mốc để tính Mothering Sunday. |
-| mothers-day | **US:** Chủ nhật thứ hai tháng 5. **UK:** Mothering Sunday = Easter − 21 ngày | US, UK (hai ngày khác nhau) | Người Anh dùng cả "Mother's Day" lẫn "Mothering Sunday" và "mum" (US: "mom"). Nghiên cứu keyword riêng cho từng thị trường. Giọng văn nhạy cảm với người mất mẹ/ không có con: cho phép lựa chọn nhẹ nhàng. |
-| fathers-day | Chủ nhật thứ ba tháng 6 | US, UK | Cùng ngày ở hai nước. Tương tự cân nhắc người không có cha/không gần cha. |
-| independence-day | 4/7 cố định | US | Chỉ US. |
-| halloween | 31/10 cố định | US, UK | Phổ biến ở cả hai nước; quy mô và phong cách khác nhau. Lưu ý bản quyền nhân vật/ phim trong ý tưởng hóa trang và thiết kế. |
-| bonfire-night | 5/11 cố định | UK | Chỉ UK. |
-| thanksgiving | Thứ Năm thứ tư tháng 11 | US | Chỉ US. |
-| black-friday / cyber-monday | Black Friday = ngày sau Thanksgiving (Mỹ); Cyber Monday = thứ Hai sau đó | US, UK | Người Anh cũng mua sắm theo Black Friday. Giá và ưu đãi do team thương mại xác nhận, không viết giá/giảm giá trong bài evergreen. |
-| christmas | 25/12 cố định | US, UK | Đỉnh cạnh tranh; làm mới bài sớm. UK có thêm Boxing Day (26/12), chủ yếu gắn với mua sắm giảm giá. |
-| new-year | 31/12 | US, UK | |
-| graduation | cửa sổ ~1/5-30/6 (xấp xỉ) | US, UK | Kiểm tra bằng Trends: lịch học khác nhau. |
-| back-to-school | cửa sổ ~1/8-15/9 (xấp xỉ) | US, UK | US thường sớm hơn UK. |
+| valentines-day | fixed, 14 Feb | US, UK | Gifts for couples, friends and family; many people search "for him/for her". |
+| st-patricks-day | fixed, 17 Mar | US, UK | Light-hearted content; avoid stereotypes about Irish people. |
+| easter | Easter Sunday (Gregorian algorithm) | US, UK | The date changes each year; it is also the anchor for computing Mothering Sunday. |
+| mothers-day | **US:** second Sunday in May. **UK:** Mothering Sunday = Easter − 21 days | US, UK (two different dates) | British readers use both "Mother's Day" and "Mothering Sunday", and "mum" (US: "mom"). Research keywords separately for each market. Keep the tone sensitive to readers who have lost their mother or have no children: allow gentle options. |
+| fathers-day | third Sunday in June | US, UK | The same date in both countries. Likewise consider readers who have no father or are not close to their father. |
+| independence-day | fixed, 4 Jul | US | US only. |
+| halloween | fixed, 31 Oct | US, UK | Popular in both countries; scale and style differ. Watch copyright on characters and films in costume ideas and designs. |
+| bonfire-night | fixed, 5 Nov | UK | UK only. |
+| thanksgiving | fourth Thursday in November | US | US only. |
+| black-friday / cyber-monday | Black Friday = the day after Thanksgiving (US); Cyber Monday = the Monday after that | US, UK | British shoppers also shop on Black Friday. Prices and offers are confirmed by the commercial team; do not write prices or discounts in an evergreen post. |
+| christmas | fixed, 25 Dec | US, UK | Peak competition; refresh posts early. The UK also has Boxing Day (26 Dec), mostly tied to sale shopping. |
+| new-year | 31 Dec | US, UK | |
+| graduation | window ~1 May-30 Jun (approximate) | US, UK | Check with Trends: school calendars differ. |
+| back-to-school | window ~1 Aug-15 Sep (approximate) | US, UK | The US usually starts earlier than the UK. |
 
-## Từ vựng gây nhầm lẫn
+## Confusing vocabulary
 
-- "Holiday gifts": ở Mỹ thường là quà mùa Giáng sinh; ở Anh "holiday" thường là kỳ nghỉ du lịch. Đừng dùng chung một keyword cho hai thị trường.
-- "Mom/mum", "personalized/personalised", "sweater/jumper", "bachelorette/hen do", "sneakers/trainers": nghiên cứu keyword riêng; đừng dịch máy từ US sang UK.
+- "Holiday gifts": in the US this usually means gifts for the Christmas season; in the UK "holiday" usually means a trip away. Do not use one keyword for both markets.
+- "Mom/mum", "personalized/personalised", "sweater/jumper", "bachelorette/hen do", "sneakers/trainers": research keywords separately; do not machine-translate from US to UK.
 
-## Dịp không đưa vào lịch quà tặng
+## Occasions left out of the gifting calendar
 
-Remembrance Sunday/Veterans Day/Memorial Day là ngày tưởng niệm; nếu viết bài thì giữ giọng trang trọng và hỏi ý kiến biên tập. Bank holiday UK: xem https://www.gov.uk/bank-holidays.
+Remembrance Sunday, Veterans Day and Memorial Day are days of remembrance; if you write about them, keep a solemn tone and ask the editor first. UK bank holidays: see https://www.gov.uk/bank-holidays.
 
-## Đo và hiệu chỉnh
+## Measure and calibrate
 
-Mỗi mùa, ghi lại: ngày bài được index, ngày bắt đầu có impressions, ngày đạt đỉnh (Search Console theo tuần). Dùng số liệu của chính site để thay mặc định 12/6 tuần.
+Each season, record the date a post was indexed, the date impressions began, and the date of the peak (Search Console, weekly). Use the site's own figures to replace the default 12/6-week lead times.

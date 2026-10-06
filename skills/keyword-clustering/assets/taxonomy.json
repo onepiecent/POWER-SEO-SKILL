@@ -1,5 +1,5 @@
 {
-  "_comment": "Taxonomy dùng chung cho gom nhóm keyword blog POD (US/UK). Pattern là regex chạy trên văn bản đã chuẩn hóa: chữ thường, bỏ dấu nháy đơn (mother's -> mothers), gạch nối -> khoảng trắng. Sửa file này để thêm niche/dịp; chạy tests để kiểm tra regex.",
+  "_comment": "Shared taxonomy for clustering POD blog keywords (US/UK). A pattern is a regex run on normalised text: lowercase, single apostrophes removed (mother's -> mothers), hyphens -> spaces. Edit this file to add niches/occasions; run the tests to check the regexes.",
   "facets": {
     "occasion": {
       "title_template": "{label} Gift Ideas",

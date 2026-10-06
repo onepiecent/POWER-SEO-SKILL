@@ -1,47 +1,47 @@
 ---
 name: internal-link-planner
-description: Lập kế hoạch internal link giữa các bài BLOG Printerval (pillar ↔ cluster, bài cùng cụm, link chéo, link ngược từ bài cũ) từ topic-map.csv, gợi ý anchor mô tả, đánh dấu bài mồ côi hoặc ngõ cụt, và audit file link hiện có (export từ Screaming Frog hoặc Ahrefs với cột source, target, anchor). Dùng khi người dùng nói "internal link", "anchor text", "link giữa các bài", "bài mồ côi/orphan", "link ngược bài cũ". Không lập link tới trang bán hàng hay danh mục.
+description: Plans internal links between Printerval blog posts (pillar to cluster, posts in the same cluster, cross links, links back from older posts) from topic-map.csv, suggests descriptive anchors, flags orphan posts and dead ends, and audits an existing link export (Screaming Frog or Ahrefs with source, target and anchor columns). Use when the user mentions internal links, anchor text, orphan pages or linking older posts to new ones. Does not plan links to product or category pages.
 ---
 
-# Internal link planner (blog ↔ blog)
+# Internal link planner (blog <-> blog)
 
-Phạm vi: **chỉ link giữa các bài blog**. Link sang sản phẩm do team content gắn qua `[PRODUCT-SLOT]` (skill `product-slot`). URL/sitemap của Printerval đang thay đổi nên kế hoạch dùng **slug dự kiến** (`planned_slug`), không dùng URL thật.
+Scope: **links between blog posts only**. Links to products are added by the content team through `[PRODUCT-SLOT]` (the `product-slot` skill). Printerval's URLs and sitemap are changing, so the plan uses **planned slugs** (`planned_slug`), not real URLs.
 
-## Hai chế độ
+## Two modes
 
 ```bash
-# 1. Lập kế hoạch từ topic map
+# 1. Plan from the topic map
 python3 skills/internal-link-planner/scripts/link_plan.py plan outputs/topic-map.csv --out outputs
 python3 skills/internal-link-planner/scripts/link_plan.py plan outputs/topic-map.csv --published published.csv --out outputs
 
-# 2. Audit file link hiện có (cột source,target,anchor; chấp nhận from/to/anchor text/link text)
+# 2. Audit an existing link file (columns source,target,anchor; from/to/anchor text/link text are also accepted)
 python3 skills/internal-link-planner/scripts/link_plan.py audit links.csv --topic-map outputs/topic-map.csv --out outputs
 ```
 
-`published.csv`: một cột `slug` (hoặc `url`) liệt kê bài đã đăng. Có file này, `status` cho biết link nào **đưa vào bản nháp mới**, link nào **phải cập nhật bài cũ sau khi bài đích lên**, link nào đã tồn tại.
+`published.csv`: one `slug` (or `url`) column listing the published posts. With this file, `status` shows which links **go into a new draft**, which ones **require updating an old post once the target is live**, and which already exist.
 
-## Quy tắc (có mức bằng chứng)
+## Rules (with evidence levels)
 
-- Link phải là thẻ `<a href>` crawl được; anchor **mô tả, ngắn, liên quan tới trang đích**; trang quan trọng cần ít nhất một link trỏ tới; link đặt trong ngữ cảnh có ích cho người đọc. **[Google]** (mục SEO link best practices)
-- Không có số link "lý tưởng"; quá nhiều link làm loãng từng link. **[Google]**
-- Pillar ↔ mọi cluster (bài con link lên pillar bằng anchor chứa chủ đề pillar; pillar link xuống từng cluster); bài cùng cụm link chéo khi liên quan; tối đa 3 sibling mỗi bài, 1 link chéo pillar. **[Quy ước]**
-- Mật độ tham khảo 3-5 link ngữ cảnh/1.000 từ; 1-2 link quan trọng nhất ở nửa đầu bài; mỗi URL đích một link mỗi bài; anchor 2-8 từ, đa dạng nhưng **không dùng cùng anchor cho hai URL khác nhau**. **[Quy ước]**
-- Nghiên cứu Zyppy (23 triệu link, **tương quan, không phải nhân quả**): trang nhận khoảng 40-44 link trỏ tới có lượt click cao hơn nhiều so với 0-4 link; vượt ~45-50 thì hiệu ứng đảo chiều; trang mồ côi gần như không có traffic organic. Script chỉ dùng ngưỡng ~50 để **gắn cờ xem lại**. **[Nghiên cứu]**
-- Khi đăng bài mới: cập nhật 2-5 bài cũ cùng chủ đề để link tới bài mới (`backlink_old_post`). **[Quy ước]**
+- Links must be crawlable `<a href>` elements; anchors **descriptive, short and relevant to the target page**; every important page needs at least one link pointing to it; links sit in a context that helps the reader. **[Google]** (SEO link best practices)
+- There is no "ideal" number of links; too many links dilute each one. **[Google]**
+- Pillar <-> every cluster (a child post links up to the pillar with an anchor that contains the pillar topic; the pillar links down to each cluster); posts in the same cluster cross-link when relevant; at most 3 siblings per post and 1 cross-pillar link. **[Convention]**
+- Reference density 3-5 contextual links per 1,000 words; the 1-2 most important links in the first half of the post; one link per target URL per post; anchors of 2-8 words, varied but **never the same anchor for two different URLs**. **[Convention]**
+- Zyppy research (23 million links, **correlation, not causation**): a page receiving about 40-44 inbound links gets far more clicks than one with 0-4; beyond about 45-50 the effect reverses; orphan pages get almost no organic traffic. The script only uses the ~50 threshold to **flag for review**. **[Research]**
+- When publishing a new post: update 2-5 older posts on the same topic so they link to it (`backlink_old_post`). **[Convention]**
 
-## Luồng làm việc
+## Workflow
 
-1. Chạy `plan`; đọc `link-summary.md`: số link theo loại, bài mồ côi/ngõ cụt, **phần "chưa giải quyết"**.
-2. **Không ép link giữa hai bài không liên quan.** Bài không có bài cùng chủ đề để link tự nhiên được liệt kê riêng: đó là khoảng trống nội dung (cần thêm bài cùng chủ đề), hoặc để người biên tập quyết định.
-3. Khi viết bài, đưa cho writer bảng `anchor → slug đích → vị trí → lý do` của bài đó (đã có trong `content-brief`). Anchor trong CSV chỉ là **gợi ý**: viết lại cho khớp câu, đúng chính tả thị trường (mum/mom, personalised/personalized).
-4. Sau khi có URL thật (khi sitemap ổn định), ánh xạ `planned_slug` → URL. Nếu slug thật khác slug dự kiến (redirect, đổi tên), lập bảng ánh xạ trước khi chạy `audit`.
-5. Chạy `audit` định kỳ (site nhỏ hàng quý) với export link của crawler; ưu tiên sửa theo mức: `high` (bài mồ côi, cluster thiếu link lên pillar, pillar thiếu link xuống cluster, anchor chung chung như "click here"), `medium` (ngõ cụt, anchor trùng cho nhiều đích, anchor rỗng), `low` (anchor quá ngắn/dài, link trùng, mật độ cao).
+1. Run `plan`; read `link-summary.md`: links by type, orphan posts and dead ends, and the **"not resolvable"** section.
+2. **Never force links between unrelated posts.** Posts that have no same-topic post to link to naturally are listed separately: that is a content gap (add a post on the same topic) or a decision for the editor.
+3. When writing a post, give the writer the table `anchor -> target slug -> position -> reason` for that post (already included in `content-brief`). The anchors in the CSV are only **suggestions**: rewrite them to fit the sentence, in the market's spelling (mum/mom, personalised/personalized).
+4. Once real URLs exist (when the sitemap is stable), map `planned_slug` -> URL. If the real slug differs from the planned one (redirect, rename), build a mapping table before running `audit`.
+5. Run `audit` regularly (quarterly for a small site) with the crawler's link export; fix by severity: `high` (orphan posts, clusters that do not link up to the pillar, pillars that do not link down to clusters, generic anchors such as "click here"), `medium` (dead ends, the same anchor used for several targets, empty anchors), `low` (anchors that are too short or too long, duplicate links, high density).
 
-## Cách `audit` khớp bài
+## How `audit` matches posts
 
-So khớp theo **slug cuối đường dẫn** (bỏ `.html/.php`, tham số, chữ hoa); vì vậy URL đã redirect sang slug khác sẽ không khớp. Link tới trang không thuộc blog (sản phẩm, danh mục) vẫn được đếm như một "node" và có thể bị báo mồ côi: lọc export chỉ còn các URL blog trước khi audit.
+It matches by the **last path segment** (dropping `.html/.php`, parameters and capital letters), so a URL that was redirected to a different slug will not match. Links to pages outside the blog (products, categories) are still counted as a "node" and may be reported as orphans: filter the export down to blog URLs before auditing.
 
-## Giới hạn
+## Limits
 
-- Kế hoạch dựa trên facet và từ vựng của keyword, chưa đọc nội dung bài thật; sau khi bài được viết, Claude nên đọc bài và đề xuất vị trí chèn link theo ngữ nghĩa.
-- Không có dữ liệu crawl nên không biết link nào đã tồn tại trừ khi có `published.csv` hoặc chạy `audit`.
+- The plan is based on keyword facets and vocabulary and has not read the real post content; once a post is written, Claude should read it and suggest link positions semantically.
+- Without crawl data it cannot know which links already exist unless you provide `published.csv` or run `audit`.

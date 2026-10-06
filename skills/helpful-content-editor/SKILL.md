@@ -1,38 +1,38 @@
 ---
 name: helpful-content-editor
-description: Soát, chấm và biên tập bài blog tiếng Anh (US/UK) của Printerval theo tiêu chí nội dung hữu ích cho người đọc (people-first), gồm trả lời sớm, góc nhìn và kinh nghiệm thật, bằng chứng, trung thực, dễ đọc, nhắc sản phẩm tự nhiên, không viết cho công cụ tìm kiếm trước, bớt giọng AI. Dùng khi người dùng gửi bản nháp hoặc nói "review bài", "bài này đã hữu ích chưa", "chấm bài", "sửa cho tự nhiên", "E-E-A-T", "bớt giọng AI", "helpful content".
+description: Reviews, scores and edits English blog drafts (US and UK) for Printerval against people-first content criteria, covering early answers, real first-hand insight, evidence, honesty, readability, natural product mentions, no search-engine-first writing and fewer AI-sounding phrases. Use when the user sends a draft or asks to review an article, check if it is helpful, edit it to sound natural, apply E-E-A-T, or reduce AI tone.
 ---
 
 # Helpful content editor
 
-Kiểm tra bản nháp bằng **hai lớp**: script đo phần đo được; Claude đánh giá phần cần phán đoán theo `references/rubric.md`. Kết quả cuối là danh sách sửa theo mức tác động, và bản sửa nếu người dùng yêu cầu. Giao tiếp tiếng Việt; **văn bản tiếng Anh được sửa trực tiếp** theo biến thể US/UK, kèm skill `english-grammar-style`.
+Check a draft in **two layers**: a script measures what can be measured; Claude judges the rest with `references/rubric.md`. The final result is a list of fixes ordered by impact, plus a revised draft if the user asks for one. Reply in the user's language; **edit English text directly**, in the US or UK variant, together with the `english-grammar-style` skill.
 
-## Quy trình
+## Workflow
 
-1. **Xác định bối cảnh:** thị trường (US/UK), `post_type` (gift-guide, ideas-list, choose-guide, how-to, explainer, copy-ideas, pillar-hub), từ khóa chính, có brief không.
-2. **Chạy script:**
+1. **Establish the context:** market (US/UK), `post_type` (gift-guide, ideas-list, choose-guide, how-to, explainer, copy-ideas, pillar-hub), the primary keyword, and whether there is a brief.
+2. **Run the script:**
    ```bash
    python3 skills/helpful-content-editor/scripts/helpful_check.py draft.md --market us --post-type gift-guide --keyword "mother's day gifts for grandma"
-   python3 skills/helpful-content-editor/scripts/helpful_check.py final.md --final     # trước khi đăng: placeholder = lỗi
+   python3 skills/helpful-content-editor/scripts/helpful_check.py final.md --final     # before publishing: placeholders are errors
    ```
-   Script đo: cấu trúc (1 H1, H2 theo mục), độ dài mở bài, độ đọc (Flesch-Kincaid, câu dài, bị động), câu có số liệu không nguồn, câu "we tested" không có bằng chứng, cụm sáo rỗng/giọng AI, nhồi từ khóa, CTA bán hàng, tín hiệu tin cậy (tác giả, ngày), chính tả/định dạng US-UK, placeholder.
-3. **Đọc bài như người đọc** rồi chấm theo `references/rubric.md` (8 chiều, 0-3 điểm mỗi chiều, kèm dấu hiệu đỏ). Phần Claude phải tự đánh giá, script không làm được: có góc nhìn riêng chưa, bao phủ đủ câu hỏi tiếp theo của người đọc chưa, có trung thực không, sản phẩm có đang chen vào không.
-4. **Lập danh sách sửa**, tối đa ~7 mục, xếp theo tác động: (1) sự thật/trung thực, (2) trả lời sớm và đúng intent, (3) giá trị riêng, (4) bằng chứng, (5) đọc và cấu trúc, (6) tích hợp thương mại, (7) giọng văn/chính tả.
-5. **Sửa khi được yêu cầu:** giữ giọng tác giả, không thêm dữ kiện. Bổ sung chỉ từ nguồn người dùng cung cấp; chỗ thiếu thì để `[DATA NEEDED: ...]`/`[EXPERIENCE: ...]` kèm câu hỏi cho đúng bộ phận. Chạy lại script, nói rõ điểm trước/sau.
-6. **Kết luận** một trong ba: *sẵn sàng cho biên tập người* / *cần sửa* / *viết lại phần lớn*, cùng các sự thật cần người xác minh (số liệu, tên, ngày).
+   The script measures: structure (one H1, H2s by section), opening length, readability (Flesch-Kincaid, long sentences, passive voice), sentences with figures but no source, "we tested" sentences without evidence, clichés and AI-sounding phrases, keyword stuffing, sales calls to action, trust signals (author, date), US/UK spelling and formats, and placeholders.
+3. **Read the post as a reader** and score it with `references/rubric.md` (8 dimensions, 0-3 points each, with red flags). Claude must assess what the script cannot: whether the post has a point of view of its own, whether it covers the reader's next questions, whether it is honest, and whether the products are pushing in.
+4. **Write the fix list**, at most ~7 items, ordered by impact: (1) facts and honesty, (2) answering early and matching intent, (3) original value, (4) evidence, (5) readability and structure, (6) commercial integration, (7) voice and spelling.
+5. **Edit when asked:** keep the author's voice and add no facts. Add only what comes from sources the user provides; leave `[DATA NEEDED: ...]` or `[EXPERIENCE: ...]` for gaps, with the question for the right team. Re-run the script and state the score before and after.
+6. **Conclude** with one of three verdicts: *ready for a human edit* / *needs revision* / *rewrite most of it*, plus the facts a person must verify (figures, names, dates).
 
-## Những điều không bao giờ làm
+## Never do these
 
-- **Không bịa trải nghiệm, số liệu, review, "chúng tôi đã test"** để bài trông có thẩm quyền. Google đánh giá cao bằng chứng trải nghiệm thật; bịa còn rủi ro pháp lý (FTC 16 CFR 465; CMA DMCC Act).
-- **Không độn chữ** để đủ độ dài (không có độ dài lý tưởng), không lặp biến thể keyword, không thêm FAQ giả.
-- Không thêm CTA "buy now" để "tăng chuyển đổi"; bài hữu ích dẫn sang sản phẩm bằng ngữ cảnh (xem `product-slot`).
-- Không cam kết xếp hạng. Điểm của script là heuristic nội bộ, **không phải điểm của Google**.
+- **Never invent experience, statistics, reviews or "we tested"** to make a post look authoritative. Google values real evidence of experience; inventing it is also a legal risk (FTC 16 CFR 465; CMA DMCC Act).
+- **Never pad** to reach a length (there is no ideal length), never repeat keyword variants, never add fake FAQs.
+- Do not add "buy now" calls to action to "increase conversions"; a helpful post leads to products through context (see `product-slot`).
+- Never promise rankings. The script score is an internal heuristic, **not a Google score**.
 
-## Nội dung do AI hỗ trợ
+## AI-assisted content
 
-Hướng dẫn của Google: AI hữu ích để nghiên cứu và dựng cấu trúc, nhưng tạo nhiều trang không thêm giá trị là scaled content abuse; mô hình có thể sai sự thật nên phải kiểm chứng; nên cân nhắc nói cách nội dung được tạo ra. Vì vậy với bản nháp AI: (a) kiểm chứng từng số liệu/tên/ngày, (b) thêm ít nhất một giá trị gốc thật, (c) biên tập người trước khi đăng, (d) không xuất bản hàng loạt không duyệt. Quality Rater Guidelines xem nội dung chính tạo bằng công cụ tự động với ít công sức/độc đáo/giá trị là mức chất lượng thấp nhất.
+Google's guidance: AI is useful for research and for structuring content, but producing many pages without adding value is scaled content abuse; models can get facts wrong, so everything must be verified; consider saying how the content was created. So for an AI draft: (a) verify every figure, name and date, (b) add at least one real original contribution, (c) have a person edit it before publishing, (d) never publish in bulk without review. The Quality Rater Guidelines treat main content produced with automated tools and little effort, originality or value as the lowest quality level.
 
-## Tài liệu kèm
+## Related documents
 
-- `references/rubric.md`: 8 chiều đánh giá, câu hỏi, thang điểm, dấu hiệu đỏ, cách sửa.
-- `references/voice-and-style.md`: giọng văn cho blog quà tặng, US vs UK, plain language, thay thế cụm sáo rỗng.
+- `references/rubric.md`: the 8 dimensions, questions, scoring scale, red flags and how to fix them.
+- `references/voice-and-style.md`: voice for a gifting blog, US vs UK, plain language, replacements for clichés.

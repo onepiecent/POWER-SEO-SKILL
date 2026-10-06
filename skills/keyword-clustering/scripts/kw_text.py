@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Chuẩn hóa văn bản keyword, nhận diện facet / reader need / category, lọc nhiễu.
+"""Normalise keyword text, detect facets / reader need / category, filter noise.
 
-Module dùng chung cho cluster_keywords.py. Chỉ dùng thư viện chuẩn.
+Shared module for cluster_keywords.py. Standard library only.
 """
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ ASSETS = os.path.join(HERE, "..", "assets")
 DEFAULT_TAXONOMY = os.path.join(ASSETS, "taxonomy.json")
 DEFAULT_NOISE = os.path.join(ASSETS, "noise-rules.json")
 
-# Thứ tự dò facet: dịp lễ và sở thích dò trước và được "che" đi để người nhận không bị đếm hai lần
+# Facet detection order: occasions and interests are detected first and "masked" so that the recipient is not counted twice
 # ("dog mom" -> interest=dogs, recipient=mom).
 FACET_ORDER = ["occasion", "interest", "recipient", "product", "style", "craft"]
 IMPLIED_RECIPIENT = {"mothers-day": "mom", "fathers-day": "dad"}
 YEAR_RX = re.compile(r"^(19|20)\d\d$")
-# "gifts from daughter" -> daughter là người tặng, không phải người nhận.
+# "gifts from daughter" -> the daughter is the giver, not the recipient.
 GIVER_RX = re.compile(
     r"\bfrom (?:(?:a|an|the|my|your|our) )?(?:mom|mum|mother|dad|father|daughter|son|kids?|children|wife|"
     r"husband|granddaughter|grandson|grandkids?|girlfriend|boyfriend|sister|brother|friends?|coworkers?|"
@@ -61,14 +61,14 @@ def weighted_jaccard(a: frozenset, b: frozenset, weak: frozenset) -> float:
 
 
 def _compile_alternatives(values: dict) -> tuple[re.Pattern | None, list[str]]:
-    """Gộp mọi pattern của một facet thành một regex duy nhất để dò nhanh với file lớn."""
+    """Combine all patterns of a facet into one regex so large files can be scanned quickly."""
     parts, keys = [], []
     for i, (key, spec) in enumerate(values.items()):
         try:
             alt = "|".join(f"(?:{p})" for p in spec["patterns"])
             re.compile(alt)
         except re.error as exc:
-            raise SystemExit(f"Regex lỗi ở '{key}': {exc}")
+            raise SystemExit(f"Invalid regex in '{key}': {exc}")
         parts.append(f"(?P<g{i}>{alt})")
         keys.append(key)
     return (re.compile("|".join(parts)) if parts else None), keys
@@ -87,12 +87,12 @@ def _match_index(m: re.Match) -> int:
     for name, val in m.groupdict().items():
         if val is not None and name[0] == "g" and name[1:].isdigit():
             return int(name[1:])
-    raise RuntimeError("không xác định được nhóm khớp")
+    raise RuntimeError("could not determine which group matched")
 
 
 # --------------------------------------------------------------------------- taxonomy
 def merge_taxonomy(base: dict, extra: dict) -> dict:
-    """Mở rộng taxonomy mặc định: thêm giá trị mới, hoặc nối pattern vào giá trị đã có."""
+    """Extend the default taxonomy: add new values, or append patterns to existing values."""
     for facet, spec in extra.get("facets", {}).items():
         tgt = base["facets"].setdefault(facet, {"values": {}})
         if "title_template" in spec:
@@ -166,7 +166,7 @@ class Taxonomy:
                     continue
                 out[facet] = keys[_match_index(matches[0])]
                 pieces, last = [], 0
-                for m in matches:  # che mọi đoạn đã khớp để các facet sau không đếm lại
+                for m in matches:  # mask every matched span so later facets do not count it again
                     pieces += [work[last:m.start()], " " * (m.end() - m.start())]
                     last = m.end()
                 pieces.append(work[last:])
@@ -194,8 +194,8 @@ class Taxonomy:
 
 # --------------------------------------------------------------------------- noise filter
 class NoiseRules:
-    """Loại keyword không thuộc phạm vi blog: retailer/brand điều hướng, local, tiếng khác, quá dài...
-    Mỗi keyword bị loại đều được ghi kèm lý do vào excluded.csv, không bỏ lặng lẽ."""
+    """Remove keywords that do not belong to the blog scope: retailer/brand navigation, local intent, other languages, too long...
+    Every excluded keyword is written to excluded.csv with its reason; nothing is dropped silently."""
 
     def __init__(self, data: dict):
         self.rules = []
@@ -203,7 +203,7 @@ class NoiseRules:
             try:
                 rx = re.compile("|".join(f"(?:{p})" for p in rule["patterns"]))
             except re.error as exc:
-                raise SystemExit(f"Regex noise lỗi ở '{rule.get('name')}': {exc}")
+                raise SystemExit(f"Invalid noise regex in '{rule.get('name')}': {exc}")
             self.rules.append((rule["name"], rule.get("on", "norm"), rx))
         self.max_words = data.get("max_words", 12)
         self.max_chars = data.get("max_chars", 120)
@@ -228,8 +228,8 @@ class NoiseRules:
 
 # --------------------------------------------------------------------------- custom categories
 class Categories:
-    """Nhóm do SEO Specialist tự định nghĩa: {"Tên nhóm": ["từ", "cụm từ", "re:regex"]}.
-    Từ thường tự thêm biên từ và số nhiều; thêm tiền tố re: để dùng regex thô."""
+    """Groups defined by the SEO specialist: {"Group name": ["word", "phrase", "re:regex"]}.
+    Plain words get word boundaries and an optional plural automatically; use the prefix re: for a raw regex."""
 
     def __init__(self, data: dict):
         self.names, self.rx = [], []

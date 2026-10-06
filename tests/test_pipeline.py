@@ -16,7 +16,7 @@ SAMPLE_US = os.path.join(EXAMPLES, "synthetic-keywords-us.csv")
 
 
 class Calendar(unittest.TestCase):
-    """Ngày đối chiếu độc lập (lịch thật), không lấy từ kết quả tìm kiếm vốn từng sai."""
+    """Independent reference dates (the real calendar), not taken from search results, which were once wrong."""
 
     def test_known_dates(self):
         cases = {
@@ -64,7 +64,7 @@ class Pipeline(unittest.TestCase):
     def test_topic_map_structure(self):
         pillars = {r["pillar_key"]: r for r in self.topic if r["role"] == "pillar"}
         self.assertIn("mothers-day", pillars)
-        self.assertIn("care", pillars)  # bài kiến thức giặt/chăm sóc có pillar craft
+        self.assertIn("care", pillars)  # washing/care know-how posts get a craft pillar
         self.assertEqual(pillars["mothers-day"]["pillar_name"], "Mother's Day Gift Ideas")
         in_md = [r for r in self.topic if r["pillar_key"] == "mothers-day"]
         self.assertGreaterEqual(len(in_md), 4)

@@ -1,5 +1,5 @@
 {
-  "_comment": "Cấu hình chạy lại được cho cluster_keywords.py. Khóa = tên tùy chọn (dùng _ thay cho -). Tùy chọn gõ trên dòng lệnh sẽ ghi đè file này. Đường dẫn tính từ thư mục chạy lệnh.",
+  "_comment": "A re-runnable configuration for cluster_keywords.py. Key = option name (use _ in place of -). Options typed on the command line override this file. Paths are relative to the directory the command is run from.",
   "files": ["examples/synthetic-keywords-us.csv"],
   "out": "outputs/demo",
   "market": "us",

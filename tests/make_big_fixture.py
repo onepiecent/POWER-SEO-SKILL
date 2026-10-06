@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Sinh file CSV tổng hợp lớn để thử hiệu năng gom nhóm (dữ liệu giả, không dùng cho quyết định SEO).
+"""Generate a large synthetic CSV to test clustering performance (fake data, not for SEO decisions).
 
-Dùng:  python3 tests/make_big_fixture.py 150000 /tmp/big.csv
+Usage:  python3 tests/make_big_fixture.py 150000 /tmp/big.csv
 """
 import csv
 import random

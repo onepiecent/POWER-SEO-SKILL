@@ -1,50 +1,50 @@
-# Nhắc sản phẩm tự nhiên: bài kiểm tra và ví dụ
+# Mentioning products naturally: tests and examples
 
-Nguyên tắc: người đọc đến để giải quyết một việc; sản phẩm chỉ xuất hiện khi nó **là lời giải** cho điều đang bàn. Đây là thông lệ biên tập **[Quy ước]**, phù hợp với định hướng nội dung ưu tiên con người của Google (nội dung viết trước hết cho người đọc, không phải để bán hay để xếp hạng).
+Principle: readers come to get something done; a product appears only when it **is the answer** to what is being discussed. This is editorial practice **[Convention]**, consistent with Google's people-first direction for content (content written first for readers, not to sell or to rank).
 
-## Năm câu hỏi trước khi giữ một slot
+## Five questions before keeping a slot
 
-1. **Bỏ-hết-slot:** nếu xóa slot, đoạn văn có mất ý không? (Nếu đoạn chỉ tồn tại để nhắc sản phẩm: xóa đoạn.)
-2. **Vấn đề:** người đọc đang gặp vấn đề gì ở đoạn này, và sản phẩm giải quyết nó thế nào?
-3. **Cụ thể:** `why` có đúng với sản phẩm này mà không đúng với sản phẩm khác không?
-4. **Thời điểm:** người đọc đã đủ thông tin để thấy sản phẩm là hợp lý chưa (sau lời khuyên, không trước)?
-5. **Trung thực:** có hứa điều chưa xác nhận (giá, giao hàng, "bền mãi", "được yêu thích nhất") không?
+1. **Remove-every-slot:** if the slot is deleted, does the paragraph lose its point? (If the paragraph exists only to mention a product: delete the paragraph.)
+2. **Problem:** what problem is the reader facing in this paragraph, and how does the product solve it?
+3. **Specific:** is `why` true of this product but not of other products?
+4. **Timing:** does the reader have enough information yet to see the product as reasonable (after the advice, not before)?
+5. **Honest:** does it promise anything unconfirmed (price, delivery, "lasts forever", "most loved")?
 
-## Ví dụ tốt và xấu
+## Good and bad examples
 
 **Gift guide (US):**
 
-Xấu:
+Bad:
 > Shop our best mugs now! [PRODUCT-SLOT: best mug | context: grandma | why: perfect]
 
-Tốt:
+Good:
 > If she keeps family photos on every shelf, a mug with her favorite picture keeps it within reach during her morning tea. Pick a photo where faces fill most of the frame, because small faces get lost on a mug.
 > [PRODUCT-SLOT: photo mug | context: gift for a grandma who keeps family photos on every shelf | why: her favorite photo stays within reach during her morning tea]
 
-**How-to (kích thước):**
+**How-to (sizing):**
 
-Xấu: slot "t-shirt" trong đoạn mở đầu hướng dẫn đo.
+Bad: a "t-shirt" slot in the opening paragraph of a measuring guide.
 
-Tốt: sau bước đo xong, một slot cho "size chart reference for the item" với `why: she can compare her own measurements with the product's chart before ordering`. (Nội dung size chart cụ thể do team sản phẩm cung cấp.)
+Good: after the measuring step is done, one slot for "size chart reference for the item" with `why: she can compare her own measurements with the product's chart before ordering`. (The specific size-chart content comes from the product team.)
 
-## Mẫu `why` tốt
+## Good `why` patterns
 
-- "keeps the photo within reach during her morning tea" (hành vi cụ thể)
-- "the message makes a practical blanket feel personal" (lý do cảm xúc có thật)
-- "lets a group of five match without sharing a size chart" (vấn đề thực tế)
+- "keeps the photo within reach during her morning tea" (a specific behaviour)
+- "the message makes a practical blanket feel personal" (a genuine emotional reason)
+- "lets a group of five match without sharing a size chart" (a practical problem)
 
-## Mẫu `why` yếu (sửa lại)
+## Weak `why` patterns (rewrite them)
 
-- "perfect gift" / "best quality" / "everyone loves it": khẩu hiệu, không nói gì về người đọc.
-- "high quality print": claim chung; nếu cần thì nêu thuộc tính đã xác minh (từ team sản phẩm).
+- "perfect gift" / "best quality" / "everyone loves it": slogans that say nothing about the reader.
+- "high quality print": a generic claim; if needed, state a verified attribute (from the product team).
 
-## Khi nào nên KHÔNG có slot
+## When NOT to have a slot
 
-- Bài `explainer` trả lời câu hỏi ngắn (ví dụ ngày lễ).
-- Đoạn nói về nhược điểm/giới hạn của lựa chọn.
-- Phần nói về món quà không phải sản phẩm (lời nhắn, trải nghiệm chung).
-- Khi team content không có sản phẩm phù hợp: xóa slot, đừng ép.
+- An `explainer` post that answers a short question (for example a holiday date).
+- A paragraph about the drawbacks or limits of an option.
+- A section about a gift that is not a product (a message, a shared experience).
+- When the content team has no suitable product: delete the slot, do not force it.
 
-## Theo mùa
+## Seasonal posts
 
-Bài theo mùa được làm mới hằng năm: **rà lại toàn bộ slot/link mỗi lần làm mới** (sản phẩm có thể ngừng bán). Không hứa hạn giao hàng trong phần giới thiệu sản phẩm; chỉ dùng thông tin vận hành có ngày xác nhận.
+Seasonal posts are refreshed every year: **re-check every slot and link at each refresh** (products may be discontinued). Do not promise delivery deadlines in the product introduction; use only operational information that has a confirmation date.

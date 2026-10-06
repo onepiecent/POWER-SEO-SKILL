@@ -1,31 +1,31 @@
-# Kho kinh nghiệm (experience bank) - mẫu
+# Experience bank - template
 
-Mục đích: để bài viết có **góc nhìn và dữ liệu riêng của Printerval** (thứ Google gọi là non-commodity), thay vì tóm tắt chung chung. Mỗi mục phải **thật, kiểm chứng được và có chủ sở hữu**. Để trống còn hơn bịa. Không ghi dữ liệu cá nhân của khách hàng; chỉ dùng tổng hợp hoặc có sự đồng ý.
+Purpose: give a post **Printerval's own point of view and data** (what Google calls non-commodity content) instead of a generic summary. Every entry must be **real, verifiable and owned by someone**. Leave it blank rather than invent it. Do not record customers' personal data; use only aggregates or data shared with consent.
 
-Cách dùng trong bài: `[EXPERIENCE: <mã mục hoặc nguồn>]` hoặc `[DATA: <nguồn>]`. Cập nhật ngày xác nhận mỗi mùa.
+How to use it in a post: `[EXPERIENCE: <entry ID or source>]` or `[DATA: <source>]`. Update the confirmation date every season.
 
-## Mẫu một mục
+## Template for one entry
 
 ```
 ID: EB-001
-Chủ đề: lỗi thường gặp khi cá nhân hóa ảnh lên cốc/áo
-Phát hiện: <điều thực tế quan sát, 1-3 câu>
-Nguồn: <bộ phận / tài liệu / mẫu ticket tổng hợp theo tuần-tháng>
-Bằng chứng: <ảnh, số đo, ghi chú nội bộ có thể xem>
-Chủ sở hữu: <tên/vai trò>
-Xác nhận lần cuối: <YYYY-MM-DD>
-Được phép công khai: <có/không; điều kiện>
-Dùng cho: gift-guide, how-to
+Topic: common mistakes when personalising a photo on a mug/shirt
+Finding: <what was actually observed, 1-3 sentences>
+Source: <department / document / ticket sample summarised by week or month>
+Evidence: <photos, measurements, internal notes that can be inspected>
+Owner: <name/role>
+Last confirmed: <YYYY-MM-DD>
+Cleared for publication: <yes/no; conditions>
+Used for: gift-guide, how-to
 ```
 
-## Danh mục gợi ý để team điền
+## Suggested categories for the team to fill in
 
-| Nhóm | Câu hỏi nên hỏi bộ phận | Bộ phận |
+| Group | Questions to ask the department | Department |
 |---|---|---|
-| Cá nhân hóa | Khách hay cá nhân hóa gì cho từng dịp/người nhận? Lỗi nào gây thất vọng (ảnh mờ, quá nhiều chữ, sai chính tả)? | Support, Thiết kế |
-| Kích cỡ & độ vừa | Câu hỏi về size nào lặp lại nhiều nhất? Mẹo chọn size đã giúp giảm đổi trả (nếu có số liệu)? | Support, Sản phẩm |
-| Chất liệu & in ấn | Mỗi sản phẩm dùng phương pháp in/chất liệu nào (tài liệu nhà cung cấp)? Khác biệt thực tế khách cảm nhận? | Sản phẩm, QC |
-| Chăm sóc | Hướng dẫn giặt/bảo quản chính thức của từng loại hàng? | Sản phẩm |
-| Thiết kế chữ | Giới hạn ký tự/dòng khuyến nghị cho từng sản phẩm? | Thiết kế |
-| Vận hành/giao hàng | Hạn đặt hàng và thời gian giao theo mùa (có ngày xác nhận)? **Chỉ bộ phận vận hành xác nhận.** | Vận hành |
-| Câu chuyện khách hàng/seller | Câu chuyện thật, có phép đăng (ảnh, trích dẫn)? | Cộng đồng, Marketing |
+| Personalisation | What do customers personalise for each occasion or recipient? Which mistakes cause disappointment (blurry photos, too much text, typos)? | Support, Design |
+| Sizing & fit | Which sizing questions come up most often? Did any sizing tip reduce returns (if there is data)? | Support, Product |
+| Materials & printing | Which printing method and material does each product use (supplier documents)? What differences do customers actually notice? | Product, QC |
+| Care | What are the official washing/care instructions for each type of product? | Product |
+| Text design | What are the recommended character/line limits for each product? | Design |
+| Operations/delivery | Seasonal order deadlines and delivery times (with a confirmation date)? **Only Operations confirms these.** | Operations |
+| Customer/seller stories | Real stories that may be published (photos, quotes)? | Community, Marketing |

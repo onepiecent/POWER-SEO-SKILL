@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Soát bài blog theo tiêu chí "hữu ích cho người đọc" (people-first). Chỉ dùng thư viện chuẩn.
+"""Review a blog post against "helpful to the reader" (people-first) criteria. Standard library only.
 
-Script đo phần ĐO ĐƯỢC (cấu trúc, mở bài, độ đọc, bằng chứng, dấu hiệu viết cho công cụ tìm kiếm,
-dấu hiệu giọng AI, tín hiệu tin cậy, chính tả US/UK). Phần cần phán đoán (góc nhìn riêng, mức bao phủ
-câu hỏi của người đọc, tính trung thực) do Claude/biên tập viên đánh giá theo references/rubric.md.
+The script measures what CAN be measured (structure, opening, readability, evidence, signs of writing for search engines,
+signs of AI-sounding text, trust signals, US/UK spelling). Parts that need judgement (a point of view of its own, how well
+the post covers the reader's questions, honesty) are assessed by Claude or an editor with references/rubric.md.
 
-Điểm là heuristic nội bộ để so sánh giữa các bản nháp, KHÔNG phải số đo của Google.
+The score is an internal heuristic for comparing drafts, NOT a Google metric.
 
-Chạy:
+Usage:
     helpful_check.py draft.md --market us --post-type gift-guide --keyword "mother's day gifts for grandma"
     helpful_check.py draft.md --json report.json
-    helpful_check.py final.md --final        # placeholder chưa xử lý (DATA NEEDED, LINK, TODO) = lỗi
+    helpful_check.py final.md --final        # unresolved placeholders (DATA NEEDED, LINK, TODO) = error
 
-Marker chuẩn trong bài:
-    [EXPERIENCE: nguồn nội bộ thật]  [DATA: nguồn số liệu gốc]  [DATA NEEDED: ...]  [LINK: chủ đề]  [PRODUCT-SLOT: ...]
+Standard markers in a post:
+    [EXPERIENCE: real internal source]  [DATA: original data source]  [DATA NEEDED: ...]  [LINK: topic]  [PRODUCT-SLOT: ...]
 """
 from __future__ import annotations
 
@@ -66,8 +66,8 @@ def clean_body(text: str) -> str:
     t = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", t)
     t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)
     t = re.sub(r"<[^>]+>", " ", t)
-    t = re.sub(r"^\s*\|.*\|\s*$", "\n", t, flags=re.M)   # bảng
-    t = re.sub(r"^#{1,6}\s+.*$", "\n", t, flags=re.M)     # tiêu đề (giữ ranh giới đoạn)
+    t = re.sub(r"^\s*\|.*\|\s*$", "\n", t, flags=re.M)   # tables
+    t = re.sub(r"^#{1,6}\s+.*$", "\n", t, flags=re.M)     # headings (keep paragraph boundaries)
     t = re.sub(r"[*_`>]+", "", t)
     t = re.sub(r"^\s*([-+*]|\d+[.)])\s+", "", t, flags=re.M)
     return t
@@ -112,35 +112,35 @@ def run_checks(raw: str, market: str, post_type: str, keyword: str, final: bool)
     n_words, n_sents = max(1, len(words)), max(1, len(sents))
     r.metrics["words"] = len(words)
 
-    # 1. cấu trúc
+    # 1. structure
     h1 = re.findall(r"^#\s+(.+)$", text, flags=re.M)
     h2 = re.findall(r"^##\s+(.+)$", text, flags=re.M)
     levels = [len(m) for m in re.findall(r"^(#{1,6})\s", text, flags=re.M)]
     if len(h1) != 1:
-        r.add("high", "structure", f"cần đúng 1 H1, hiện có {len(h1)}")
+        r.add("high", "structure", f"exactly one H1 is needed, found {len(h1)}")
     if len(words) > 800 and len(h2) < 3:
-        r.add("medium", "structure", f"bài {len(words)} từ chỉ có {len(h2)} H2; chia mục theo câu hỏi của người đọc")
+        r.add("medium", "structure", f"a {len(words)}-word post has only {len(h2)} H2s; split it into sections that follow the reader's questions")
     if any(b - a > 1 for a, b in zip(levels, levels[1:])):
-        r.add("low", "structure", "nhảy cấp tiêu đề (vd H2 -> H4)")
+        r.add("low", "structure", "heading levels are skipped (for example H2 -> H4)")
     r.metrics.update({"h1": len(h1), "h2": len(h2)})
 
-    # 2. mở bài (trả lời sớm)
+    # 2. opening (answer early)
     first_h2 = re.search(r"^##\s", text, flags=re.M)
     intro = clean_body(text[:first_h2.start()]) if first_h2 else body
     intro = re.sub(r"^#\s+.*$", "", intro, flags=re.M)
     intro_words = len(intro.split())
     r.metrics["intro_words"] = intro_words
     if intro_words > 150:
-        r.add("medium", "answer_first", f"mở bài {intro_words} từ trước H2 đầu tiên; nên vào việc trong ~150 từ [Quy ước]")
+        r.add("medium", "answer_first", f"the opening is {intro_words} words before the first H2; get to the point within ~150 words [Convention]")
     if intro_words < 25 and len(words) > 500:
-        r.add("low", "answer_first", "mở bài quá ngắn để nói bài dành cho ai và trả lời được gì")
+        r.add("low", "answer_first", "the opening is too short to say who the post is for and what it answers")
     first100 = " ".join(intro.split()[:100]).lower()
     for pat in AI_ISMS[:3]:
         if re.search(pat, first100):
-            r.add("medium", "answer_first", "mở bài bằng câu rào đón chung chung; đi thẳng vào câu trả lời")
+            r.add("medium", "answer_first", "the post opens with a generic throat-clearing sentence; go straight to the answer")
             break
 
-    # 3. độ đọc (plain language: câu ngắn, từ đơn giản, chủ động)
+    # 3. readability (plain language: short sentences, simple words, active voice)
     syl = sum(syllables(w) for w in words)
     fk = 0.39 * (len(words) / n_sents) + 11.8 * (syl / n_words) - 15.59
     avg_len = len(words) / n_sents
@@ -149,24 +149,24 @@ def run_checks(raw: str, market: str, post_type: str, keyword: str, final: bool)
     r.metrics.update({"flesch_kincaid_grade": round(fk, 1), "avg_sentence_words": round(avg_len, 1),
                       "long_sentence_pct": round(long_pct, 1), "passive_pct": round(passive_pct, 1)})
     if fk > 10:
-        r.add("medium", "readability", f"Flesch-Kincaid grade {fk:.1f} (> 10): rút ngắn câu, dùng từ đơn giản "
+        r.add("medium", "readability", f"Flesch-Kincaid grade {fk:.1f} (> 10): shorten sentences and use simpler words "
                                        "(plainlanguage.gov, GOV.UK style guide)")
     if avg_len > 22:
-        r.add("low", "readability", f"câu trung bình {avg_len:.0f} từ (nên 15-20)")
+        r.add("low", "readability", f"average sentence is {avg_len:.0f} words (aim for 15-20)")
     if long_pct > 10:
-        r.add("low", "readability", f"{long_pct:.0f}% câu dài hơn 30 từ")
+        r.add("low", "readability", f"{long_pct:.0f}% of sentences are longer than 30 words")
     if passive_pct > 25:
-        r.add("low", "readability", f"{passive_pct:.0f}% câu bị động; ưu tiên chủ động")
+        r.add("low", "readability", f"{passive_pct:.0f}% of sentences are passive; prefer the active voice")
     long_paras = []
     for block in re.split(r"\n\s*\n", text):
         if re.match(r"\s*([-+*]|\d+[.)])\s", block) or block.lstrip().startswith(("#", "|", "```", ">")):
-            continue  # danh sách, bảng, tiêu đề không phải "đoạn dài"
+            continue  # lists, tables and headings are not "long paragraphs"
         if len(sentences_of(clean_body(block))) > 5:
             long_paras.append(block)
     if long_paras:
-        r.add("low", "readability", f"{len(long_paras)} đoạn dài hơn 5 câu; tách đoạn (2-4 câu)")
+        r.add("low", "readability", f"{len(long_paras)} paragraphs are longer than 5 sentences; split them (2-4 sentences)")
 
-    # 4. bằng chứng và nguồn
+    # 4. evidence and sources
     unsupported = []
     for para in re.split(r"\n\s*\n", text):
         has_source = bool(re.search(r"\]\(https?://|\[(SOURCE|DATA|DATA NEEDED)[:\]]", para))
@@ -178,23 +178,23 @@ def run_checks(raw: str, market: str, post_type: str, keyword: str, final: bool)
     r.metrics.update({"external_links": ext_links, "unsupported_number_sentences": len(unsupported)})
     if unsupported:
         r.add("high" if len(unsupported) >= 3 else "medium", "evidence",
-              f"{len(unsupported)} câu có số liệu/giá/% nhưng không có nguồn; thêm link nguồn gốc hoặc [DATA NEEDED: ...]",
+              f"{len(unsupported)} sentences contain figures, prices or percentages without a source; add a link to the original source or [DATA NEEDED: ...]",
               " | ".join(unsupported[:3]))
 
-    # 5. kinh nghiệm thật / không "hàng phổ thông"
+    # 5. real experience / not "commodity" content
     exp_tags = len(re.findall(r"\[EXPERIENCE:", text))
     data_tags = len(re.findall(r"\[DATA:", text))
     first_hand = [m.group(0) for m in FIRST_HAND_RX.finditer(body)]
     r.metrics.update({"experience_tags": exp_tags, "data_tags": data_tags, "first_hand_phrases": len(first_hand)})
     if first_hand and not (exp_tags or data_tags):
-        r.add("high", "first_hand", "có câu kiểu 'we tested/our team...' nhưng không có [EXPERIENCE: nguồn] hoặc [DATA: nguồn]; "
-                                    "chỉ giữ nếu thật và có bằng chứng (ảnh, số đo, ghi chú nội bộ)")
+        r.add("high", "first_hand", "sentences such as 'we tested/our team...' appear but there is no [EXPERIENCE: source] or [DATA: source]; "
+                                    "keep them only if true and backed by evidence (photos, measurements, internal notes)")
     if len(words) > 500 and not (exp_tags or data_tags):
         r.add("medium" if post_type in ("gift-guide", "ideas-list", "choose-guide", "pillar-hub") else "low", "non_commodity",
-              "chưa có điểm kinh nghiệm/dữ liệu gốc nào ([EXPERIENCE:] hoặc [DATA:]); nội dung dễ rơi vào 'hàng phổ thông' "
-              "(Google khuyến nghị nội dung có góc nhìn riêng, kinh nghiệm trực tiếp)")
+              "no first-hand experience or original data point yet ([EXPERIENCE:] or [DATA:]); the content risks being 'commodity' "
+              "(Google recommends content with its own point of view and first-hand experience)")
 
-    # 6. giọng AI / sáo ngữ
+    # 6. AI-sounding phrases / cliches
     low = body.lower()
     hits = []
     for pat in AI_ISMS:
@@ -203,68 +203,68 @@ def run_checks(raw: str, market: str, post_type: str, keyword: str, final: bool)
     r.metrics["ai_ism_hits"] = len(hits)
     if hits:
         per_k = len(hits) / n_words * 1000
-        r.add("medium" if per_k > 2 else "low", "voice", f"{len(hits)} cụm sáo rỗng/giọng AI ({per_k:.1f}/1.000 từ): "
+        r.add("medium" if per_k > 2 else "low", "voice", f"{len(hits)} cliche or AI-sounding phrases ({per_k:.1f} per 1,000 words): "
               + ", ".join(sorted(set(hits))[:8]))
 
-    # 7. nhồi từ khóa / viết cho công cụ tìm kiếm trước
+    # 7. keyword stuffing / writing for search engines first
     if keyword:
         kw = keyword.lower().replace("’", "'")
         count = low.replace("’", "'").count(kw)
         density = count * len(kw.split()) / n_words * 100
         r.metrics["keyword_density_pct"] = round(density, 2)
         if density > 2:
-            r.add("medium", "stuffing", f"mật độ từ khóa chính {density:.1f}% (> 2%); dùng đồng nghĩa và diễn đạt tự nhiên")
+            r.add("medium", "stuffing", f"primary keyword density is {density:.1f}% (> 2%); use synonyms and natural phrasing")
         if h2 and sum(1 for h in h2 if kw in h.lower()) / len(h2) > 0.6:
-            r.add("low", "stuffing", "hơn 60% H2 chứa nguyên cụm từ khóa; tiêu đề nên theo câu hỏi người đọc")
+            r.add("low", "stuffing", "more than 60% of the H2s repeat the whole keyword; headings should follow the reader's questions")
         if kw not in " ".join(h1).lower() and kw not in first100:
-            r.add("low", "intent_match", "từ khóa chính không xuất hiện ở H1 hoặc 100 từ đầu")
+            r.add("low", "intent_match", "the primary keyword does not appear in the H1 or the first 100 words")
     dup = {}
     for h in h2:
         key = " ".join(re.findall(r"[a-z]+", h.lower())[:4])
         dup[key] = dup.get(key, 0) + 1
     if any(v > 2 and k for k, v in dup.items()):
-        r.add("low", "stuffing", "nhiều H2 mở đầu giống nhau; dấu hiệu bài ghép theo khuôn")
+        r.add("low", "stuffing", "several H2s start the same way; a sign of a template-built post")
 
-    # 8. tín hiệu tin cậy (Who / How / Why)
+    # 8. trust signals (Who / How / Why)
     has_author = bool(meta.get("author")) or bool(re.search(r"^\s*(by|author|written by)\b.{2,60}$", raw, re.I | re.M))
     has_date = bool(meta.get("updated") or meta.get("date") or re.search(r"(last )?(updated|published)\s*:?\s*\w+", raw, re.I))
     if not has_author:
-        r.add("medium", "trust", "chưa thấy tác giả (byline). Google: người đọc nên biết ai tạo nội dung và vì sao")
+        r.add("medium", "trust", "no author (byline) found. Google: readers should know who created the content and why")
     if not has_date:
-        r.add("low", "trust", "chưa thấy ngày đăng/cập nhật hiển thị")
+        r.add("low", "trust", "no visible published or updated date found")
 
-    # 9. tích hợp thương mại tự nhiên
+    # 9. natural commercial integration
     ctas = CTA_RX.findall(body)
     if len(ctas) > max(1, len(words) // 800):
-        r.add("medium", "commercial", f"{len(ctas)} câu kêu gọi mua/hối thúc; bài hữu ích không cần 'buy now'")
+        r.add("medium", "commercial", f"{len(ctas)} buy-now or urgency sentences; a helpful post does not need 'buy now'")
     if CTA_RX.search(" ".join(intro.split()[:150])):
-        r.add("medium", "commercial", "CTA bán hàng trong 150 từ đầu: trả lời người đọc trước")
+        r.add("medium", "commercial", "sales call to action in the first 150 words: answer the reader first")
     n_slots = len(re.findall(r"\[PRODUCT-SLOT:", text))
     r.metrics["product_slots"] = n_slots
     if n_slots:
-        r.add("low", "commercial", f"{n_slots} [PRODUCT-SLOT]: chạy product-slot/slot_check.py để kiểm mật độ và vị trí")
+        r.add("low", "commercial", f"{n_slots} [PRODUCT-SLOT]: run product-slot/slot_check.py to check density and placement")
 
-    # 10. chính tả/định dạng theo thị trường
+    # 10. spelling and formats by market
     tokens = set(re.findall(r"[a-z]+", low))
     us_hit = sorted(t for t in US_FORMS if t in tokens)
     uk_hit = sorted(t for t in UK_FORMS if t in tokens)
     if market == "us" and uk_hit:
-        r.add("medium", "market_spelling", "bài US nhưng có chính tả Anh: " + ", ".join(uk_hit))
+        r.add("medium", "market_spelling", "US post with British spelling: " + ", ".join(uk_hit))
     if market == "uk" and us_hit:
-        r.add("medium", "market_spelling", "bài UK nhưng có chính tả Mỹ: " + ", ".join(us_hit))
+        r.add("medium", "market_spelling", "UK post with American spelling: " + ", ".join(us_hit))
     if us_hit and uk_hit:
-        r.add("medium", "market_spelling", f"trộn chính tả Mỹ ({', '.join(us_hit)}) và Anh ({', '.join(uk_hit)})")
+        r.add("medium", "market_spelling", f"mixes American ({', '.join(us_hit)}) and British ({', '.join(uk_hit)}) spelling")
     if market == "uk" and "$" in text:
-        r.add("low", "market_format", "bài UK có ký hiệu $; dùng £ và giá đã xác nhận cho UK")
+        r.add("low", "market_format", "UK post contains a $ sign; use £ and prices confirmed for the UK")
     if market == "us" and "£" in text:
-        r.add("low", "market_format", "bài US có ký hiệu £")
+        r.add("low", "market_format", "US post contains a £ sign")
 
-    # 11. placeholder chưa xử lý
+    # 11. unresolved placeholders
     ph = PLACEHOLDER_RX.findall(text)
     if ph:
         r.add("high" if final else "low", "placeholders",
-              f"{len(PLACEHOLDER_RX.findall(text))} placeholder chưa xử lý ([DATA NEEDED]/[LINK]/TODO)"
-              + (" – không được đăng khi còn placeholder" if final else ""))
+              f"{len(PLACEHOLDER_RX.findall(text))} unresolved placeholders ([DATA NEEDED]/[LINK]/TODO)"
+              + (" – a post must not be published while placeholders remain" if final else ""))
     return r
 
 
@@ -274,22 +274,22 @@ def main(argv=None) -> int:
     ap.add_argument("--market", choices=["us", "uk", "both"], default="both")
     ap.add_argument("--post-type", default="generic")
     ap.add_argument("--keyword", default="")
-    ap.add_argument("--final", action="store_true", help="bản chuẩn bị đăng: placeholder = lỗi")
-    ap.add_argument("--json", help="ghi báo cáo JSON")
+    ap.add_argument("--final", action="store_true", help="version about to be published: placeholders are errors")
+    ap.add_argument("--json", help="write a JSON report")
     args = ap.parse_args(argv)
 
     with open(args.file, encoding="utf-8") as fh:
         raw = fh.read()
     rep = run_checks(raw, args.market, args.post_type, args.keyword, args.final)
     score = max(0.0, 100 - sum(SEVERITY_COST[f["severity"]] for f in rep.findings))
-    band = "sẵn sàng cho biên tập người" if score >= 85 else "cần sửa" if score >= 70 else "viết lại phần lớn"
-    print(f"Điểm heuristic: {score:.0f}/100 ({band}) – KHÔNG phải điểm của Google")
-    print("Số đo: " + ", ".join(f"{k}={v}" for k, v in rep.metrics.items()))
+    band = "ready for a human edit" if score >= 85 else "needs revision" if score >= 70 else "rewrite most of it"
+    print(f"Heuristic score: {score:.0f}/100 ({band}) – NOT a Google score")
+    print("Metrics: " + ", ".join(f"{k}={v}" for k, v in rep.metrics.items()))
     order = {"high": 0, "medium": 1, "low": 2}
     for f in sorted(rep.findings, key=lambda f: order[f["severity"]]):
         print(f"  [{f['severity']}] {f['rule']}: {f['message']}" + (f"\n        ↳ {f['where']}" if f["where"] else ""))
     if not rep.findings:
-        print("  Không có phát hiện tự động. Vẫn cần đánh giá bằng references/rubric.md (góc nhìn riêng, trung thực, mức bao phủ).")
+        print("  No automatic findings. You still need to assess the draft with references/rubric.md (own point of view, honesty, coverage).")
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump({"score": score, "metrics": rep.metrics, "findings": rep.findings}, fh, ensure_ascii=False, indent=1)

@@ -1,22 +1,22 @@
-# Đặc điểm file export theo công cụ
+# Characteristics of each tool's export file
 
-`kw_ingest.py` tự nhận diện encoding, dấu phân cách, dòng tiêu đề và tên cột. Bảng dưới là các điển hình hay gặp; tên cột thực tế có thể khác theo phiên bản công cụ, vì vậy luôn đối chiếu bảng "Cột nhận diện" trong `cluster-report.md`.
+`kw_ingest.py` detects the encoding, delimiter, header row and column names automatically. The table below lists typical cases; actual column names can differ by tool version, so always check the "Recognised columns" table in `cluster-report.md`.
 
-| Nguồn | Cột thường có | Điểm cần chú ý |
+| Source | Columns usually present | Things to watch |
 |---|---|---|
-| **Semrush** (Keyword Magic Tool, Organic Research) | Keyword, Intent, Volume (hoặc Search Volume), Keyword Difficulty, CPC (USD), Competitive Density, Number of Results, Trend, SERP Features | `Intent` là nhãn của Semrush (có thể nhiều giá trị): chỉ giữ ở `intent_source`, không dùng để gom nhóm. Dữ liệu theo "database" quốc gia đã chọn, thường không có cột country: gán bằng `file.csv::us`. |
-| **Ahrefs** (Keywords Explorer, Organic keywords) | Keyword, Country, Difficulty (KD), Volume, CPC, Parent Topic / Parent Keyword, SERP Features, Traffic potential | Có thể xuất UTF-16 hoặc UTF-8 tùy tùy chọn; script tự nhận. `Parent Topic` do Ahrefs tính từ SERP: dùng `--trust-parent-topic` để gộp theo cột này, hoặc để script gợi ý trong `merge-candidates.csv`. Cột Country cho phép tách US/UK tự động. |
-| **Google Keyword Planner** | Keyword, Currency, Avg. monthly searches, Three month change, YoY change, Competition, Top of page bid... | Thường là **UTF-16 phân cách tab** đuôi `.csv`, có 1-3 dòng mô tả phía trên tiêu đề (đã xử lý). Tài khoản không chạy quảng cáo thường trả volume dạng **khoảng** ("1K - 10K"): đọc cận dưới và đánh dấu `volume_estimated=1` (đổi bằng `--range-mode mid` hoặc `--range-mode high`). Cột `Competition` là mức cạnh tranh quảng cáo, không phải KD SEO nên không dùng làm KD. |
-| **Google Search Console** (Performance, Queries) | Top queries, Clicks, Impressions, CTR, Position | Không có volume thị trường. Script dùng **Impressions** làm volume và **cảnh báo**: đây là nhu cầu mà site đã hiển thị, không phải toàn bộ cơ hội. Dùng GSC để tìm khoảng trống/ cải thiện bài cũ; nên kết hợp với file volume từ công cụ keyword. |
-| **Google Sheets / tự tạo** | tùy | Chỉ cần cột keyword. Nếu tên cột khác thường: `--map keyword=<tên cột> volume=<tên cột>`. |
-| **Xuất từ API SERP (DataForSEO, SerpAPI...)** | keyword + danh sách URL top 10 | Đưa URL vào cột `serp_urls` (ngăn cách bằng dấu gạch đứng hoặc khoảng trắng). Đây là cách gom cụm **chính xác nhất** (≥4 URL trùng = cùng một bài). Mỗi thị trường cần SERP của chính thị trường đó (google.com cho US, google.co.uk cho UK). |
+| **Semrush** (Keyword Magic Tool, Organic Research) | Keyword, Intent, Volume (or Search Volume), Keyword Difficulty, CPC (USD), Competitive Density, Number of Results, Trend, SERP Features | `Intent` is Semrush's own label (it can hold several values): it is kept only in `intent_source` and is not used for clustering. Data is per the selected country "database" and usually has no country column: assign one with `file.csv::us`. |
+| **Ahrefs** (Keywords Explorer, Organic keywords) | Keyword, Country, Difficulty (KD), Volume, CPC, Parent Topic / Parent Keyword, SERP Features, Traffic potential | The export can be UTF-16 or UTF-8 depending on the option; the script detects it. `Parent Topic` is computed by Ahrefs from the SERP: use `--trust-parent-topic` to merge by this column, or let the script suggest merges in `merge-candidates.csv`. The Country column allows an automatic US/UK split. |
+| **Google Keyword Planner** | Keyword, Currency, Avg. monthly searches, Three month change, YoY change, Competition, Top of page bid... | Usually **UTF-16, tab-delimited** with a `.csv` extension, and 1-3 description lines above the header (handled). Accounts that do not run ads often get volume as a **range** ("1K - 10K"): the lower bound is read and `volume_estimated=1` is set (change this with `--range-mode mid` or `--range-mode high`). The `Competition` column is advertising competition, not SEO KD, so it is not used as KD. |
+| **Google Search Console** (Performance, Queries) | Top queries, Clicks, Impressions, CTR, Position | There is no market volume. The script uses **Impressions** as volume and **warns**: this is demand the site has already been shown for, not the whole opportunity. Use GSC to find gaps or improve old posts; combine it with a volume file from a keyword tool. |
+| **Google Sheets / hand-made** | varies | Only a keyword column is needed. If a column has an unusual name: `--map keyword=<column name> volume=<column name>`. |
+| **SERP API export (DataForSEO, SerpAPI...)** | keyword + the list of top-10 URLs | Put the URLs in a `serp_urls` column (separated by a pipe or whitespace). This is the **most accurate** way to cluster (at least 4 shared URLs = the same post). Each market needs the SERP of that market (google.com for US, google.co.uk for UK). |
 
-## Mẹo xử lý file rất lớn
+## Tips for very large files
 
-- Đo trên dữ liệu tổng hợp 150.000 keyword: khoảng 45-55 giây, đỉnh RAM khoảng 480 MB (Python 3.13). Ước tính tuyến tính: 500.000 dòng cần khoảng 1,5 GB RAM. File hàng triệu dòng: chia theo thị trường hoặc theo hạt giống trước (ví dụ mỗi seed một file), hoặc lọc `--min-volume` ngay từ đầu. Dữ liệu thật có thể chậm hơn dữ liệu tổng hợp.
-- Đa số keyword trong export rộng là nhiễu với blog (retailer, "near me", tiếng Tây Ban Nha...). Bộ lọc mặc định loại chúng **kèm lý do** trong `excluded.csv`; đừng tắt trừ khi có lý do.
-- Nhiều file cùng chủ đề: truyền nhiều đường dẫn một lần; keyword trùng được gộp (giữ volume lớn nhất, không cộng dồn giữa các file).
+- Measured on 150,000 synthetic keywords: about 45-55 seconds, peak RAM about 480 MB (Python 3.13). A linear estimate: 500,000 rows need about 1.5 GB of RAM. For files with millions of rows, split by market or by seed first (for example one file per seed), or filter with `--min-volume` from the start. Real data can be slower than synthetic data.
+- Most keywords in a broad export are noise for a blog (retailers, "near me", Spanish...). The default filters drop them **with a reason** in `excluded.csv`; do not turn them off without a reason.
+- Several files on the same topic: pass several paths at once; duplicate keywords are merged (the largest volume is kept, volumes are not summed across files).
 
-## Khi script báo "Không tìm thấy dòng tiêu đề"
+## When the script says "No header row ... found"
 
-Mở 5 dòng đầu được in ra. Nếu cột keyword có tên lạ, chạy lại với `--map keyword="<tên cột chính xác>"`. Nếu file không có dòng tiêu đề, thêm một dòng `keyword,volume` ở đầu.
+Open the first 5 lines that it prints. If the keyword column has an unusual name, run again with `--map keyword="<exact column name>"`. If the file has no header row, add a `keyword,volume` line at the top.

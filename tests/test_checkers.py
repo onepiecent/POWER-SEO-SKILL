@@ -27,8 +27,8 @@ class HelpfulCheck(unittest.TestCase):
         for expected in ("first_hand", "answer_first", "evidence", "voice", "stuffing", "commercial", "market_spelling", "trust"):
             self.assertIn(expected, rules)
         code, out, _ = run_main(hc.main, [WEAK, "--market", "us", "--post-type", "gift-guide"])
-        self.assertEqual(code, 1)  # có phát hiện mức high
-        self.assertIn("KHÔNG phải điểm của Google", out)
+        self.assertEqual(code, 1)  # a high-severity finding exists
+        self.assertIn("NOT a Google score", out)
 
     def test_good_draft_passes(self):
         rep, rules = rules_of(GOOD)
@@ -37,7 +37,7 @@ class HelpfulCheck(unittest.TestCase):
         self.assertEqual(code, 0)
 
     def test_uk_market_flags_us_spelling(self):
-        _, rules = rules_of(GOOD, market="uk")  # bản demo có "favourite" lẫn "personalized"
+        _, rules = rules_of(GOOD, market="uk")  # the demo draft is written in American English ("personalized")
         self.assertIn("market_spelling", rules)
 
     def test_final_turns_placeholders_into_errors(self):
@@ -73,8 +73,8 @@ class SlotCheck(unittest.TestCase):
         self.assertEqual(len(slots), 3)
         msgs = " ".join(i[2] for i in issues)
         self.assertIn("URL", msgs)
-        self.assertIn("quảng cáo", msgs)
-        self.assertIn("dưới 60 từ", msgs)
+        self.assertIn("promotional", msgs)
+        self.assertIn("less than 60 words apart", msgs)
         self.assertTrue(any(i[0] == "error" for i in issues))
 
     def test_good_slots_pass(self):
@@ -93,13 +93,13 @@ class SlotCheck(unittest.TestCase):
             self.assertIn("photo mug", rows[1]["product_idea"])
             clean = read_text(strip)
             self.assertNotIn("PRODUCT-SLOT", clean)
-            self.assertIn("Common mistakes", clean)  # bài vẫn còn nguyên khi bỏ slot
+            self.assertIn("Common mistakes", clean)  # the post stays intact once the slots are removed
             code, out, _ = run_main(sc.main, [GOOD, "--final"])
             self.assertEqual(code, 1)
 
     def test_missing_fields(self):
         slots, issues, *_ = sc.analyse("# T\n\nSome long enough intro " + "word " * 200 + "\n\n[PRODUCT-SLOT: a mug]\n", "generic")
-        self.assertEqual({i[2] for i in issues if i[0] == "error"}, {"thiếu trường 'context:'", "thiếu trường 'why:'"})
+        self.assertEqual({i[2] for i in issues if i[0] == "error"}, {"missing field 'context:'", "missing field 'why:'"})
 
 
 class ClaimsCheck(unittest.TestCase):
@@ -148,7 +148,7 @@ class ClaimsCheck(unittest.TestCase):
             write_text(p, "keyword,volume\ndisney mom shirt,900\nSpider-Man birthday gifts,800\ngifts for dog lovers,700\n")
             code, out, _ = run_main(cc.main, ["--keywords", p])
             self.assertEqual(code, 0)
-            self.assertIn("2 keyword khớp danh sách IP", out)
+            self.assertIn("2 keywords match the IP list", out)
             self.assertNotIn("dog lovers", out)
 
     def test_exit_code(self):

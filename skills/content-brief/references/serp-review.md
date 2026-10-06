@@ -1,35 +1,35 @@
-# Quy trình xem SERP để hoàn thiện brief
+# Reviewing the SERP to complete a brief
 
-Mục tiêu: hiểu người đọc **thật sự** cần gì và bài của mình thêm giá trị gì. Đây là bước cần phán đoán; script không làm thay.
+Goal: understand what the reader **really** needs and what value your post adds. This step needs judgement; the script does not do it for you.
 
-## 1. Lấy SERP đúng thị trường
+## 1. Get the SERP for the right market
 
-- US: google.com với vị trí/ngôn ngữ Mỹ. UK: google.co.uk với vị trí Anh. Không tìm từ Việt Nam (kết quả khác). Dùng công cụ SERP có tham số vị trí (ví dụ `location_code 2840` cho US, `2826` cho UK trong DataForSEO) hoặc trình duyệt qua proxy hợp lệ.
-- Ghi lại ngày xem SERP. SERP đổi theo mùa (đặc biệt Mother's Day, Christmas).
+- US: google.com with a US location and language. UK: google.co.uk with a UK location. Do not search from Vietnam (the results differ). Use a SERP tool with a location parameter (for example `location_code 2840` for the US and `2826` for the UK in DataForSEO) or a browser through a legitimate proxy.
+- Record the date you looked at the SERP. SERPs change with the season (especially Mother's Day and Christmas).
 
-## 2. Đọc intent từ cái đang thắng
+## 2. Read the intent from what is winning
 
-| Quan sát top 10 | Suy ra | Hành động |
+| What the top 10 shows | What it implies | Action |
 |---|---|---|
-| Toàn danh sách ý tưởng/gift guide | người đọc muốn lựa chọn có lý do | gift-guide/ideas-list |
-| Toàn trang sản phẩm/danh mục, ít bài | ý định mua hàng | bỏ khỏi blog (role skip) |
-| How-to từng bước, video | cần hướng dẫn | how-to; cân nhắc ảnh/diagram |
-| Bảng so sánh, "vs" | đang cân nhắc giữa các lựa chọn | choose-guide |
-| Kết quả trực tiếp của Google (ngày, định nghĩa) | câu trả lời ngắn | explainer ngắn hoặc mục trong pillar |
-| Diễn đàn/Reddit/Quora, video | người đọc muốn kinh nghiệm thật | đưa trải nghiệm thật vào bài |
+| All idea lists / gift guides | readers want choices with reasons | gift-guide/ideas-list |
+| All product or category pages, few articles | buying intent | drop it from the blog (role skip) |
+| Step-by-step how-tos, videos | readers need instructions | how-to; consider photos/diagrams |
+| Comparison tables, "vs" | readers are weighing options | choose-guide |
+| Google's direct results (dates, definitions) | a short answer | a short explainer or a section in a pillar |
+| Forums/Reddit/Quora, videos | readers want real experience | put real experience in the post |
 
-## 3. Tìm khoảng trống (content gap)
+## 3. Find the content gap
 
-Với 3-5 kết quả đầu, ghi: cấu trúc, độ sâu, loại bằng chứng, điều **họ thiếu** (nhược điểm không nói, tình huống không bao phủ, thiếu số đo, ví dụ cũ, thông tin sai/lỗi thời, giọng quảng cáo). Bài của mình phải lấp ít nhất một khoảng trống bằng thứ **chỉ Printerval có** (kinh nghiệm sản xuất/hỗ trợ, dữ liệu tổng hợp, ví dụ thật có phép).
+For the first 3-5 results, note: structure, depth, type of evidence, and what **they miss** (drawbacks left unsaid, situations not covered, missing measurements, outdated examples, wrong or outdated information, an advertising tone). Your post must fill at least one gap with something **only Printerval has** (production/support experience, aggregated data, real examples used with permission).
 
-## 4. Câu hỏi phụ
+## 4. Secondary questions
 
-Thu thập People Also Ask, Related searches, AlsoAsked, câu hỏi của support. Trả lời chúng bằng H2/H3 **trong cùng bài** (AI Overviews và AI Mode mở rộng truy vấn thành nhiều truy vấn phụ; không cần một trang cho từng câu). Chỉ tách trang khi câu hỏi là một ý định tìm kiếm khác thật sự.
+Collect People Also Ask, Related searches, AlsoAsked and support questions. Answer them with H2/H3 sections **inside the same post** (AI Overviews and AI Mode expand a query into several sub-queries; there is no need for a page per question). Split a page only when the question is a genuinely different search intent.
 
-## 5. Độ dài và định dạng
+## 5. Length and format
 
-Không có độ dài lý tưởng. Dùng độ dài vừa đủ để trả lời hết câu hỏi của người đọc; tham khảo đối thủ nhưng đừng độn. Thêm bảng khi so sánh, danh sách đánh số khi có quy trình, ảnh/diagram khi giảm lỗi (ALT bắt buộc).
+There is no ideal length. Use as many words as it takes to answer all of the reader's questions; look at the competitors but do not pad. Add a table for comparisons, a numbered list for a process, and photos/diagrams where they reduce mistakes (ALT text is mandatory).
 
-## 6. Ghi vào brief
+## 6. Record it in the brief
 
-Mục "What the top results do well / miss", danh sách câu hỏi phụ, định dạng thắng, và **một câu** mô tả giá trị riêng của bài ("Unlike the top results, this guide ...").
+The "What the top results do well / miss" section, the list of secondary questions, the winning format, and **one sentence** describing the post's own value ("Unlike the top results, this guide ...").

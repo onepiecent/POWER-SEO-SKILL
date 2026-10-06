@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Sinh content brief (tiếng Anh, đưa thẳng cho writer/AI) từ topic-map.csv. Chỉ dùng thư viện chuẩn.
+"""Generate content briefs (in English, ready to hand to a writer or AI) from topic-map.csv. Standard library only.
 
-Phần ĐÃ điền tự động: metadata, từ khóa, khung bài theo loại, link nội bộ (từ link-plan.csv), kế hoạch product-slot,
-cờ tuân thủ, hạn xuất bản (từ seasonal-plan.csv). Phần CẦN con người/Claude điền sau khi xem SERP thật được đánh dấu
-[TO FILL] (đối thủ còn thiếu gì, góc kinh nghiệm thật của Printerval, nguồn cần trích).
+Filled in AUTOMATICALLY: metadata, keywords, outline by post type, internal links (from link-plan.csv), product-slot plan,
+compliance flags, publish deadline (from seasonal-plan.csv). Parts that a person or Claude must fill in after reviewing the real SERP are marked
+[TO FILL] (what competitors miss, Printerval's real first-hand angle, sources to cite).
 
-Chạy:
+Usage:
     make_brief.py --topic-map outputs/topic-map.csv --link-plan outputs/link-plan.csv --bucket A --out outputs/briefs
     make_brief.py --topic-map outputs/topic-map.csv --slug mothers-day-gifts-for-grandma
 """
@@ -169,8 +169,8 @@ def main(argv=None) -> int:
     ap.add_argument("--topic-map", required=True)
     ap.add_argument("--link-plan")
     ap.add_argument("--seasonal-plan")
-    ap.add_argument("--slug", help="một hoặc nhiều slug, cách nhau bằng dấu phẩy")
-    ap.add_argument("--bucket", default="A", help="nhóm ưu tiên cần sinh brief, vd A hoặc A,B (mặc định A; bỏ qua nếu có --slug)")
+    ap.add_argument("--slug", help="one or more slugs, separated by commas")
+    ap.add_argument("--bucket", default="A", help="priority buckets to generate briefs for, e.g. A or A,B (default A; ignored when --slug is given)")
     ap.add_argument("--role", default="pillar,cluster,standalone")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--out", default="outputs/briefs")
@@ -184,7 +184,7 @@ def main(argv=None) -> int:
         chosen = [r for r in topic_rows if r["planned_slug"] in wanted]
         missing = wanted - {r["planned_slug"] for r in chosen}
         if missing:
-            raise SystemExit("Không thấy slug: " + ", ".join(sorted(missing)))
+            raise SystemExit("Slug not found: " + ", ".join(sorted(missing)))
     else:
         buckets, roles = set(args.bucket.split(",")), set(args.role.split(","))
         chosen = [r for r in topic_rows if r["role"] in roles and r["bucket"] in buckets and r["role"] != "skip"]
@@ -195,7 +195,7 @@ def main(argv=None) -> int:
     for r in chosen:
         with open(os.path.join(args.out, f"{r['planned_slug']}.md"), "w", encoding="utf-8") as fh:
             fh.write(build_brief(r, topic_rows, links, seasonal))
-    print(f"Đã sinh {len(chosen)} brief -> {os.path.abspath(args.out)}")
+    print(f"Generated {len(chosen)} briefs -> {os.path.abspath(args.out)}")
     return 0
 
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Đọc file export keyword "thật" của SEO Specialist. Chỉ dùng thư viện chuẩn.
+"""Read "real" keyword export files from SEO specialists. Standard library only.
 
-Xử lý các tình huống hay gặp:
-  * UTF-16 + tab (Google Keyword Planner, một số bản export Ahrefs), UTF-8 có BOM, cp1252;
-  * dòng tiêu đề không nằm ở dòng đầu (Keyword Planner có 2-3 dòng mô tả phía trên);
-  * dấu phân cách , ; tab |;
-  * số kiểu 1,234 / 1.234 / 1K / 1.2M / "1K - 10K" / "<10" / "35%";
-  * tên cột của Semrush, Ahrefs, Keyword Planner, Google Search Console, Google Sheets tự tạo.
+Situations handled:
+  * UTF-16 + tab (Google Keyword Planner, some Ahrefs exports), UTF-8 with BOM, cp1252;
+  * the header row is not the first line (Keyword Planner has 2-3 description lines above it);
+  * delimiters , ; tab |;
+  * numbers such as 1,234 / 1.234 / 1K / 1.2M / "1K - 10K" / "<10" / "35%";
+  * column names from Semrush, Ahrefs, Keyword Planner, Google Search Console and hand-made Google Sheets.
 """
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def split_line(line: str, delim: str) -> list[str]:
 
 # --------------------------------------------------------------------------- numbers
 def parse_number(raw, integer: bool = False, range_mode: str = "low") -> tuple[float | None, bool]:
-    """Trả (giá trị, là-ước-lượng). Ước lượng khi gặp khoảng ("1K - 10K") hoặc cận ("<10")."""
+    """Return (value, is_estimate). A value is an estimate for ranges ("1K - 10K") or bounds ("<10")."""
     if raw is None:
         return None, False
     s = str(raw).strip()
@@ -115,7 +115,7 @@ def norm_market(raw) -> str:
 
 # --------------------------------------------------------------------------- reading
 class Table:
-    """Kết quả đọc một file: info (thông tin phát hiện được) và iterator các bản ghi chuẩn hóa tên cột."""
+    """Result of reading one file: info (what was detected) and an iterator of records with normalised column names."""
 
     def __init__(self, info: dict, rows: Iterator[dict]):
         self.info, self.rows = info, rows
@@ -135,8 +135,8 @@ def _find_header(lines: list[str], keyword_names: set[str]) -> tuple[int, str]:
         if best:
             return i, best[1]
     preview = "\n".join(lines[:5])
-    raise SystemExit("Không tìm thấy dòng tiêu đề có cột keyword/query trong 40 dòng đầu.\n"
-                     "Dùng --map keyword=<tên cột> nếu tên cột khác thường. 5 dòng đầu:\n" + preview)
+    raise SystemExit("No header row with a keyword/query column found in the first 40 lines.\n"
+                     "Use --map keyword=<column name> if the column has an unusual name. First 5 lines:\n" + preview)
 
 
 def read_keywords(path: str, overrides: dict | None = None) -> Table:
