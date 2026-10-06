@@ -68,6 +68,10 @@ Sheet **Schedule**: `Order, STT, Main Keyword, Category Kind, Priority, Volume, 
 
 Sheet **Research Next** (one-topic exports only): `Topic, Theme, Why It Matters, Keywords In File, Volume In File, Status, Seeds To Export`; Status ∈ covered, thin, missing, suggested (occasion ideas).
 
+Sheet **Published Match** (with `--published`): `STT, Main Keyword, Match, Published Title, URL, Category, Score, Advice`; Match ∈ update this post, also published, covers part of it, related live post, duplicate published posts, IP check. The published-posts input is any CSV/.xlsx whose header (within the first 20 rows of a sheet) has a URL column (`URL`, `Link`, `Permalink`...) and a title column (`Title`, `Tiêu đề`...); optional `Category` and a focus keyword column.
+
+Sheet **Changes** (with `--previous`): `STT, Main Keyword, Change, Detail`; Change ∈ kept, renamed, new, dropped, kept from the previous plan.
+
 Sheet **QA**: `Severity, Check, STT, Main Keyword, Detail, Suggestion`; Severity ∈ high, medium, low, info; Check ∈ overlap, misplaced, year_in_main, slug, overloaded, thin_links, weak_post, hard_keyword (`scripts/plan_qa.py`; heuristics for a person to review).
 
 ## Markers in a post

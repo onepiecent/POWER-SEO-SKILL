@@ -271,11 +271,16 @@ class ScheduleAndResearch(unittest.TestCase):
                     {"planned_slug": "late-post-a", "season": "thanksgiving", "event_date": "2026-11-26", "publish_new_by": "2026-09-03"},
                     {"planned_slug": "soon-post", "season": "christmas", "event_date": "2027-01-05", "publish_new_by": "2026-10-13"}]
         out = ep.schedule_rows(rows, seasonal, dt.date(2026, 10, 6))
-        self.assertEqual([x[1] for x in out], [3, 2, 4, 1])  # late (A before B), due soon, evergreen
-        self.assertEqual([x[10] for x in out], ["late: publish ASAP", "late: publish ASAP", "due soon", "evergreen"])
-        self.assertIn("12-week lead time", out[0][11])
-        self.assertIn("KD 75", out[0][11])
+        self.assertEqual([x[1] for x in out], [4, 3, 2, 1])  # due soon, late (A before B), evergreen
+        self.assertEqual([x[10] for x in out], ["due soon", "late: publish ASAP", "late: publish ASAP", "evergreen"])
+        self.assertIn("12-week lead time", out[1][11])
+        self.assertIn("KD 75", out[1][11])
         self.assertEqual(out[0][0], 1)
+        seasonal[0]["refresh_existing_by"] = "2026-10-15"  # an update of a published post has the refresh deadline
+        out = ep.schedule_rows(rows, seasonal, dt.date(2026, 10, 6), {"late-post": "https://printerval.com/x-n1.html"})
+        row = next(x for x in out if x[1] == 2)
+        self.assertEqual((row[9], row[10]), ("2026-10-15", "due soon"))
+        self.assertIn("update the published post https://printerval.com/x-n1.html", row[11])
 
     def test_research_next_names_missing_themes_and_seeds(self):
         topic = [{"pillar_key": "thanksgiving/messages", "cluster_id": "C1"}, {"pillar_key": "thanksgiving/dates", "cluster_id": "C2"}]

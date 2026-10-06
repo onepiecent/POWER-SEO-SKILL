@@ -38,6 +38,8 @@ from xml.sax.saxutils import escape
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plan_qa  # noqa: E402
+import table_io  # noqa: E402
+from published import Published, anchor_from_title  # noqa: E402
 
 COLUMNS = ["STT", "Main Keyword", "Secondary Keyword", "Volume", "KD", "Category", "Category Kind", "Thuộc Pillar",
            "Title SEO", "Meta Description SEO", "Outline", "Internal Link (Anchor || URL)",
@@ -49,11 +51,18 @@ MAP_WIDTHS = [6, 40, 52, 11, 6, 14]
 SCHEDULE_COLUMNS = ["Order", "STT", "Main Keyword", "Category Kind", "Priority", "Volume", "KD", "Season", "Event Date",
                     "Publish By", "Status", "Note"]
 SCHEDULE_WIDTHS = [7, 6, 40, 13, 9, 11, 6, 14, 12, 12, 20, 80]
-RESEARCH_COLUMNS = ["Topic", "Theme", "Why It Matters", "Keywords In File", "Volume In File", "Status", "Seeds To Export"]
-RESEARCH_WIDTHS = [16, 12, 52, 10, 12, 10, 60]
+RESEARCH_COLUMNS = ["Topic", "Theme", "Why It Matters", "Keywords In File", "Volume In File", "Status", "Seeds To Export",
+                    "Published Posts"]
+RESEARCH_WIDTHS = [16, 12, 52, 10, 12, 10, 60, 60]
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SEEDS = os.path.join(HERE, "..", "assets", "research-seeds.json")
-STATUS_RANK = {"late: publish ASAP": 0, "due soon": 1, "on time": 2, "no date rule": 3, "evergreen": 4}
+# a deadline that can still be met comes first (often a quick update of a published post), then the late ones
+STATUS_RANK = {"due soon": 0, "late: publish ASAP": 1, "on time": 2, "no date rule": 3, "evergreen": 4}
+PUBLISHED_COLUMNS = ["STT", "Main Keyword", "Match", "Published Title", "URL", "Category", "Score", "Advice"]
+PUBLISHED_WIDTHS = [6, 36, 22, 56, 60, 18, 7, 70]
+TEAM_COLUMNS = ["Category", "Title SEO", "Meta Description SEO", "Outline", "Trạng thái"]
+CHANGES_COLUMNS = ["STT", "Main Keyword", "Change", "Detail"]
+CHANGES_WIDTHS = [6, 44, 30, 90]
 PLANNED = ("pillar", "cluster", "standalone")
 BODY_LINKS = ("to_pillar", "contextual", "cross_pillar", "from_pillar", "orphan_fix", "related", "backlink_old_post")
 STOP = {"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was", "were", "do", "does", "did", "and"}
@@ -106,6 +115,10 @@ class Plan:
                  max_secondary: int, volume_mode: str, max_related: int, year: int | None = None):
         self.url_pattern, self.max_secondary, self.volume_mode, self.max_related = url_pattern, max_secondary, volume_mode, max_related
         self.year = year or dt.date.today().year
+        self.url_override: dict[str, str] = {}  # planned slug -> URL of the published post it updates
+        self.extra_internal: dict[str, list[tuple[str, str]]] = defaultdict(list)  # slug -> (anchor, published URL)
+        self.extra_related: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        self.team: dict[str, dict[str, str]] = {}  # slug -> the content team's columns from a previous plan
         self.topic = topic
         self.links = links or []
         self.kw_by_cluster: dict[str, list[dict]] = defaultdict(list)
@@ -142,8 +155,11 @@ class Plan:
             order += sorted(by_pillar[p["pillar_id"]], key=lambda r: (-to_int(r["priority_score"], 0), -to_int(r["cluster_volume"], 0)))
         return order + sorted(loose, key=lambda r: -to_int(r["cluster_volume"], 0))
 
-    def url(self, slug: str) -> str:
-        return self.url_pattern.format(slug=slug)
+    def url(self, target: str) -> str:
+        """A planned slug, or the URL of a published post (a link target outside the plan)."""
+        if target.startswith("http"):
+            return target
+        return self.url_override.get(target) or self.url_pattern.format(slug=target)
 
     def pillar_of(self, post: dict) -> dict | None:
         pid = post["pillar_id"] or post.get("parent_hint", "")
@@ -215,7 +231,7 @@ class Plan:
         order = {t: i for i, t in enumerate(BODY_LINKS)}
         body = sorted((l for l in mine if l["link_type"] in order), key=lambda l: order[l["link_type"]])
         internal = [(l["anchor"], l["target_slug"]) for l in body]
-        related = [(l["anchor"], l["target_slug"]) for l in mine if l["link_type"] == "sibling"][: self.max_related]
+        related = [(l["anchor"], l["target_slug"]) for l in mine if l["link_type"] == "sibling"]
         if not self.links:  # no link plan: hub <-> pillar links and the biggest siblings
             pillar = self.pillar_of(post)
             if post["role"] == "pillar":
@@ -224,20 +240,24 @@ class Plan:
             elif pillar:
                 internal = [(pillar["primary_keyword"], pillar["planned_slug"])]
                 sibs = [r for r in self.posts if r is not post and r is not pillar and self.pillar_of(r) is pillar]
-                related = [(r["primary_keyword"], r["planned_slug"]) for r in sibs[: self.max_related]]
+                related = [(r["primary_keyword"], r["planned_slug"]) for r in sibs]
         if post["role"] == "pillar":  # a hub also shows the other hubs of the plan
             others = [p for p in self.posts if p["role"] == "pillar" and p is not post and p["market"] == post["market"]]
-            related = [(p["primary_keyword"], p["planned_slug"]) for p in others[: self.max_related]]
-        seen, out_internal = set(), []
+            related = [(p["primary_keyword"], p["planned_slug"]) for p in others]
+        internal = internal + self.extra_internal.get(slug, [])
+        live = self.extra_related.get(slug, [])  # published posts first: they are live today
+        related = live + [x for x in related if x[1] not in {t for _, t in live}]
+        seen, out_internal = {self.url(slug)}, []
         for a, t in internal:
-            if t not in seen:
-                seen.add(t)
+            if self.url(t) not in seen:
+                seen.add(self.url(t))
                 out_internal.append((a, t))
-        return out_internal, [(a, t) for a, t in related if t not in seen]
+        return out_internal, [(a, t) for a, t in related if self.url(t) not in seen][: self.max_related]
 
     def rows(self):
-        for n, post in enumerate(self.posts, 1):
-            pillar = self.pillar_of(post)
+        for post in self.posts:
+            n = self.stt[post["planned_slug"]]  # stable across runs with --previous
+            pillar = self.pillar_of(post)  # links are computed after apply_published() may have added live posts
             kind = "Pillar" if post["role"] == "pillar" else "Cluster"
             vol, kd = self.main_metrics(post)
             secondary, roles = self.secondary(post)
@@ -256,6 +276,9 @@ def link_formula(plan: Plan, links: list[tuple[str, str]], url_col: str, stt_col
     parts = []
     for a, t in links:
         lit = a.replace('"', '""')
+        if t not in plan.stt:  # a published post outside the plan: its URL is final
+            parts.append(f'"{lit} || {plan.url(t)}"')
+            continue
         parts.append(f'"{lit} || "&IFERROR(INDEX(${url_col}:${url_col},MATCH({plan.stt[t]},${stt_col}:${stt_col},0)),"")')
     formula = "&CHAR(10)&".join(parts)
     return formula if formula and len(formula) <= MAX_FORMULA else None
@@ -396,16 +419,24 @@ def qa_rows(plan: Plan, rows: list[dict]) -> list[list]:
     return plan_qa.check(rows, signature, LIGHT, merged_counts, owned, inbound)
 
 
-def schedule_rows(rows: list[dict], seasonal: list[dict] | None, today: dt.date) -> list[list]:
-    """Writing order and deadlines: seasonal posts by their deadline (editorial-calendar's seasonal-plan.csv), then
-    priority bucket (A first) and priority score. A post whose usual lead time has passed is 'late: publish ASAP'."""
+def schedule_rows(rows: list[dict], seasonal: list[dict] | None, today: dt.date,
+                  updates: dict[str, str] | None = None) -> list[list]:
+    """Writing order and deadlines: posts due within 14 days, then those past their usual lead time ('late: publish
+    ASAP'), then on time and evergreen (deadlines from editorial-calendar's seasonal-plan.csv); within each, priority
+    bucket (A first) and priority score.
+    A post that updates a published one (updates: slug -> URL) has the shorter refresh deadline."""
     by_slug = {r["planned_slug"]: r for r in seasonal or []}
+    updates = updates or {}
     out = []
     for r in rows:
         post, s = r["post"], by_slug.get(r["post"]["planned_slug"])
         season, event, publish_by, status, notes = "", "", "", "evergreen", []
+        update = updates.get(post["planned_slug"])
+        if update:
+            notes.append(f"update the published post {update}")
         if s:
-            season, event, publish_by = s.get("season", ""), s.get("event_date", ""), s.get("publish_new_by", "")
+            season, event = s.get("season", ""), s.get("event_date", "")
+            publish_by = s.get("refresh_existing_by", "") if update else s.get("publish_new_by", "")
             if not event or not publish_by:
                 status = "no date rule"
                 notes.append(s.get("note", ""))
@@ -413,11 +444,12 @@ def schedule_rows(rows: list[dict], seasonal: list[dict] | None, today: dt.date)
                 days = (dt.date.fromisoformat(publish_by) - today).days
                 weeks = (dt.date.fromisoformat(event) - dt.date.fromisoformat(publish_by)).days // 7
                 status = "late: publish ASAP" if days < 0 else "due soon" if days <= 14 else "on time"
+                kind = "an update" if update else "a new post"
                 if days < 0:
-                    notes.append(f"the usual {weeks}-week lead time for a new post ended on {publish_by}: publish as soon "
+                    notes.append(f"the usual {weeks}-week lead time for {kind} ended on {publish_by}: publish as soon "
                                  "as possible, expect most results next season")
                 else:
-                    notes.append(f"publish {weeks} weeks before {event} so it can be indexed and ranked in time")
+                    notes.append(f"{kind}: {weeks} weeks before {event} so it can be indexed and ranked in time")
         if r["kd"] is not None and r["kd"] >= plan_qa.HARD_KD:
             notes.append(f"KD {r['kd']}: a long-term target")
         out.append([status, post.get("bucket", ""), -to_int(post.get("priority_score"), 0), r["n"],
@@ -428,7 +460,7 @@ def schedule_rows(rows: list[dict], seasonal: list[dict] | None, today: dt.date)
             for i, (status, bucket, _, n, kw, kind, vol, kd, season, event, by, note) in enumerate(out, 1)]
 
 
-def research_rows(topic: list[dict], keywords: list[dict] | None, spec: dict) -> list[list]:
+def research_rows(topic: list[dict], keywords: list[dict] | None, spec: dict, pub: Published | None = None) -> list[list]:
     """For a one-topic export (theme pillars 'thanksgiving/dates'...), the themes a POD blog needs and how well the file
     covers them; for a missing or thin theme, the seed keywords to export next. A theme is covered only when the file
     holds one of its head keywords ('thanksgiving quotes') and a real long tail (>= 10 keywords, >= 1,000 searches):
@@ -450,11 +482,137 @@ def research_rows(topic: list[dict], keywords: list[dict] | None, spec: dict) ->
             head = any(signature(x.format(topic=label)) in present for x in theme["seeds"])
             status = "missing" if n == 0 else "covered" if head and n >= 10 and vol >= 1000 else "thin"
             seeds = "" if status == "covered" else "\n".join(x.format(topic=label) for x in theme["seeds"])
-            out.append([label, theme["theme"], theme["why"], n, vol, status, seeds])
+            live = ""
+            if pub is not None:
+                topic_words = set(label.replace("'", "").split())
+                posts = [q for q in pub.posts if topic_words <= set(re.findall(r"[a-z0-9]+", (q["title"] + " " + q["slug_base"]).lower().replace("'", "")))
+                         and rx.search((q["title"] + " " + q["slug_base"].replace("-", " ")).lower())]
+                live = (f"{len(posts)} on the blog, e.g. " + "; ".join(q["title"] for q in posts[:2])) if posts else "none on the blog"
+            out.append([label, theme["theme"], theme["why"], n, vol, status, seeds, live])
         extras = spec.get("occasion_extras", {}).get(t)
         if extras:
-            out.append([label, "related", "occasion-specific ideas worth a check", "", "", "suggested", "\n".join(extras)])
+            out.append([label, "related", "occasion-specific ideas worth a check", "", "", "suggested", "\n".join(extras), ""])
     return out
+
+
+def carry_previous(plan: Plan, rows: list[dict], previous: list[dict]) -> tuple[list[list], list[list]]:
+    """Re-run safely on top of a plan the team already works in. Each previous row is matched with a new post (same
+    URL Blog, same main keyword, or its main keyword is now one of the post's keywords): the post keeps its STT, the
+    team's columns (Category, Title SEO, Meta Description SEO, Outline, Trạng thái) and a real URL pasted in URL Blog.
+    New posts get the next numbers. A previous row that matches nothing is kept as it is when the team filled
+    something in it, else dropped. Returns (kept previous rows, Changes sheet rows)."""
+    planned_rx = re.compile(re.escape(plan.url_pattern).replace(re.escape("{slug}"), r"[a-z0-9-]+") + "$")
+    keys_of: dict[int, set] = {}
+    for r in rows:
+        keys_of[r["n"]] = {signature(r["post"]["primary_keyword"])} | {signature(k["keyword"]) for k, _ in r["roles"]}
+    by_url = {r["url"]: r for r in rows}
+    by_main = {signature(r["post"]["primary_keyword"]): r for r in rows}
+    taken: dict[int, dict] = {}
+    changes, kept_rows = [], []
+    unmatched = []
+    for p in previous:
+        main, url = (p.get("Main Keyword") or "").strip(), (p.get("URL Blog") or "").strip()
+        if not main:
+            continue
+        sig = signature(main)
+        r = by_url.get(url) if url and by_url.get(url, {}).get("n") not in taken else None
+        r = r or (by_main.get(sig) if by_main.get(sig, {}).get("n") not in taken else None)
+        r = r or next((x for x in rows if x["n"] not in taken and sig in keys_of[x["n"]]), None)
+        if r is None:
+            unmatched.append(p)
+        else:
+            taken[r["n"]] = p
+    used = {to_int(p.get("STT")) for p in previous if to_int(p.get("STT")) is not None}
+    next_stt = max(used, default=0) + 1
+    new_stt = {}
+    for r in rows:
+        p = taken.get(r["n"])
+        slug = r["post"]["planned_slug"]
+        if p is not None and to_int(p.get("STT")) is not None and to_int(p.get("STT")) not in new_stt.values():
+            new_stt[slug] = to_int(p.get("STT"))
+        else:
+            new_stt[slug] = next_stt
+            next_stt += 1
+        if p is None:
+            changes.append([new_stt[slug], r["post"]["primary_keyword"], "new", "a new post in this plan"])
+            continue
+        team = {c: p.get(c, "") for c in TEAM_COLUMNS if (p.get(c) or "").strip()}
+        url = (p.get("URL Blog") or "").strip()
+        if url and not planned_rx.match(url) and url.startswith("http"):
+            plan.url_override[slug] = url  # the real URL the team pasted after publishing
+            team["URL Blog"] = url
+        plan.team[slug] = team
+        detail = ("carried: " + ", ".join(team)) if team else "nothing filled yet"
+        if signature(p["Main Keyword"]) != signature(r["post"]["primary_keyword"]):
+            changes.append([new_stt[slug], r["post"]["primary_keyword"], "renamed",
+                            f"was '{p['Main Keyword']}'; {detail}"])
+        else:
+            changes.append([new_stt[slug], r["post"]["primary_keyword"], "kept", detail])
+    plan.stt = new_stt
+    for p in unmatched:
+        filled = [c for c in TEAM_COLUMNS if (p.get(c) or "").strip()]
+        real_url = (p.get("URL Blog") or "").strip()
+        if filled or (real_url and not planned_rx.match(real_url)):
+            kept_rows.append([to_int(p.get("STT")) if to_int(p.get("STT")) is not None else p.get("STT", "")] +
+                             [p.get(c, "") for c in COLUMNS[1:]])
+            changes.append([p.get("STT", ""), p["Main Keyword"], "kept from the previous plan",
+                            "not in the new plan, but the team worked on it (" + ", ".join(filled or ["URL Blog"])
+                            + "): check whether it still belongs"])
+        else:
+            changes.append([p.get("STT", ""), p["Main Keyword"], "dropped",
+                            "not in the new plan and nothing was filled; its keywords may now sit in another post"])
+    order = {"kept from the previous plan": 0, "renamed": 1, "dropped": 2, "new": 3, "kept": 4}
+    changes.sort(key=lambda c: (order[c[2]], to_int(c[0], 0) or 0))
+    return kept_rows, changes
+
+
+def apply_published(plan: Plan, rows: list[dict], pub: Published, live_related: int) -> list[list]:
+    """Use the published posts: a planned post that a published post already answers gets that URL (update it
+    instead of writing a new post), a published post covering part of it becomes a body link, and up to live_related
+    related published posts (never one that names a brand or franchise) lead the Related Post column.
+    Returns the rows of the Published Match sheet."""
+    matches = pub.match(rows)
+    sheet: list[list] = []
+    year_rx = re.compile(r"\b(?:19|20)\d\d\b")
+    for r in rows:
+        m, slug, kw = matches[r["n"]], r["post"]["planned_slug"], r["post"]["primary_keyword"]
+        for i, (score, q, via) in enumerate(m["same"]):
+            if i == 0:
+                plan.url_override[slug] = q["url"]
+                years = [int(y) for y in year_rx.findall(q["title"]) if int(y) < plan.year]
+                advice = ("update this published post instead of writing a new one (keep its URL)"
+                          + (f"; its title still says {max(years)}: refresh dates and facts" if years else ""))
+                sheet.append([r["n"], kw, "update this post", q["title"], q["url"], q["category"], round(score, 2), advice])
+            else:
+                sheet.append([r["n"], kw, "also published", q["title"], q["url"], q["category"], round(score, 2),
+                              f"answers the same question as the post above ('{via}'): merge it into one post"])
+        for score, q, via in m["part"][:3]:
+            sheet.append([r["n"], kw, "covers part of it", q["title"], q["url"], q["category"], round(score, 2),
+                          f"answers '{via}': link to it from this post instead of repeating it"])
+            if len(plan.extra_internal[slug]) < 1:
+                plan.extra_internal[slug].append((anchor_from_title(q["title"]), q["url"]))
+        for score, q, via in m["related"]:
+            if len(plan.extra_related[slug]) >= live_related:
+                break
+            plan.extra_related[slug].append((anchor_from_title(q["title"]), q["url"]))
+            sheet.append([r["n"], kw, "related live post", q["title"], q["url"], q["category"], round(score, 2),
+                          f"shares '{via}': listed first in Related Post"])
+    topic = {t for t in set().union(*(words_of(r["post"]["primary_keyword"]) for r in rows))
+             if sum(t in words_of(r["post"]["primary_keyword"]) for r in rows) >= max(3, 0.5 * len(rows))}
+    for group in pub.duplicates(topic):
+        sheet.append(["", "", "duplicate published posts", group[0]["title"], "\n".join(q["url"] for q in group),
+                      group[0]["category"], "", f"the same slug is published {len(group)} times: keep the best one and "
+                                                "merge the others into it (they compete for the same searches)"])
+    for q in pub.posts:
+        if q["ip"] and (not topic or q["all"] & topic):
+            sheet.append(["", "", "IP check", q["title"], q["url"], q["category"], "",
+                          "the title names a brand, franchise or character on the IP watchlist: ask the IP/legal team "
+                          "before linking to it or updating it"])
+    return sheet
+
+
+def words_of(text: str) -> set[str]:
+    return set(signature(text))
 
 
 def build_outputs(plan: Plan, plain_links: bool, rows: list[dict] | None = None):
@@ -470,6 +628,9 @@ def build_outputs(plan: Plan, plain_links: bool, rows: list[dict] | None = None)
         cells[COL["Category Kind"]] = r["kind"]
         cells[COL["Thuộc Pillar"]] = r["pillar"]
         cells[COL["URL Blog"]] = r["url"]
+        for c, v in plan.team.get(r["post"]["planned_slug"], {}).items():
+            if c in COL and c != "URL Blog":
+                cells[COL[c]] = v
         flat = list(cells)
         for name, links in (("Internal Link (Anchor || URL)", r["internal"]), ("Related Post (Anchor || URL)", r["related"])):
             text = link_text(plan, links)
@@ -506,6 +667,12 @@ def main(argv=None) -> int:
     ap.add_argument("--today", help="date YYYY-MM-DD used for deadlines (default: today)")
     ap.add_argument("--research-seeds", default=DEFAULT_SEEDS,
                     help="themes and seed keywords for the Research Next sheet (default: assets/research-seeds.json)")
+    ap.add_argument("--published", help="the blog posts already published (CSV/.xlsx with URL and Title columns): "
+                                        "matching posts are updated instead of rewritten, live posts are linked")
+    ap.add_argument("--live-related", type=int, default=1,
+                    help="related published posts listed first in Related Post (default 1)")
+    ap.add_argument("--previous", help="a previous final-plan.xlsx/.csv the team already works in: keep its STT, "
+                                       "the team's columns and real URLs (sheet Changes lists what moved)")
     args = ap.parse_args(argv)
     if "{slug}" not in args.url_pattern:
         ap.error("--url-pattern must contain {slug}")
@@ -519,13 +686,23 @@ def main(argv=None) -> int:
     if not plan.posts:
         raise SystemExit("No planned posts (pillar/cluster/standalone) in the topic map.")
     rows = list(plan.rows())
+    pub = Published.load(args.published) if args.published else None
+    published_sheet = apply_published(plan, rows, pub, args.live_related) if pub else []
+    kept_rows, changes = [], []
+    if args.previous:
+        previous = table_io.read_table(args.previous, {"main keyword"}, sheet="Plan" if args.previous.lower().endswith(".xlsx") else None)
+        kept_rows, changes = carry_previous(plan, list(plan.rows()), previous)
+    if pub or args.previous:
+        rows = list(plan.rows())  # again, with the published URLs, links and stable STT
     xlsx_rows, csv_rows, map_rows = build_outputs(plan, args.plain_links, rows)
+    xlsx_rows += kept_rows
+    csv_rows += kept_rows
     qa = qa_rows(plan, rows)
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
     seasonal = read_csv(args.seasonal_plan) if args.seasonal_plan else None
-    schedule = schedule_rows(rows, seasonal, today)
+    schedule = schedule_rows(rows, seasonal, today, plan.url_override)
     with open(args.research_seeds, encoding="utf-8") as fh:
-        research = research_rows(topic, keywords, json.load(fh))
+        research = research_rows(topic, keywords, json.load(fh), pub)
 
     out = args.out if args.out.lower().endswith(".xlsx") else args.out + ".xlsx"
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
@@ -533,7 +710,9 @@ def main(argv=None) -> int:
                      ("Keyword Map", sheet_xml(MAP_COLUMNS, map_rows, MAP_WIDTHS)),
                      ("Schedule", sheet_xml(SCHEDULE_COLUMNS, schedule, SCHEDULE_WIDTHS)),
                      ("QA", sheet_xml(plan_qa.QA_COLUMNS, qa, plan_qa.QA_WIDTHS))]
-               + ([("Research Next", sheet_xml(RESEARCH_COLUMNS, research, RESEARCH_WIDTHS))] if research else []))
+               + ([("Research Next", sheet_xml(RESEARCH_COLUMNS, research, RESEARCH_WIDTHS))] if research else [])
+               + ([("Published Match", sheet_xml(PUBLISHED_COLUMNS, published_sheet, PUBLISHED_WIDTHS))] if pub else [])
+               + ([("Changes", sheet_xml(CHANGES_COLUMNS, changes, CHANGES_WIDTHS))] if args.previous else []))
     csv_path = out[:-5] + ".csv"
     with open(csv_path, "w", encoding="utf-8-sig", newline="") as fh:  # BOM: Excel opens the Vietnamese headers correctly
         w = csv.writer(fh)
@@ -546,6 +725,17 @@ def main(argv=None) -> int:
     if seasonal:
         print(f"Schedule: {late} posts are past the usual lead time for their season (publish ASAP), "
               f"{sum(1 for x in schedule if x[10] == 'due soon')} due within 14 days")
+    if args.previous:
+        kinds = defaultdict(int)
+        for c in changes:
+            kinds[c[2]] += 1
+        print("Changes from the previous plan: " + ", ".join(f"{k} {v}" for k, v in kinds.items()) + " (sheet Changes)")
+    if pub:
+        kinds = defaultdict(int)
+        for x in published_sheet:
+            kinds[x[2]] += 1
+        print(f"Published: {len(pub.posts):,} posts read; " + ", ".join(f"{k} {v}" for k, v in kinds.items())
+              + " (sheet Published Match; URL Blog uses the published URL for 'update this post')")
     gaps = [f"{x[1]} ({x[5]})" for x in research if x[5] in ("missing", "thin")]
     if gaps:
         print("Research Next: themes to export seed keywords for: " + ", ".join(gaps))

@@ -1,6 +1,6 @@
 ---
 name: printerval-blog-seo
-description: Orchestrates the Printerval blog SEO skill suite (print-on-demand marketplace, US and UK markets, English content). Use when the user talks about the Printerval blog, keyword export files from SEO specialists (CSV or xlsx from Semrush, Ahrefs, Keyword Planner, Search Console), keyword clustering, pillar and cluster planning, topic maps, the final keyword plan sheet for the content team, internal links between blog posts, content briefs, gift guides, seasonal content calendars (Mother's Day, Christmas), product slots, claim and IP checks, or whether a draft is helpful to readers. Not for technical audits, URLs or sitemaps, or links to product pages.
+description: Orchestrates the Printerval blog SEO skill suite (print-on-demand marketplace, US and UK markets, English content). Use when the user talks about the Printerval blog, keyword export files from SEO specialists (CSV or xlsx from Semrush, Ahrefs, Keyword Planner, Search Console), keyword clustering, pillar and cluster planning, topic maps, the final keyword plan sheet for the content team (also matched with the posts already published, and re-run safely on the plan the team works in), internal links between blog posts, content briefs, gift guides, seasonal content calendars (Mother's Day, Christmas), product slots, claim and IP checks, or whether a draft is helpful to readers. Not for technical audits, URLs or sitemaps, or links to product pages.
 ---
 
 # Printerval Blog SEO: orchestration
@@ -25,6 +25,7 @@ This suite helps the Printerval SEO and content team turn a very broad keyword f
 | A US/UK seasonal publishing calendar | `editorial-calendar` | `occasion-calendar.csv`, `seasonal-plan.csv` |
 | Briefs for writers or AI | `content-brief` | `briefs/<slug>.md` |
 | The final keyword plan for the content team (one row per post, the team's 15 columns) | this skill: `scripts/export_plan.py` | `final-plan.xlsx` + `.csv` |
+| All of the above in one command (keyword file -> final plan) | this skill: `scripts/run_plan.py` | the files of every step + `final-plan.xlsx` |
 | Review or rewrite a post so it is helpful, honest and natural | `helpful-content-editor` | report + edits |
 | Where to mention products, and the hand-off to the content team | `product-slot` | `slots.csv` |
 | Check price, delivery, review, environmental and IP claims | `claims-compliance-check` | risk-flag report |
@@ -46,7 +47,14 @@ CSV file (SEO specialist)
                       └─ product-slot (hand-off) ──► content team adds links ──► publish (--final)
 ```
 
-Sample commands (run from the repository root; every script uses only the Python 3 standard library):
+**One command** for a keyword file (runs the five steps below, prints each summary; options of a single step go through `--cluster-args`, `--topic-args`, `--export-args`):
+
+```bash
+python3 skills/printerval-blog-seo/scripts/run_plan.py export.xlsx --market us --only occasion=thanksgiving \
+    --published published-posts.xlsx --previous outputs/final-plan.xlsx --out outputs
+```
+
+Step by step (run from the repository root; every script uses only the Python 3 standard library):
 
 ```bash
 python3 skills/keyword-clustering/scripts/cluster_keywords.py export.csv --out outputs --group-by occasion,recipient
@@ -74,6 +82,8 @@ One row per post, in the content team's column order: `STT | Main Keyword | Seco
 - A second sheet, **Keyword Map**, lists every keyword placed in the plan (main, secondary, also covers, variant) with its post's STT.
 - A **Schedule** sheet gives the writing order: posts whose season's usual lead time has passed first (`late: publish ASAP`, with the date it ended), then `due soon` (within 14 days), `on time` and evergreen posts; within each, priority bucket A, B, C and the priority score. Deadlines come from `--seasonal-plan` (editorial-calendar: 12 weeks before the event for a new post [Convention]); `--today` fixes the date for a reproducible run. Very hard keywords (KD >= 70) are noted as long-term targets.
 - For a one-topic export, a **Research Next** sheet lists the themes a POD blog needs for that occasion (`assets/research-seeds.json`: gifts, apparel, quotes and messages, humor, decor, crafts, plus occasion ideas such as Friendsgiving) with how many keywords and searches the file has for each: `covered` only when the file holds a head keyword of the theme (`thanksgiving quotes`) and a real long tail, else `thin` or `missing` with the **seed keywords to export next** (Semrush, same market). Hand this list to the SEO specialist; do not plan posts for a theme without its keywords.
+- **`--published`** (the content team's list of published blog posts: any CSV/.xlsx with a URL and a Title column; Category and a focus keyword column are used when present). A **Published Match** sheet shows, per planned post: `update this post` (a published post already answers its main question or a secondary keyword, question words aside: "When Did Thanksgiving Day Begin?" = `history of thanksgiving`): **URL Blog becomes that URL, the Schedule uses the refresh deadline, and the advice flags a stale year in the title**; `also published` (a second post answering the same question: merge them); `covers part of it` (it answers one of the merged long-tail keywords: it becomes a body link); `related live post` (it shares a subject word: listed first in Related Post, `--live-related` 1). It also lists `duplicate published posts` of the topic (same slug, another id) and posts whose title names a brand or character on `claims-compliance-check`'s IP watchlist (`IP check`; never suggested as links). Every match is a heuristic on words: a person confirms each `update this post` before the team rewrites it.
+- **`--previous`** (an earlier `final-plan.xlsx`/`.csv` the team already works in, even re-saved by Excel or Google Sheets): matched posts (same URL Blog, same main keyword, or the old main keyword is now one of the post's keywords) **keep their STT, the team's columns (Category, Title SEO, Meta Description SEO, Outline, Trạng thái) and a real URL pasted in URL Blog** (every link to that post uses it); new posts get the next numbers; a previous row that matches nothing is kept as it is if the team filled anything in it, else dropped. A **Changes** sheet lists kept, renamed, new, dropped and kept-from-previous rows. Always re-run with `--previous` once the team has started on a plan.
 - A **QA** sheet lists what to review before handing the plan over, most severe first: two posts asking nearly the same thing (overlap), a keyword that is another post's main question (misplaced), a year in a main keyword, duplicate or long slugs, a post absorbing 100+ clusters, posts with few internal links or none pointing to them, weak posts (< 500 searches in total) and very hard main keywords (KD >= 70). The script prints a one-line summary. **Read it and resolve or explain every high item to the user**; the others are judgment calls.
 
 CSV schemas: `references/data-contracts.md`. Sources and verification levels: `references/sources.md`. Assumptions about Printerval and open questions: `references/printerval-context.md`.
@@ -82,6 +92,7 @@ CSV schemas: `references/data-contracts.md`. Sources and verification levels: `r
 
 - **Files are usually large, messy and different for every tool.** Run the script and **read `cluster-report.md` before saying anything about the result**: rows read, encoding, which columns were recognised, excluded keywords and reasons, the unclassified share, warnings.
 - Their requests ("group by recipient", "drop brand keywords", "US only", "volume from 200") are translated into options using the table in `keyword-clustering/SKILL.md`. State the assumptions you used. Ask only when the request is genuinely ambiguous: at most 1-2 questions, with a proposed default.
+- Ask once for the **list of published blog posts** (URL + title) and use it with `--published`, so the plan updates existing posts instead of duplicating them; and keep the last `final-plan.xlsx` the team works in for `--previous`.
 - The result is a **verified draft**, not the final truth: clusters built from vocabulary need Claude or the SEO to review `merge-candidates.csv`; when SERP overlap is available (a `serp_urls` column), trust the SERP more.
 - Do not say "done" before running the script and reading its output. Report honestly: which commands ran, the real figures, what is uncertain.
 
