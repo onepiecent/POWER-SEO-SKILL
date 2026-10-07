@@ -81,7 +81,8 @@ def same_market(a: str, b: str) -> bool:
 def backcheck_status(issues: list[dict], logs: list[dict], decisions: list[dict] | None = None) -> list[dict]:
     """status = decided:<decision_id> when an applied decision answers the issue (its source_issue in the decisions
     file, its id naming the issue, or the same action, keyword and target as the proposal); else unchanged."""
-    source = {d.get("decision_id", ""): d.get("source_issue", "") for d in decisions or []}
+    source = {d.get("decision_id", ""): set(re.split(r"[\s|,;]+", d.get("source_issue") or "")) - {""}
+              for d in decisions or []}  # one decision may settle several issues: 'BC-1|BC-2'
     out = []
     for issue in issues:
         row, iid = dict(issue), issue.get("issue_id", "")
@@ -93,7 +94,7 @@ def backcheck_status(issues: list[dict], logs: list[dict], decisions: list[dict]
                              and decision_key(log.get("keyword")) == decision_key(issue.get("proposed_keyword"))
                              and decision_key(log.get("target")) == decision_key(issue.get("proposed_target"))
                              and same_market(log.get("market", ""), issue.get("market", "")))
-            if source.get(did) == iid or iid in did or same_proposal:
+            if iid in source.get(did, ()) or iid in did or same_proposal:
                 row["status"] = f"decided:{did}"
         out.append(row)
     return out

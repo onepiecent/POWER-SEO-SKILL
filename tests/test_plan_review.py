@@ -196,6 +196,11 @@ class ReviewSheets(unittest.TestCase):
         self.assertEqual(pr.decision_rows(log, [{"decision_id": "D-007", "reason": "r", "evidence": "e"}])[0][-2:],
                          ["r", "e"])
 
+    def test_one_decision_settles_several_issues(self):
+        log = [dict(LOG[1], decision_id="D-009", action="keep_apart", keyword="x", target="y", status="applied")]
+        decided = pr.backcheck_status(BACKCHECK, log, [{"decision_id": "D-009", "source_issue": "BC-aaaa1111 | BC-bbbb2222"}])
+        self.assertEqual([r["status"] for r in decided], ["decided:D-009", "decided:D-009"])
+
     def test_decision_key(self):
         self.assertEqual(pr.decision_key("  Mother’s-Day_Gifts  "), "mothers day gifts")
 

@@ -522,9 +522,11 @@ class ClusterDecisions:
                     f"reader need of '{seed.keyword}' set to {need} (was {old})", warn)
 
     def decided(self) -> dict:
-        """issue_id -> decision_id for the back-check issues a decision settled (its source_issue column)."""
-        return {d["source_issue"].strip(): d["decision_id"] for d in self.items if d.get("source_issue", "").strip()
-                and d["status"] in ("applied", "applied_with_warning", "already_true")}
+        """issue_id -> decision_id for the back-check issues a decision settled (its source_issue column; several ids
+        are separated by '|', ',', ';' or spaces)."""
+        return {iid: d["decision_id"] for d in self.items
+                if d["status"] in ("applied", "applied_with_warning", "already_true")
+                for iid in re.split(r"[\s|,;]+", d.get("source_issue") or "") if iid}
 
     # ---- log
     def log_rows(self) -> list[dict]:
