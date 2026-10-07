@@ -22,6 +22,9 @@ Main rules:
   * Clusters with blog_fit = low (pure shopping intent) are marked skip and left out of the blog map.
   * Priority score = cluster_volume x blog_fit weight x (0.5 + achievability), achievability = 1 - KD/100
     (missing KD -> 0.5). This is a ranking heuristic, not a Google metric.
+  * --decisions FILE (the shared decisions contract): set_pillar, promote_pillar, demote_pillar, restore_backlog and
+    drop_post are applied to the plan before slugs are assigned; every one is logged in decisions-log-topic.csv and
+    the applied ones are listed in the decision_ids column of topic-map.csv.
 """
 from __future__ import annotations
 
@@ -31,7 +34,10 @@ import json
 import os
 import re
 import sys
+import unicodedata
+import zipfile
 from collections import defaultdict
+from xml.etree import ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TAXONOMY_CANDIDATES = [
@@ -464,10 +470,274 @@ def dedupe_across_pillars(plans: list[dict]) -> None:
             plan["merged"][r["cluster_id"]] = winner
 
 
+# --------------------------------------------------------------------------- decisions (topic step)
+# The decisions file is a shared data contract (printerval-blog-seo/references/data-contracts.md) that each skill
+# reads itself. This step applies its own five actions, ignores the other steps' actions and logs each of its own.
+TOPIC_ACTIONS = ("promote_pillar", "demote_pillar", "set_pillar", "restore_backlog", "drop_post")  # applied in this order
+LOG_FIELDS = ["decision_id", "step", "action", "market", "keyword", "target", "value", "author", "status", "detail"]
+QUOTES = str.maketrans({"‘": "'", "’": "'", "ʼ": "'", "“": '"', "”": '"'})
+XLSX_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+
+def decision_key(text: str) -> str:
+    """Matching key of the decisions contract: NFC, lowercase, straight quotes, no apostrophes, '-'/'_' as spaces."""
+    t = unicodedata.normalize("NFC", text or "").lower().translate(QUOTES).replace("'", "")
+    return " ".join(t.replace("-", " ").replace("_", " ").split())
+
+
+def xlsx_rows(path: str) -> list[list[str]]:
+    """Cells of the sheet 'Decisions' of an .xlsx, else of its first sheet."""
+    rel_id = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+    with zipfile.ZipFile(path) as zf:
+        names = set(zf.namelist())
+        shared = ([] if "xl/sharedStrings.xml" not in names else
+                  ["".join(t.text or "" for t in si.iter(XLSX_NS + "t"))
+                   for si in ET.fromstring(zf.read("xl/sharedStrings.xml")).iter(XLSX_NS + "si")])
+        target = {r.get("Id"): r.get("Target") for r in ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))}
+        sheets = [(s.get("name"), target[s.get(rel_id)])
+                  for s in ET.fromstring(zf.read("xl/workbook.xml")).iter(XLSX_NS + "sheet")]
+        part = next((s for s in sheets if s[0] == "Decisions"), sheets[0])[1]
+        part = part.lstrip("/") if part.startswith("/") else "xl/" + part
+        rows = []
+        for row in ET.fromstring(zf.read(part)).iter(XLSX_NS + "row"):
+            cells: dict[int, str] = {}
+            for c in row.iter(XLSX_NS + "c"):
+                col = 0
+                for ch in re.match(r"[A-Z]*", c.get("r", "")).group():
+                    col = col * 26 + ord(ch) - 64
+                v = c.find(XLSX_NS + "v")
+                if c.get("t") == "s" and v is not None:
+                    val = shared[int(v.text)]
+                elif c.get("t") == "inlineStr":
+                    val = "".join(t.text or "" for t in c.iter(XLSX_NS + "t"))
+                else:
+                    val = v.text if v is not None and v.text else ""
+                cells[(col or len(cells) + 1) - 1] = val
+            rows.append([cells.get(i, "") for i in range(max(cells, default=-1) + 1)])
+    return rows
+
+
+def read_decisions(path: str) -> list[dict]:
+    """Rows of a decisions file (CSV, or the .xlsx sheet 'Decisions' or first sheet) keyed by lowercase header."""
+    if path.lower().endswith((".xlsx", ".xlsm")):
+        rows = xlsx_rows(path)
+    else:
+        with open(path, encoding="utf-8-sig", newline="") as fh:
+            rows = list(csv.reader(fh))
+    for h, row in enumerate(rows):
+        header = [str(c).strip().lower() for c in row]
+        if "decision_id" in header and "action" in header:
+            return [{k: str(v).strip() for k, v in zip(header, r) if k} for r in rows[h + 1:] if any(str(v).strip() for v in r)]
+    raise SystemExit(f"{path}: no header with decision_id and action")
+
+
+def apply_topic_decisions(decisions: list[dict], plans: list[dict], leftovers: list[dict], extra: list[tuple],
+                          backlog: list[dict], skipped: list[dict], dec_of: dict, note_of: dict) -> list[dict]:
+    """Apply this step's decisions to the plan in place (TOPIC_ACTIONS order, then decision_id order); return the log.
+    A post that moves to another pillar keeps the clusters merged into it (they may point across pillars, as after
+    dedupe_across_pillars); a post that leaves the plan hands them to its pillar's hub or biggest post, else to the
+    backlog. Two decisions with opposite effects on one keyword are both 'conflict' and neither is applied."""
+    live = [m for p in plans for m in p["members"]] + leftovers + [r for r, _ in extra] + backlog + skipped
+    by_main: dict[str, list[dict]] = defaultdict(list)
+    by_member: dict[str, list[dict]] = defaultdict(list)
+    for r in live:
+        by_main[decision_key(r["cluster_name"])].append(r)
+        for k in (r.get("keywords") or "").split("|"):
+            if k.strip() and not any(x is r for x in by_member[decision_key(k)]):
+                by_member[decision_key(k)].append(r)
+
+    def where(r: dict) -> tuple[str, dict | None]:
+        for p in plans:
+            if p["chosen"] is r:
+                return "hub", p
+            if any(k is r for k in p["kept"]):
+                return "post", p
+            if r["cluster_id"] in p["merged"] and any(m is r for m in p["members"]):
+                return "merged", p
+        if any(x is r for x in leftovers) or any(x is r for x, _ in extra):
+            return "standalone", None
+        return ("backlog" if any(x is r for x in backlog) else "skip"), None
+
+    def find(text: str, market: str):
+        key = decision_key(text)
+        hits = [r for r in by_main.get(key, []) if not market or r["market"] == market]
+        hits = hits or [r for r in by_member.get(key, []) if not market or r["market"] == market]
+        if len({r["market"] for r in hits}) > 1:
+            return None, "invalid", f"'{text}' is in several markets: set market"
+        if hits:
+            return hits[0], "", ""
+        words = set(key.split())
+        pool = [r for r in live if not market or r["market"] == market]
+        shared = lambda r: len(words & set(decision_key(r["cluster_name"]).split()))  # noqa: E731
+        close = max(pool, key=lambda r: (shared(r), volume(r)), default=None)
+        return None, "stale", f"'{text}' not found" + (f"; closest: '{close['cluster_name']}'" if close and shared(close)
+                                                       else "; no keyword shares a word with it")
+
+    def detach(r: dict, keep_children: bool) -> None:
+        kind, p = where(r)
+        if p is not None:
+            if kind == "hub":
+                p["chosen"], p["no_pillar"] = None, True
+            p["kept"] = [k for k in p["kept"] if k is not r]
+            p["merged"].pop(r["cluster_id"], None)
+            p["members"] = [m for m in p["members"] if m is not r]
+        leftovers[:] = [x for x in leftovers if x is not r]
+        extra[:] = [(x, g) for x, g in extra if x is not r]
+        backlog[:] = [x for x in backlog if x is not r]
+        skipped[:] = [x for x in skipped if x is not r]
+        if keep_children:
+            return
+        for q in plans:  # the clusters merged into r go to their own pillar's hub or biggest post
+            for cid, t in list(q["merged"].items()):
+                if t is r:
+                    anchor = q["chosen"] or max(q["kept"], key=volume, default=None)
+                    if anchor is not None:
+                        q["merged"][cid] = anchor
+                    else:
+                        child = next(m for m in q["members"] if m["cluster_id"] == cid)
+                        del q["merged"][cid]
+                        q["members"] = [m for m in q["members"] if m is not child]
+                        backlog.append(child)
+
+    def join(r: dict, p: dict) -> None:
+        p["members"].append(r)
+        p["kept"].append(r)
+
+    log, todo = [], []
+    for d in decisions:
+        action = (d.get("action") or "").strip().lower()
+        if action not in TOPIC_ACTIONS:
+            continue  # another step's action: not logged here
+        e = {"decision_id": d.get("decision_id", ""), "step": "topic", "action": action,
+             "market": (d.get("market") or "").strip().lower(), "keyword": d.get("keyword", ""),
+             "target": d.get("target", ""), "value": d.get("value", ""), "author": d.get("author", ""),
+             "status": "", "detail": ""}
+        log.append(e)
+        if not (d.get("reason") or "").strip() or not (d.get("evidence") or "").strip():
+            e.update(status="invalid", detail="reason and evidence are required")
+        elif e["market"] not in ("", "us", "uk"):
+            e.update(status="invalid", detail=f"unknown market '{e['market']}'")
+        elif not decision_key(e["keyword"]):
+            e.update(status="invalid", detail="keyword is empty")
+        else:
+            todo.append(e)
+    by_kw: dict[tuple, list[dict]] = defaultdict(list)
+    for e in todo:
+        by_kw[(e["market"], decision_key(e["keyword"]))].append(e)
+    for group in by_kw.values():
+        acts, clash = {e["action"] for e in group}, set()
+        if {"promote_pillar", "demote_pillar"} <= acts:
+            clash |= {id(e) for e in group if e["action"] in ("promote_pillar", "demote_pillar")}
+        if "drop_post" in acts and len(acts) > 1:
+            clash |= {id(e) for e in group}
+        if len({decision_key(e["target"]) for e in group if e["action"] == "set_pillar"}) > 1:
+            clash |= {id(e) for e in group if e["action"] == "set_pillar"}
+        for e in group:
+            if id(e) in clash:
+                e.update(status="conflict", detail="conflicts with " + ", ".join(
+                    x["decision_id"] for x in group if id(x) in clash and x is not e))
+    for e in sorted((e for e in todo if not e["status"]), key=lambda e: (TOPIC_ACTIONS.index(e["action"]), e["decision_id"])):
+        r, status, detail = find(e["keyword"], e["market"])
+        if r is None:
+            e.update(status=status, detail=detail)
+            continue
+        e["market"] = r["market"]
+        kind, p = where(r)
+        was = kind + (f" in {p['pid']}" if p else "")
+        act, status, detail = e["action"], "applied", ""
+        if kind == "skip" and act != "drop_post":
+            status, detail = "invalid", "a skipped cluster (pure shopping): change its need in the cluster step (set_need)"
+        elif act == "promote_pillar":
+            if kind == "hub":
+                status, detail = "already_true", f"already the hub of {p['pid']}"
+            elif p is not None:
+                old = p["chosen"]
+                p["kept"] = [k for k in p["kept"] if k is not r] + ([old] if old is not None else [])
+                p["merged"].pop(r["cluster_id"], None)
+                p["chosen"], p["no_pillar"], p["promoted"] = r, False, False
+                detail = f"hub of {p['pid']} (was {kind})" + (f"; '{old['cluster_name']}' becomes a cluster post" if old else "")
+            else:
+                detach(r, True)
+                pid, name = f"P{len(plans) + 1:02d}", r["cluster_name"]
+                ptype = next((f for f in ("occasion", "interest", "recipient", "craft", "product") if r.get(f)), "topic")
+                plans.append({"pid": pid, "promoted": False, "no_pillar": False, "theme": "", "members": [r], "chosen": r,
+                              "kept": [], "merged": {}, "topic": (r["market"], ptype, slugify(name)),
+                              "base": {"pillar_id": pid, "pillar_type": ptype, "pillar_key": slugify(name),
+                                       "pillar_name": name[:1].upper() + name[1:], "market": r["market"]}})
+                detail = f"new pillar {pid} (was {kind}); move posts under it with set_pillar"
+            if status == "applied":
+                note_of[r["cluster_id"]] = (f"pillar by decision {e['decision_id']}; write it as a hub that covers "
+                                            "the clusters below")
+        elif act == "demote_pillar":
+            if kind != "hub":
+                status, detail = "already_true", f"not a pillar hub ({was})"
+            else:
+                p["chosen"], p["no_pillar"] = None, True
+                p["kept"].append(r)
+                detail = f"cluster post of {p['pid']}, which has no pillar hub now"
+        elif act == "set_pillar" and decision_key(e["target"]) in ("", "none"):
+            if kind == "hub":
+                status, detail = "invalid", f"the hub of {p['pid']}: demote_pillar it first"
+            elif kind == "standalone":
+                status, detail = "already_true", "already a standalone post"
+            else:
+                detach(r, False)
+                leftovers.append(r)
+                detail = f"standalone post (was {was})"
+                note_of[r["cluster_id"]] = f"no pillar by decision {e['decision_id']}: write it on its own"
+        elif act in ("set_pillar", "restore_backlog") and (e["target"] or "").strip():
+            t, tstatus, tdetail = find(e["target"], r["market"])
+            tkind, tp = where(t) if t is not None else ("", None)
+            ok = ("hub",) if act == "set_pillar" else ("hub", "post", "standalone")
+            if t is None:
+                status, detail = tstatus, "target " + tdetail
+            elif tkind not in ok:
+                status, detail = "invalid", (f"target '{t['cluster_name']}' is not a pillar hub ({tkind}): promote_pillar it first"
+                                             if act == "set_pillar" else f"target '{t['cluster_name']}' is not planned ({tkind})")
+            elif kind == "hub":
+                status, detail = "invalid", f"the hub of {p['pid']}: demote_pillar it first"
+            elif act == "restore_backlog" and kind in ("post", "standalone"):
+                status, detail = "already_true", f"already planned ({was})"
+            elif kind == "post" and p is tp:
+                status, detail = "already_true", f"already a post of {tp['pid']}"
+            else:
+                detach(r, True)
+                if tp is None:
+                    leftovers.append(r)
+                else:
+                    join(r, tp)
+                detail = (f"post of {tp['pid']}" if tp else "standalone post") + f" next to '{t['cluster_name']}' (was {was})"
+        elif act == "restore_backlog":
+            if kind in ("hub", "post", "standalone"):
+                status, detail = "already_true", f"already planned ({was})"
+            elif kind == "merged":
+                p["merged"].pop(r["cluster_id"], None)
+                p["kept"].append(r)
+                detail = f"post of {p['pid']} (was merged)"
+            else:
+                detach(r, True)
+                leftovers.append(r)
+                detail = "standalone post (was backlog)"
+        elif act == "drop_post":
+            if kind == "skip":
+                status, detail = "already_true", "already skipped"
+            else:
+                detach(r, False)
+                skipped.append(r)
+                detail = f"skipped (was {was})"
+                note_of[r["cluster_id"]] = (f"dropped by decision {e['decision_id']}: "
+                                            + ((e["value"] or "").strip() or "see the decisions file"))
+        e.update(status=status, detail=detail)
+        if status == "applied":
+            dec_of[r["cluster_id"]].append(e["decision_id"])
+    return log
+
+
 def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | None, max_pillar_size: int = 30,
           max_posts: int = 0, min_post_volume: int = 300, max_sub_pillars: int = 10, target_posts: int = 0,
           min_post_share: float = 0.02, keep_volume: int = 2000, small_pillar: int = 12,
-          promote_min_volume: int = 50, promote_min_share: float = 0.15):
+          promote_min_volume: int = 50, promote_min_share: float = 0.15,
+          decisions: list[dict] | None = None, decision_log: list[dict] | None = None):
     live = [r for r in rows if r["blog_fit"] != "low"]
     skipped = [r for r in rows if r["blog_fit"] == "low"]
     real, leftovers = assign_groups(live, priority, min_clusters)
@@ -526,6 +796,12 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
                       "base": {"pillar_id": pid, "pillar_type": ptype, "pillar_key": key, "pillar_name": title,
                                "market": market}})
     dedupe_across_pillars(plans)
+    dec_of: dict[str, list[str]] = defaultdict(list)  # cluster_id -> decisions applied to it
+    note_of: dict[str, str] = {}
+    if decisions:
+        log = apply_topic_decisions(decisions, plans, leftovers, extra_standalone, backlog, skipped, dec_of, note_of)
+        if decision_log is not None:
+            decision_log.extend(log)
     slug_of: dict[str, str] = {}
     for plan in plans:  # slugs first, in plan order, so a post merged across pillars can point to its target
         if plan["chosen"]:
@@ -616,6 +892,8 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         o["bucket"] = "A" if pct <= 0.2 else "B" if pct <= 0.5 else "C"
     for o in out:
         o.setdefault("bucket", "")
+        o["note"] = note_of.get(o["cluster_id"], o["note"])
+        o["decision_ids"] = "|".join(dec_of.get(o["cluster_id"], []))
     return out, gaps
 
 
@@ -632,7 +910,7 @@ THEME_GAPS = {
 FIELDS = ["pillar_id", "pillar_type", "pillar_key", "pillar_name", "role", "cluster_id", "primary_keyword",
           "planned_slug", "post_type", "reader_need", "cluster_volume", "priority_score", "bucket", "season",
           "market", "occasion", "recipient", "interest", "product", "craft", "keywords", "parent_hint", "note",
-          "theme", "merged_into"]
+          "theme", "merged_into", "decision_ids"]
 
 
 def write_md(path: str, out: list[dict], gaps: dict) -> None:
@@ -716,6 +994,8 @@ def main(argv=None) -> int:
                     help="cap the plan size: in a pillar that is too big, a cluster must also be among the N largest "
                          "clusters of the file to stay a post (default 0 = off)")
     ap.add_argument("--taxonomy", default=None)
+    ap.add_argument("--decisions", help="decisions file (CSV, or .xlsx sheet Decisions): applies set_pillar, promote_pillar, "
+                                        "demote_pillar, restore_backlog and drop_post; log in decisions-log-topic.csv")
     args = ap.parse_args(argv)
 
     with open(args.clusters, encoding="utf-8-sig", newline="") as fh:
@@ -726,10 +1006,23 @@ def main(argv=None) -> int:
     if tax is None:
         print("taxonomy.json not found: pillar names will be derived from the keys.", file=sys.stderr)
     priority = [p.strip() for p in args.priority.split(",") if p.strip()]
+    decisions = read_decisions(args.decisions) if args.decisions else None
+    log: list[dict] = []
     out, gaps = build(rows, priority, args.min_clusters, tax, args.max_pillar_size, args.max_posts,
                       args.min_post_volume, args.max_sub_pillars, args.target_posts, args.min_post_share,
-                      args.keep_volume, args.keep_all_up_to, args.promote_min_volume, args.promote_min_share)
+                      args.keep_volume, args.keep_all_up_to, args.promote_min_volume, args.promote_min_share,
+                      decisions, log)
     os.makedirs(args.out, exist_ok=True)
+    if decisions is not None:
+        with open(os.path.join(args.out, "decisions-log-topic.csv"), "w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=LOG_FIELDS)
+            w.writeheader()
+            w.writerows(log)
+        status = defaultdict(int)
+        for e in log:
+            status[e["status"]] += 1
+        print(f"Decisions (topic step): {len(log)} logged" + "".join(f", {k} {v}" for k, v in sorted(status.items()))
+              + " (decisions-log-topic.csv)")
     with open(os.path.join(args.out, "topic-map.csv"), "w", encoding="utf-8", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS)
         w.writeheader()

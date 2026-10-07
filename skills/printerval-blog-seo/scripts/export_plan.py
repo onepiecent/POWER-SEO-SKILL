@@ -37,6 +37,7 @@ from collections import defaultdict
 from xml.sax.saxutils import escape
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import plan_decisions  # noqa: E402
 import plan_qa  # noqa: E402
 import table_io  # noqa: E402
 from published import Published, anchor_from_title  # noqa: E402
@@ -120,6 +121,7 @@ class Plan:
         self.extra_internal: dict[str, list[tuple[str, str]]] = defaultdict(list)  # slug -> (anchor, published URL)
         self.extra_related: dict[str, list[tuple[str, str]]] = defaultdict(list)
         self.team: dict[str, dict[str, str]] = {}  # slug -> the content team's columns from a previous plan
+        self.angle_of: dict[str, str] = {}  # slug -> reviewed angle (set_angle decision), for the Review sheet
         self.topic = topic
         self.links = links or []
         self.kw_by_cluster: dict[str, list[dict]] = defaultdict(list)
@@ -687,6 +689,14 @@ def main(argv=None) -> int:
                     help="related published posts listed first in Related Post (default 1)")
     ap.add_argument("--previous", help="a previous final-plan.xlsx/.csv the team already works in: keep its STT, "
                                        "the team's columns and real URLs (sheet Changes lists what moved)")
+    ap.add_argument("--decisions", help="decisions file (CSV, or .xlsx sheet Decisions): set_category/title/meta/outline "
+                                        "fill EMPTY team cells only, set_angle, research_seed (Research Next); "
+                                        "log decisions-log-export.csv next to --out")
+    # Inputs of the Review / Back-check / Decisions / Not Planned sheets (C7, built by the sheets piece): accepted here
+    # so run_plan.py can pass them; on merge keep the sheets piece's definitions of these three options.
+    ap.add_argument("--backcheck", help=argparse.SUPPRESS)
+    ap.add_argument("--decision-log", action="append", default=[], help=argparse.SUPPRESS)
+    ap.add_argument("--excluded", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     if "{slug}" not in args.url_pattern:
         ap.error("--url-pattern must contain {slug}")
@@ -708,6 +718,9 @@ def main(argv=None) -> int:
         kept_rows, changes = carry_previous(plan, list(plan.rows()), previous)
     if pub or args.previous:
         rows = list(plan.rows())  # again, with the published URLs, links and stable STT
+    decision_log, decision_research = [], []
+    if args.decisions:  # after --previous: a team value always wins over a decision
+        decision_log, decision_research = plan_decisions.apply(plan_decisions.read_decisions(args.decisions), plan, rows)
     xlsx_rows, csv_rows, map_rows = build_outputs(plan, args.plain_links, rows)
     xlsx_rows += kept_rows
     csv_rows += kept_rows
@@ -716,10 +729,12 @@ def main(argv=None) -> int:
     seasonal = read_csv(args.seasonal_plan) if args.seasonal_plan else None
     schedule = schedule_rows(rows, seasonal, today, plan.url_override)
     with open(args.research_seeds, encoding="utf-8") as fh:
-        research = research_rows(topic, keywords, json.load(fh), pub)
+        research = research_rows(topic, keywords, json.load(fh), pub) + decision_research
 
     out = args.out if args.out.lower().endswith(".xlsx") else args.out + ".xlsx"
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    if args.decisions:
+        plan_decisions.write_log(os.path.join(os.path.dirname(os.path.abspath(out)), "decisions-log-export.csv"), decision_log)
     write_xlsx(out, [("Plan", sheet_xml(COLUMNS, xlsx_rows, WIDTHS, [(col_letter(COL["Category Kind"]), ["Pillar", "Cluster"])])),
                      ("Keyword Map", sheet_xml(MAP_COLUMNS, map_rows, MAP_WIDTHS)),
                      ("Schedule", sheet_xml(SCHEDULE_COLUMNS, schedule, SCHEDULE_WIDTHS)),
@@ -750,6 +765,8 @@ def main(argv=None) -> int:
             kinds[x[2]] += 1
         print(f"Published: {len(pub.posts):,} posts read; " + ", ".join(f"{k} {v}" for k, v in kinds.items())
               + " (sheet Published Match; URL Blog uses the published URL for 'update this post')")
+    if args.decisions:
+        print(plan_decisions.summary(decision_log) + " (decisions-log-export.csv)")
     gaps = [f"{x[1]} ({x[5]})" for x in research if x[5] in ("missing", "thin")]
     if gaps:
         print("Research Next: themes to export seed keywords for: " + ", ".join(gaps))
