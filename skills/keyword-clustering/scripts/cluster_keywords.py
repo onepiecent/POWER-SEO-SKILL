@@ -44,7 +44,7 @@ from collections import Counter, defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kw_evidence import (INFO_FEATURES, is_kp_bucketed, kp_bucket_range, kp_bucket_value, parse_intent,  # noqa: E402
                          parse_serp_features, parse_trend, peak_month, trend_header_range, vendor, ym_add)
-from kw_backcheck import write_backcheck  # noqa: E402
+from kw_backcheck import decision_key, write_backcheck  # noqa: E402
 from kw_ingest import ALIASES, norm_market, parse_number, read_tables  # noqa: E402
 from kw_prior import PriorTag, read_prior  # noqa: E402
 from kw_text import (FACET_ORDER, IMPLIED_RECIPIENT, Categories, Fluency, NoiseRules, Respeller,  # noqa: E402
@@ -1327,8 +1327,11 @@ def main(argv=None) -> int:
               ["kind", "from", "to", "keywords_changed", "examples", "from_volume", "to_volume", "vetoed"], respell["fixes"])
     write_csv(os.path.join(args.out, "serp-check.csv"), SERP_CHECK_FIELDS, checks)
     # back-check of the grouping (the SEO's groups, or the engine's clusters in raw mode); proposals are never applied
+    also_in = {(k.market, decision_key(k.keyword)): [t.group for t in k.prior[1:] if t.group_key != k.prior[0].group_key]
+               for c in clusters for k in c if len(k.prior) > 1}
     backcheck_line = write_backcheck(args.out, kw_rows, cl_rows, {(k.market, k.keyword): k.urls for c in clusters
-                                                                  for k in c if k.urls}, serp_t, sim_t, KW_FIELDS)
+                                                                  for k in c if k.urls}, serp_t, sim_t, KW_FIELDS,
+                                     also_in=also_in)
     # 'unclassified' = no niche recognised (the theme says what kind of post, not who it is for), so taxonomy
     # suggestions still surface unknown niches such as 'pickleball' in 'gifts for pickleball players'
     unclassified = [k for k in rows if not any(getattr(k, f) for f in FACET_ORDER if f != "theme") and not k.category]

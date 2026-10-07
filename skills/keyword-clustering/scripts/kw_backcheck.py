@@ -44,11 +44,15 @@ CHECK_TEXT = {
     "no_data": "No keyword of this group has search volume in the exports.",
     "need_conflict": "The keyword's words say shop but the tool or the SERP says the reader researches; by default "
                      "it stays in the blog with the need shown.",
+    "shopping_main": "The group's main keyword is a shopping query, so the topic map leaves the whole group to the "
+                     "shop pages, including members that readers research.",
 }
+FACETS = ("occasion", "recipient", "interest", "product")  # a move or merge needs the same values (a different post)
 QUOTES = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'", "\u2032": "'",
                         "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u2033": '"'})
 NEEDED = ("cluster_id", "market", "keyword", "volume", "variant_volumes", "parent_topic", "normalized_keyword",
-          "reader_need", "need_source", "prior_group", "prior_main", "intents")
+          "reader_need", "need_source", "prior_group", "prior_main", "prior_role", "intents", "blog_fit",
+          "serp_features") + FACETS
 
 
 def decision_key(text) -> str:
@@ -73,12 +77,12 @@ def _num(v) -> int:
 
 class Kw:
     __slots__ = ("keyword", "key", "market", "volume", "cid", "parent", "norm", "toks", "need", "need_src", "intents",
-                 "urls", "prior_group", "prior_main")
+                 "urls", "prior_group", "prior_main", "prior_role", "fit", "feats", "facets")
 
 
 class Group:
     __slots__ = ("market", "name", "main", "key", "row", "members", "volume", "prior", "basis", "urls", "parent",
-                 "norm", "toks", "mvol")
+                 "norm", "toks", "mvol", "fit", "facets")
 
 
 def _load(kw_rows, kw_fields, serp_urls) -> list[Kw]:
@@ -98,6 +102,9 @@ def _load(kw_rows, kw_fields, serp_urls) -> list[Kw]:
         k.intents = frozenset(t for t in str(row.get("intents") or "").split("|") if t)
         k.urls = frozenset(serp_urls.get((k.market, k.keyword)) or serp_urls.get(k.keyword) or ())
         k.prior_group, k.prior_main = str(row.get("prior_group") or ""), str(row.get("prior_main") or "")
+        k.prior_role, k.fit = str(row.get("prior_role") or ""), str(row.get("blog_fit") or "")
+        k.feats = str(row.get("serp_features") or "").replace("|", ", ")
+        k.facets = tuple(str(row.get(f) or "") for f in FACETS)
         out.append(k)
     return out
 
@@ -128,6 +135,8 @@ def _groups(kws: list[Kw], cl_by_id: dict) -> list[Group]:
         g.norm = g.row.norm if g.row else ""
         g.toks = g.row.toks if g.row else frozenset(g.key.split())
         g.mvol = g.row.volume if g.row else 0
+        g.fit = g.row.fit if g.row else ""
+        g.facets = g.row.facets if g.row else ()
     return sorted(by.values(), key=lambda g: (g.market, -g.volume, g.key, g.name))
 
 
@@ -141,10 +150,18 @@ def _merge_order(g: Group, h: Group) -> tuple[Group, Group]:
     return a, b
 
 
-def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6, kw_fields=None, decided=None):
+def _same_post_kind(a: tuple, b: tuple) -> bool:
+    """A keyword may only move to (or merge with) a group about the same occasion, recipient, interest and product:
+    'christmas gifts for coworkers' never joins 'christmas gifts for mom', whatever the shared words."""
+    return not a or not b or all(x == y for x, y in zip(a, b))
+
+
+def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6, kw_fields=None, decided=None,
+           also_in=None):
     kws = _load(kw_rows, kw_fields, serp_urls or {})
     cl_by_id = {str(c.get("cluster_id") or ""): c for c in cl_rows}
     groups = _groups(kws, cl_by_id)
+    name_idx = {(g.market, g.name): i for i, g in enumerate(groups)}
     gi_of = {id(g): i for i, g in enumerate(groups)}
     url_idx, parent_idx, norm_idx, key_idx, tok_idx = (defaultdict(list) for _ in range(5))
     tok_df: Counter = Counter()
@@ -193,6 +210,13 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
     for i, g in enumerate(groups):
         for k in g.members:
             by_key[(g.market, k.key)].setdefault(i, k)
+    # the grouped file listed a keyword in several groups; it was kept in one, the others are named in also_in
+    for (market, key), names in (also_in or {}).items():
+        hit = next(iter(by_key.get((market, key), {}).values()), None)
+        for name in names:
+            j = name_idx.get((market, name))
+            if hit is not None and j is not None:
+                by_key[(market, key)].setdefault(j, hit)
     for (market, key), hits in by_key.items():
         if len(hits) < 2:
             continue
@@ -200,13 +224,18 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
         urls = frozenset().union(*(k.urls for k in hits.values()))
         parent = decision_key(next((k.parent for k in hits.values() if k.parent), ""))
 
-        def rank(i):  # a group's main stays in its group; else most SERP URLs shared with the main, then Parent Topic
+        def rank(i):
+            """The group that names it as its main (in the SEO's file) keeps it; else the group whose OTHER members
+            share most SERP URLs with it, then its Parent Topic, then the most shared words with those members."""
             g = groups[i]
-            main = g.key == key
-            return (int(main), 0 if main else len(urls & g.urls), int(bool(parent) and parent == g.key), g.volume)
+            main = g.key == key and (not g.prior or any(m.key == key and m.prior_role == "main" for m in g.members))
+            rest = [m for m in g.members if m.key != key]
+            shared = max((len(urls & m.urls) for m in rest), default=0) if urls else 0
+            words = max((_jaccard(k0.toks, m.toks) for m in rest), default=0.0)
+            return (int(main), 0 if main else shared, int(bool(parent) and parent == g.key), round(words, 2), g.volume)
         order = sorted(hits, key=lambda i: (tuple(-x for x in rank(i)), i))
         win = groups[order[0]]
-        tied = rank(order[0])[:3] == rank(order[1])[:3]
+        tied = rank(order[0])[:4] == rank(order[1])[:4]
         parts = []
         for i in order:
             g = groups[i]
@@ -215,18 +244,24 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
                 ev.append("it is the main")
             elif urls and g.urls:
                 ev.append(f"{len(urls & g.urls)} shared SERP URLs with it")
+            else:
+                ev.append(f"word overlap with its other keywords {rank(i)[3]:.2f}")
             parts.append(f"'{g.name}' ({', '.join(ev)})")
         top = rank(order[0])
         why = ("tied on the evidence; the bigger group is proposed" if tied else "it is that group's main" if top[0]
-               else "most SERP URLs shared with its main" if top[1] else "its Parent Topic is that group's main")
+               else "most SERP URLs shared with its other keywords" if top[1] else "its Parent Topic is that group's main"
+               if top[2] else f"most shared words with its other keywords ({top[3]:.2f}; not verified by SERP)")
         etype = "lexical" if top[0] or not (top[1] or top[2]) else "serp" if top[1] else "parent_topic"
         target = win.main
         if win.key == key:  # the keyword is the winner's main: name the winning post by another of its members
             other = sorted((k for k in win.members if k.key != key), key=lambda k: (-k.volume, k.key))
             target = other[0].keyword if other else win.main
+        now = k0.prior_group or ""
         it = issue("duplicate_across_groups", "high", groups[order[1]], k0.keyword, k0.volume, win, etype,
                    f"'{k0.keyword}' ({k0.volume:,} searches/month) is in {len(hits)} groups: " + "; ".join(parts) +
-                   f". Keep it in '{win.name}': {why}.", "move_keyword", k0.keyword, target)
+                   f". Keep it in '{win.name}': {why}." + (f" The script kept it in '{now}' (first in the file)."
+                                                          if now else ""), "move_keyword", k0.keyword, target,
+                   status="applied_default" if now == win.name else "open")
         it["group"] = "|".join(groups[i].name for i in order[1:])
         it["group_main"] = "|".join(groups[i].main for i in order[1:])
     dup_keys = {mk for mk, hits in by_key.items() if len(hits) > 1}
@@ -280,13 +315,27 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
             elif not dup and own is None and not (k.parent and decision_key(k.parent) in {g.key, g.parent}):
                 own_j = _jaccard(k.toks, g.toks)
                 if own_j < LEX_FLOOR:
-                    j, s = lex_best(k.toks, g.market, i)
+                    j, s = lex_best(k.toks, g.market, i, lambda x: _same_post_kind(k.facets, groups[x].facets))
                     if j is not None:
                         h = groups[j]
                         issue("weak_member", "medium", g, k.keyword, k.volume, h, "lexical",
                               f"Word overlap of '{k.keyword}' ({k.volume:,} searches/month) with its own main "
                               f"'{g.main}' {own_j:.2f} (below {LEX_FLOOR}), with '{h.main}' {s:.2f} (threshold "
-                              f"{sim_t}); no SERP URLs to compare", "move_keyword", k.keyword, h.main)
+                              f"{sim_t}); no SERP URLs to compare, not verified by SERP", "move_keyword", k.keyword,
+                              h.main)
+                    elif not _same_post_kind(k.facets, g.facets):  # about another recipient, product...
+                        diff = [f"{f} '{a or '-'}' vs '{b or '-'}'" for f, a, b in zip(FACETS, k.facets, g.facets)
+                                if a != b]
+                        issue("weak_member", "medium", g, k.keyword, k.volume, None, "lexical",
+                              f"Word overlap of '{k.keyword}' ({k.volume:,} searches/month) with its own main "
+                              f"'{g.main}' ({g.mvol:,}) is {own_j:.2f} (below {LEX_FLOOR}) and it is about something "
+                              f"else ({', '.join(diff)}); no other group fits it, so it may be a post of its own (not "
+                              "verified by SERP)", "split", k.keyword)
+                    elif g.prior and k.volume >= g.mvol / 2:  # an SEO group, same subject in other words: SERP decides
+                        issue("weak_member", "low", g, k.keyword, k.volume, None, "lexical",
+                              f"Word overlap of '{k.keyword}' ({k.volume:,} searches/month) with its own main "
+                              f"'{g.main}' ({g.mvol:,}) is only {own_j:.2f} (below {LEX_FLOOR}) but it is about the "
+                              "same subject; check on the live SERP whether one page answers both (serp-check.csv)", "")
             # need_conflict: the words say shop, the tool or the SERP says the reader researches (M2)
             if k.need_src.startswith("conflict"):
                 issue("need_conflict", "medium", g, k.keyword, k.volume, None,
@@ -304,6 +353,18 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
                 issue("no_data", "medium" if g.prior else "low", g, g.main, 0, None, "data_missing",
                       f"'{g.main}' has volume 0 or no volume in the exports", "research_seed", g.main, "", g.main)
             continue
+        # shopping_main: a shopping main takes the whole group out of the blog plan; keep the research side
+        research = [k for k in g.members if k is not g.row and k.fit in ("high", "medium") and k.need != "shop"]
+        if g.row is not None and g.fit == "low" and research:
+            research.sort(key=lambda k: (-k.volume, k.key))
+            rv = sum(k.volume for k in research)
+            tool = f"tool intent {'/'.join(sorted(g.row.intents))}" if g.row.intents else "no tool intent"
+            feats = f", SERP features {g.row.feats}" if g.row.feats else ""
+            issue("shopping_main", "high", g, g.main, g.volume, None, "tool_intent" if g.row.intents else "lexical",
+                  f"Main '{g.main}' ({g.mvol:,} searches/month) reads as a shopping query ({tool}{feats}); "
+                  f"{len(research)} member(s) readers research ({rv:,} searches/month, led by '{research[0].keyword}' "
+                  f"{research[0].volume:,}) would leave the blog with it. Split them into their own post",
+                  "split", research[0].keyword, "", "|".join(k.keyword for k in research[1:]))
         # mixed_intent: informational-only members next to transactional-only ones
         info = [k for k in g.members if k.intents and k.intents <= {"informational"}]
         trans = [k for k in g.members if k.intents and k.intents <= {"transactional"}]
@@ -381,10 +442,19 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
                 continue
             ev = (f"'{g.main}' ({len(g.members)} kw, {g.volume:,} searches/month) is in no SEO group; the smallest SEO "
                   f"group main in {g.market.upper() or 'this market'} has {thr:,}")
-            j, n = serp_best(g.urls, g.market, i, prior_set.__contains__)
+            if g.fit == "low":
+                tool = f"tool intent {'/'.join(sorted(g.row.intents))}" if g.row and g.row.intents else "no tool intent"
+                issue("ungrouped_high_volume", "info", g, g.main, g.volume, None, "tool_intent", ev + f"; it reads as a "
+                      f"shopping query ({tool}{', SERP features ' + g.row.feats if g.row and g.row.feats else ''}), so "
+                      "it is left to the shop pages, not the blog", "", status="applied_default")
+                continue
+
+            def fits(x):
+                return x in prior_set and groups[x].fit != "low" and _same_post_kind(g.facets, groups[x].facets)
+            j, n = serp_best(g.urls, g.market, i, fits)
             near, how = (j, f"{n} shared SERP URLs") if j is not None and n >= serp_t else (None, "")
             if near is None:
-                j, s = lex_best(g.toks, g.market, i, prior_set.__contains__)
+                j, s = lex_best(g.toks, g.market, i, fits)
                 near, how = (j, f"word overlap {s:.2f}") if j is not None else (None, "")
             if near is None:
                 issue("ungrouped_high_volume", "medium", g, g.main, g.volume, None, "volume",
@@ -411,10 +481,11 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
 
 
 def backcheck(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6, kw_fields=None,
-              decided=None) -> list[dict]:
+              decided=None, also_in=None) -> list[dict]:
     """Issues (BACKCHECK_FIELDS dicts), most severe and biggest first. serp_urls maps a keyword, or (market,
-    keyword), to its SERP URLs; decided maps an issue_id to the decision_id that settled it."""
-    return _check(kw_rows, cl_rows, serp_urls, serp_t, sim_t, kw_fields, decided)[0]
+    keyword), to its SERP URLs; decided maps an issue_id to the decision_id that settled it; also_in maps (market,
+    decision_key(keyword)) to the other SEO groups the grouped file listed the keyword in."""
+    return _check(kw_rows, cl_rows, serp_urls, serp_t, sim_t, kw_fields, decided, also_in)[0]
 
 
 def proposals(issues: list[dict]) -> list[dict]:
@@ -437,9 +508,9 @@ def _md(v) -> str:
 
 
 def write_backcheck(out_dir: str, kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6,
-                    kw_fields=None, decided=None) -> str:
+                    kw_fields=None, decided=None, also_in=None) -> str:
     """Write backcheck.csv, proposed-decisions.csv and backcheck-report.md; return a one-line summary."""
-    issues, groups = _check(kw_rows, cl_rows, serp_urls, serp_t, sim_t, kw_fields, decided)
+    issues, groups = _check(kw_rows, cl_rows, serp_urls, serp_t, sim_t, kw_fields, decided, also_in)
     props = proposals(issues)
     _write(os.path.join(out_dir, "backcheck.csv"), BACKCHECK_FIELDS, issues)
     _write(os.path.join(out_dir, "proposed-decisions.csv"), DECISION_FIELDS, props)

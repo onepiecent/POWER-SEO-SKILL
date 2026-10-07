@@ -37,7 +37,7 @@ class BackCheck(unittest.TestCase):
     def test_duplicate_across_groups(self):
         rows = [kw("nurse gift ideas", "C1", 1000, prior_group="G1", prior_main="nurse gift ideas"),
                 kw("gifts for nurses", "C1", 500, prior_group="G1", prior_main="nurse gift ideas"),
-                kw("gifts for nurses", "C2", 500, prior_group="G2", prior_main="gifts for nurses"),
+                kw("gifts for nurses", "C2", 500, prior_group="G2", prior_main="gifts for nurses", prior_role="main"),
                 kw("nurse presents", "C2", 100, prior_group="G2", prior_main="gifts for nurses")]
         serp = {"nurse gift ideas": urls(*range(10)), "gifts for nurses": urls(*range(4, 14))}
         issues = bc.backcheck(rows, [cl("C1", "nurse gift ideas"), cl("C2", "gifts for nurses")], serp, 4)
@@ -187,9 +187,39 @@ class BackCheck(unittest.TestCase):
             for name in ("backcheck.csv", "proposed-decisions.csv", "backcheck-report.md"):
                 self.assertTrue(os.path.exists(os.path.join(out, name)), name)
             cluster_ids = {r["cluster_id"] for r in read_csv(os.path.join(out, "clusters.csv"))}
-            issues = read_csv(os.path.join(out, "backcheck.csv"))
-            self.assertTrue(issues)
+            issues = read_csv(os.path.join(out, "backcheck.csv"))  # may be empty: the engine's clusters can be clean
             self.assertTrue(all(i["group"] in cluster_ids for i in issues))
+
+    def test_shopping_main_keeps_the_research_side(self):
+        rows = [kw("christmas mugs", "C1", 12100, prior_group="Mugs", prior_main="christmas mugs", blog_fit="low",
+                   reader_need="shop", intents="transactional", serp_features="shopping"),
+                kw("how to make custom christmas mugs", "C1", 880, prior_group="Mugs", prior_main="christmas mugs",
+                   blog_fit="high", reader_need="how_to", intents="informational"),
+                kw("diy christmas mug ideas", "C1", 720, prior_group="Mugs", prior_main="christmas mugs", blog_fit="high",
+                   reader_need="inspire", intents="informational")]
+        it = by_check(bc.backcheck(rows, [cl("C1", "christmas mugs", prior_group="Mugs")]), "shopping_main")
+        self.assertEqual(len(it), 1)
+        self.assertEqual((it[0]["severity"], it[0]["proposed_action"], it[0]["proposed_keyword"], it[0]["proposed_value"]),
+                         ("high", "split", "how to make custom christmas mugs", "diy christmas mug ideas"))
+        self.assertIn("1,600 searches/month", it[0]["evidence"])
+
+    def test_duplicate_listed_in_two_seo_groups_goes_where_it_fits(self):
+        """The grouped file kept the keyword in its first group; also_in names the other one."""
+        rows = [kw("secret santa gift ideas", "C1", 27100, prior_group="Coworkers", prior_main="secret santa gift ideas"),
+                kw("christmas gifts for coworkers", "C1", 18100, prior_group="Coworkers",
+                   prior_main="secret santa gift ideas", recipient="coworker"),
+                kw("secret santa gifts under 20", "C2", 6600, prior_group="Secret Santa",
+                   prior_main="secret santa gifts under 20")]
+        rows = [{**r, "normalized_keyword": " ".join(sorted(r["keyword"].split()))} for r in rows]
+        issues = bc.backcheck(rows, [cl("C1", "secret santa gift ideas", prior_group="Coworkers"),
+                                     cl("C2", "secret santa gifts under 20", prior_group="Secret Santa")],
+                              also_in={("us", "secret santa gift ideas"): ["Secret Santa"]})
+        dup = by_check(issues, "duplicate_across_groups")
+        self.assertEqual(len(dup), 1)
+        self.assertEqual((dup[0]["other_group"], dup[0]["status"]), ("Secret Santa", "open"))
+        self.assertIn("first in the file", dup[0]["evidence"])
+        weak = by_check(issues, "weak_member")  # another recipient: never moved into an unrelated group
+        self.assertEqual([(w["keyword"], w["proposed_action"]) for w in weak], [("christmas gifts for coworkers", "split")])
 
 
 if __name__ == "__main__":

@@ -3,3 +3,5 @@ __pycache__/
 outputs/
 dist/
 .DS_Store
+
+.claude/worktrees/
