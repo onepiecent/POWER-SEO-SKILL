@@ -176,8 +176,19 @@ def priority_score(row: dict) -> int:
     return round(to_int(row["cluster_volume"]) * FIT_WEIGHT.get(row["blog_fit"], 0.6) * (0.5 + achievable))
 
 
+def narrower_facets(r: dict, own_facet: str) -> int:
+    """How many facets narrower than its audience group (occasion, recipient, interest) a cluster names: 'christmas
+    shirt ideas' in the Christmas group names a product (1), 'christmas gifts for mom' a recipient (1). The hub of an
+    audience pillar must cover the whole group, so only a cluster with 0 can be it; craft, product, category and
+    inspiration groups are keyed by what their clusters share and keep their own rule."""
+    if own_facet not in ("occasion", "recipient", "interest"):
+        return 0
+    return sum(1 for f in ("occasion", "recipient", "interest", "product", "craft") if f != own_facet and r.get(f))
+
+
 def choose_pillar_cluster(rows: list[dict], own_facet: str) -> dict | None:
-    eligible = [r for r in rows if r["reader_need"] in LIST_NEEDS and r["blog_fit"] == "high"]
+    eligible = [r for r in rows if r["reader_need"] in LIST_NEEDS and r["blog_fit"] == "high"
+                and not narrower_facets(r, own_facet)]
     if not eligible:
         return None
 
@@ -185,6 +196,37 @@ def choose_pillar_cluster(rows: list[dict], own_facet: str) -> dict | None:
         return sum(1 for f in ("occasion", "recipient", "interest", "product", "craft")
                    if f != own_facet and r.get(f))
     return sorted(eligible, key=lambda r: (specificity(r), -to_int(r["cluster_volume"])))[0]
+
+
+SEO_PILLAR_ROLES = ("pillar", "pillar-hub", "pillar hub", "hub")
+
+
+def seo_pillars(live: list[dict]) -> tuple[list, dict, list[dict]]:
+    """The pillars the SEO's grouped file already set (clusters.csv prior_role / prior_pillar, from the plan's Category
+    Kind and Thuộc Pillar): a group whose Category Kind is 'Pillar' is a hub, and the groups whose Thuộc Pillar names
+    a hub's main keyword are its posts. They stay as the file set them, with no merging; a Thuộc Pillar that names no
+    blog cluster of this run (e.g. 'No real pillar yet ...') and every group without one go through the engine.
+    Returns ([(group key, (members, theme))], {group key: hub}, the clusters left to the engine)."""
+    by_main: dict[tuple, dict] = {}
+    for r in live:
+        by_main.setdefault((r["market"], decision_key(r["cluster_name"])), r)
+    hubs = {id(r): r for r in live
+            if r.get("prior_group") and (r.get("prior_role") or "").strip().lower() in SEO_PILLAR_ROLES}
+    posts: dict[int, list[dict]] = defaultdict(list)
+    for r in live:
+        hub = by_main.get((r["market"], decision_key(r.get("prior_pillar") or "")))
+        if hub is not None and hub is not r and r.get("prior_group"):
+            hubs[id(hub)] = hub  # named as the pillar of another group: a hub even without Category Kind
+            posts[id(hub)].append(r)
+    items, hub_of, taken = [], {}, set()
+    for h in hubs.values():
+        members = [h] + [m for m in posts[id(h)] if id(m) not in hubs and id(m) not in taken]
+        ptype = next((f for f in ("occasion", "interest", "recipient", "craft", "product") if h.get(f)), "topic")
+        key = (h["market"], ptype, "seo-" + slugify(h["cluster_name"]))
+        items.append((key, (members, "")))
+        hub_of[key] = h
+        taken.update(id(m) for m in members)
+    return items, hub_of, [r for r in live if id(r) not in taken]
 
 
 def has_need(needs: set[str], spec: str) -> bool:
@@ -740,6 +782,7 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
           decisions: list[dict] | None = None, decision_log: list[dict] | None = None):
     live = [r for r in rows if r["blog_fit"] != "low"]
     skipped = [r for r in rows if r["blog_fit"] == "low"]
+    seo_items, seo_hub, live = seo_pillars(live)  # the SEO's own pillars first: the engine groups the rest
     real, leftovers = assign_groups(live, priority, min_clusters)
     groups, backlog, extra_standalone, split_notes = split_by_theme(real, tax, max_pillar_size, min_clusters, max_sub_pillars)
     members_of_topic: dict[tuple, list[tuple[dict, tuple]]] = defaultdict(list)
@@ -777,16 +820,26 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
                 "priority_score": priority_score(r) if role != "merged" else 0, **facet_cols(r),
                 "keywords": r["keywords"], "parent_hint": "", "note": note, "merged_into": merged_into}
 
-    ordered = sorted(groups.items(), key=lambda kv: -sum(volume(r) for r in kv[1][0]))
+    ordered = sorted(list(groups.items()) + seo_items, key=lambda kv: -sum(volume(r) for r in kv[1][0]))
     pillar_ids, plans = {}, []
     for n, ((market, ptype, key), (members, theme)) in enumerate(ordered, 1):
         pid = f"P{n:02d}"
         pillar_ids[(market, ptype, key)] = pid
+        hub = seo_hub.get((market, ptype, key))
+        if hub is not None:  # the SEO's pillar: hub and posts as the grouped file set them
+            name = hub["cluster_name"]
+            plans.append({"pid": pid, "promoted": False, "no_pillar": False, "seo": True, "theme": "", "members": members,
+                          "chosen": hub, "kept": [m for m in members if m is not hub], "merged": {},
+                          "topic": (market, ptype, key),
+                          "base": {"pillar_id": pid, "pillar_type": ptype, "pillar_key": key,
+                                   "pillar_name": name[:1].upper() + name[1:], "market": market}})
+            continue
         title = theme_pillar_title(ptype, key.split("/", 1)[0], theme, market, tax) if theme else pillar_title(ptype, key, market, tax)
         chosen = choose_theme_hub(members) if theme else choose_pillar_cluster(members, ptype)
         promoted = False
-        if chosen is None and members:  # no broad head keyword: the strongest cluster becomes the real pillar if strong enough
-            top = max(members, key=lambda r: (volume(r), priority_score(r)))
+        broad = [r for r in members if theme or not narrower_facets(r, ptype)]
+        if chosen is None and broad:  # no broad head keyword: the strongest broad cluster becomes the real pillar if strong enough
+            top = max(broad, key=lambda r: (volume(r), priority_score(r)))
             total = sum(volume(r) for r in members)
             if volume(top) >= promote_min_volume and total and volume(top) / total >= promote_min_share:
                 chosen, promoted = top, True
@@ -819,7 +872,9 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
                         "post_type": "pillar-hub", "reader_need": chosen["reader_need"],
                         "cluster_volume": volume(chosen), "priority_score": priority_score(chosen),
                         **facet_cols(chosen), "keywords": chosen["keywords"], "parent_hint": "",
-                        "note": (f"promoted to real pillar: strongest cluster of the group ({volume(chosen):,} of {total:,}), no broad head keyword; "
+                        "note": ("pillar set by the SEO's grouped file (Category Kind / Thuộc Pillar); write it as a hub that "
+                                 "covers the clusters below" if plan.get("seo") else
+                                 f"promoted to real pillar: strongest cluster of the group ({volume(chosen):,} of {total:,}), no broad head keyword; "
                                  "write it as a hub that covers the clusters below" if plan["promoted"] else
                                  f"pillar chosen from cluster {chosen['cluster_id']}; write it as a hub that covers the clusters below"),
                         "merged_into": ""})

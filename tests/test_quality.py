@@ -302,6 +302,46 @@ class RealPillarsOnly(unittest.TestCase):
         self.assertEqual(pillar_col["how-to-print-on-a-mug"], "how to make custom mugs")
 
 
+class SeoPillarsAreKept(unittest.TestCase):
+    """A grouped file that already has pillars (the plan's Category Kind / Thuộc Pillar) keeps them: the engine would
+    have made 'secret santa gift ideas' the hub of every Christmas post."""
+
+    def test_the_grouped_files_pillars_win_and_the_rest_goes_to_the_engine(self):
+        seo = dict(occasion="christmas", theme="gifts")
+        rows = [cl("S1", "christmas gift ideas", 9000, "inspire", prior_group="1", prior_role="Pillar", **seo),
+                cl("S2", "christmas gifts for mom", 6000, "inspire", prior_group="2", prior_role="Cluster",
+                   prior_pillar="christmas gift ideas", recipient="mom", **seo),
+                cl("S3", "secret santa gift ideas", 8000, "inspire", prior_group="3", prior_role="Cluster",
+                   prior_pillar="Christmas Gift Ideas", **seo),
+                cl("S4", "christmas card messages", 7000, "copy_ideas", prior_group="4", prior_role="Cluster",
+                   prior_pillar="No real pillar yet (research a head keyword)", occasion="christmas", theme="messages"),
+                cl("E1", "christmas quotes", 20000, "copy_ideas", occasion="christmas", theme="messages"),
+                cl("E2", "funny christmas quotes", 3000, "copy_ideas", occasion="christmas", theme="messages")]
+        out, _ = tm.build(rows, ["occasion", "interest", "recipient", "craft", "product"], 3, None)
+        hub = next(o for o in out if o["primary_keyword"] == "christmas gift ideas")
+        self.assertEqual(hub["role"], "pillar")
+        self.assertIn("SEO's grouped file", hub["note"])
+        under = {o["primary_keyword"] for o in out if o["pillar_id"] == hub["pillar_id"] and o["role"] == "cluster"}
+        self.assertEqual(under, {"christmas gifts for mom", "secret santa gift ideas"})
+        rest = {o["primary_keyword"]: o for o in out if o["primary_keyword"] in ("christmas card messages", "christmas quotes")}
+        self.assertNotEqual(rest["christmas card messages"]["pillar_id"], hub["pillar_id"])  # not named: the engine decides
+        self.assertTrue(all(o["role"] in ("pillar", "cluster", "standalone") for o in rest.values()))
+
+
+class AudienceHubCoversItsGroup(unittest.TestCase):
+    def test_a_product_or_recipient_cluster_never_heads_an_occasion_pillar(self):
+        xmas = dict(occasion="christmas")
+        rows = [cl("Q", "christmas quotes", 60500, "copy_ideas", theme="messages", **xmas),
+                cl("O", "diy christmas ornaments", 36100, "how_to", theme="crafts", product="ornament", **xmas),
+                cl("C", "christmas card messages", 24700, "copy_ideas", theme="messages", **xmas),
+                cl("S", "christmas shirt ideas", 4800, "inspire", theme="gifts", product="shirt", **xmas),
+                cl("M", "christmas gifts for mom", 3000, "inspire", theme="gifts", recipient="mom", **xmas)]
+        out, _ = tm.build(rows, ["occasion", "interest", "recipient", "craft", "product"], 3, None)
+        hub = [o["primary_keyword"] for o in out if o["role"] == "pillar"]
+        self.assertEqual(hub, ["christmas quotes"])  # the broad cluster, promoted; not the shirt or mom post
+        self.assertIn("promoted", next(o for o in out if o["role"] == "pillar")["note"])
+
+
 class DiverseAnchors(unittest.TestCase):
     def setUp(self):
         def p(slug, kw, kws, vol=500):
