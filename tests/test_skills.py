@@ -56,7 +56,8 @@ class SkillFiles(unittest.TestCase):
 
     def test_every_script_has_help(self):
         for script in glob.glob(os.path.join(ROOT, "skills", "*", "scripts", "*.py")):
-            if os.path.basename(script) in ("kw_text.py", "kw_ingest.py", "kw_evidence.py", "kw_prior.py", "plan_qa.py",
+            if os.path.basename(script) in ("kw_text.py", "kw_ingest.py", "kw_evidence.py", "kw_prior.py", "kw_backcheck.py",
+                                            "kw_decisions.py", "plan_qa.py", "plan_decisions.py", "plan_review.py",
                                             "published.py", "table_io.py"):  # modules
                 continue
             with self.subTest(script=os.path.basename(script)):
