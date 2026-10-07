@@ -25,7 +25,7 @@ CSV or Excel (`.xlsx`: **every** sheet with a keyword column within its first 40
 | flag_branded, flag_local, flag_informational, flag_commercial, flag_transactional, flag_navigational | Branded, Local, Informational, Commercial, Transactional, Navigational (Ahrefs Site Explorer true/false) |
 | monthly searches | `Searches: Mon YYYY` (Keyword Planner; matched by pattern, not by `--map`) |
 | competitive_density, results, click_potential, change_3m, change_yoy | Competitive Density, Number of Results, Click potential, Three month change, YoY change (recognised, not used yet) |
-| group, main, secondary, role, pillar | Cluster, Group, Keyword Group, Nhóm, Cụm, Chủ đề / Main Keyword, Primary Keyword, Page, Từ khóa chính / Secondary Keyword(s), Từ khóa phụ / Page type, Category Kind / Pillar, Thuộc Pillar; `Topic` is the pillar when `Page` is present, else the group (recognised; an existing grouping is not used yet and the report warns) |
+| group, main, secondary, role, pillar | Cluster, Group, Keyword Group, Nhóm, Cụm, Chủ đề / Main Keyword, Primary Keyword, Page, Từ khóa chính / Secondary Keyword(s), Từ khóa phụ / Page type, Category Kind / Pillar, Thuộc Pillar; `Topic` is the pillar when `Page` is present, else the group (used only in a file passed with `--prior`; in a raw export they are recognised and the report warns) |
 | stt, status, url_blog, category | STT / Trạng thái, Status / URL Blog, Target URL / Category, Danh mục (recognised, not used) |
 
 Never used as a value: `Global volume`, `Global traffic potential`, `Competition` (ads), `SV Forecasting trend`, `#`; they are listed as ignored on purpose in `cluster-report.md`.
@@ -55,11 +55,13 @@ Evidence columns of `keyword-map.csv` (empty when the export has no such data):
 - `trend`: comma-separated values, oldest first: relative 0–1 with 2 decimals (Semrush Trend, Organic Research Trends ÷100) or absolute monthly volumes (Ahrefs SV trend, Keyword Planner months). `trend_end`: `YYYY-MM` of the last value, only when the months are known (Keyword Planner with every month filled, Ahrefs SV trend whose length matches its header); `peak_month` (`Jan`...`Dec`, the latest on a tie) only then.
 - `volume_range`: the range behind an estimated volume (`1K–10K`, from a text range or a Keyword Planner bucket value), else empty.
 - `volume_sources`: every source of the keyword after exact duplicates were joined, `tool:value` `|`-separated, `~` before an estimate, `-` for an empty cell (`semrush-kmt:40500|ahrefs-ke:38000`, `gkp:~1000`). Tools: semrush-kmt, semrush-ksb, semrush-api, semrush-positions, ahrefs-ke, ahrefs-se, gkp, gsc, team-plan, generic. `kd_source`: the tool the KD came from.
-- `prior_group, prior_main, prior_role, prior_pillar` (and `prior_*` in `clusters.csv`), `decision_ids`: reserved for back-checking an existing grouping and for review decisions; always empty in this version.
+- `prior_group, prior_main, prior_role, prior_pillar`: filled for keywords that came from a grouped file (`--prior FILE[::market]`, repeatable): the SEO's group id or name (as text), the SEO's main keyword of that group, the role and the pillar. Empty in raw mode (no `--prior`), where the engine's clusters are the groups.
+- `decision_ids`: the ids of the decisions applied to the keyword (`|`-separated), else empty.
 
 Columns of `clusters.csv` added for evidence:
 
-- `grouping_basis` ∈ `single`, `serp`, `parent_topic`, `lexical (not verified by SERP)` (`lexical` and `core` joins), `mixed`.
+- `grouping_basis` ∈ `single`, `serp`, `parent_topic`, `lexical (not verified by SERP)` (`lexical` and `core` joins), `mixed`; with `--prior`: `prior:seo` (an SEO group kept as it is) or `prior:seo+added` (export keywords joined it).
+- `prior_group, prior_pillar, prior_role`: the SEO's group, pillar and role of a cluster that came from `--prior`; empty in raw mode.
 - `serp_verified_share`: share of the cluster volume whose membership rests on shared SERP URLs or the Parent Topic (the seed counts once a member is verified), 2 decimals; empty for a single keyword.
 - `seed_basis`: why the post is named after its main keyword: `max_volume`, `evergreen (no year)`, `spelled correctly`, `more natural phrasing`, `plain phrasing`.
 - `intents_mix`: the members' tool intent labels with counts and volume (`informational (3 kw, 8,100) | no label (1 kw, 90)`); empty when no member has a label. `serp_features_main` / `traffic_potential_main`: those of the main keyword.
@@ -73,6 +75,26 @@ Columns of `clusters.csv` added for evidence:
 **`serp-check.csv`** (for the SEO to check on the live SERP, largest first, `--serp-check-max` rows, default 30): `market, keyword_a, volume_a, keyword_b, volume_b, why, current_grouping, question`. Rows are merge candidates near a threshold (`current_grouping` = `separate posts (C0003, C0010)`) and clusters grouped by words only (`same post (C0004)`).
 
 Others: `excluded.csv` (keyword, volume, reason, source_file; reasons include `market:<code>`), `unclassified.csv`, `taxonomy-suggestions.csv`, `groups.csv/.md`, `cluster-report.md`.
+
+## Back-check and decisions (contracts C1–C4)
+
+Full rules (checks, actions per step, evidence hierarchy, the contradiction rule): `keyword-clustering/references/backcheck-and-decisions.md`.
+
+**Grouped input** (`cluster_keywords.py --prior FILE[::market]`, repeatable; `run_plan.py --prior`): a file the SEO already grouped (keyword + group columns, main + secondary keyword columns, or the team's final plan with its Keyword Map sheet). A positional file is always a raw export; a grouped file is never auto-detected.
+
+**`backcheck.csv`** (keyword-clustering, every run): `issue_id, check, severity, market, group, group_main, keyword, keyword_volume, other_group, other_main, evidence_type, evidence, proposed_action, proposed_keyword, proposed_target, proposed_value, status`
+
+- `issue_id` = `BC-` + the first 8 hex characters of sha1(`check|market|decision_key(keyword)|decision_key(other_main)`), stable across re-runs.
+- `severity` ∈ high, medium, low, info. `status` ∈ `open`, `applied_default`, `decided:<decision_id>`. `evidence` is a sentence with the real numbers from the data.
+- `proposed-decisions.csv`: the decisions-file columns below, `decision_id` = `P-` + issue_id, `author` = `proposal`, `reason` = what the check found, `evidence` = the evidence sentence, `source_issue` = issue_id. Never applied. `backcheck-report.md`: the human-readable summary.
+
+**Decisions file** (`--decisions FILE` on `cluster_keywords.py`, `topic_map.py`, `export_plan.py`, `run_plan.py`; a CSV, or an `.xlsx` whose sheet `Decisions`, else the first sheet, has the headers): `decision_id, action, market, keyword, target, value, reason, evidence, source_issue, author, date`
+
+- `reason` and `evidence` are required (empty → `invalid`). `author` = `claude`, anything else is a human.
+- Matching key `decision_key(text)`: Unicode NFC, lowercase, curly quotes made straight, apostrophes removed, `-` and `_` as spaces, whitespace collapsed. Export actions also accept `STT:<n>` as the keyword.
+- Actions: cluster step `drop_keyword, keep_keyword, set_need, merge, move_keyword, split, keep_apart, rename_main`; topic step `set_pillar, promote_pillar, demote_pillar, restore_backlog, drop_post`; export step `set_category, set_title, set_meta, set_outline, set_angle, research_seed`. A step ignores (does not log) the actions of other steps.
+
+**`decisions-log-<step>.csv`** (`cluster`, `topic`, `export`): `decision_id, step, action, market, keyword, target, value, author, status, detail`; `status` ∈ applied, applied_with_warning, already_true, rejected_by_data, stale, invalid, conflict.
 
 Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop. `blog_fit` ∈ high, medium, low (shop = low). `market` ∈ us, uk, all.
 
@@ -114,6 +136,23 @@ Sheet **Published Match** (with `--published`): `STT, Main Keyword, Match, Publi
 Sheet **Changes** (with `--previous`): `STT, Main Keyword, Change, Detail`; Change ∈ kept, renamed, new, dropped, kept from the previous plan.
 
 Sheet **QA**: `Severity, Check, STT, Main Keyword, Detail, Suggestion`; Severity ∈ high, medium, low, info; Check ∈ overlap, misplaced, year_in_main, slug, overloaded, thin_links, weak_post, hard_keyword (`scripts/plan_qa.py`; heuristics for a person to review).
+
+After the sheets above (`scripts/plan_review.py`; every value comes from the input files; Keyword Map stays the second sheet):
+
+Sheet **Review** (always), one row per STT: `STT, Market, Main Keyword, Post Type, Reader Need, Intent (tool), Need vs Intent, SERP Features (main), Grouping Basis, SEO Group, Main Volume, Owned Volume, Keywords, Biggest Keyword, KD, Outline Seeds (from this post's keywords), Angle (reviewed), Open Issues, Decisions Applied, Why This Post`
+
+- `Intent (tool)`: the main keyword's `intents` from `keyword-map.csv`, or `no tool label`. `Need vs Intent` ∈ agree, conflict, no tool label [Convention: which tool labels fit each reader need], followed by the keyword's `need_source` when it records a conflict.
+- `Grouping Basis`: the topic map's `grouping_basis` when present, else from `joined_by` in `keyword-map.csv` (single, serp, parent_topic, lexical (not verified by SERP), mixed), plus the clusters merged in by topic-map. `SEO Group`: the `prior_group` values of the post's keywords.
+- `Main Volume`: the main keyword's volume; `Owned Volume`: the post's cluster volume plus the clusters merged into it (an upper bound); `Keywords`: the post's rows in Keyword Map. The Plan sheet's Volume is unchanged.
+- `Outline Seeds`: the post's own keywords that ask something new (new words versus the main keyword, or a question when the main is not one), largest first, one per line with the real volume: `H2 candidate: where was the first thanksgiving (1,900/mo)`.
+- `Angle (reviewed)`: the `set_angle` decision, else `unreviewed`. `Open Issues`: back-check issues still `open` that name one of the post's keywords. `Decisions Applied`: logged decisions with status applied, applied_with_warning or already_true on the post's keywords (or `STT:<n>`), and `decision_ids` of its keywords.
+- `Why This Post`: data only: keywords owned, owned volume, the SERP-verified share of the volume when known, the priority bucket.
+
+Sheet **Back-check** (with `--backcheck`): `backcheck.csv` as it is; `status` becomes `decided:<decision_id>` when a logged decision with status applied, applied_with_warning or already_true answers the issue (its `source_issue` in the decisions file, its id naming the issue, or the same action, keyword and target as the proposal).
+
+Sheet **Decisions** (with `--decision-log FILE`, repeatable): `Decision ID, Step, Action, Market, Keyword, Target, Value, Author, Status, Detail, Reason, Evidence` (the union of the logs; Reason and Evidence from the decisions file when given).
+
+Sheet **Not Planned** (always): `Market, Keyword or Cluster, Volume, Where It Went, Reason, Nearest Planned Post (STT), Evidence`: the topic map's backlog, skip and merged-away clusters (largest first), then the biggest keywords of `--excluded excluded.csv` (`--not-planned-max`, default 300). The nearest planned post shares the most words with the row once the topic's own words are removed (the shared words are shown); a heuristic.
 
 ## Markers in a post
 
