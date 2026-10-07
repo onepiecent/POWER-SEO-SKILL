@@ -319,9 +319,10 @@ def nearest_post(r: dict, targets: list[dict], hub: dict) -> dict:
 
 
 def select_posts(hub: dict | None, members: list[dict], max_posts: int, min_post_volume: int,
-                 min_post_share: float = 0.02, keep_volume: int = 2000):
-    """Return (kept clusters, {cluster_id: target row}) for one pillar. Nothing is merged unless the pillar has more
-    than max_posts clusters.
+                 min_post_share: float = 0.02, keep_volume: int = 2000, small_pillar: int = 12):
+    """Return (kept clusters, {cluster_id: target row}) for one pillar. max_posts=0 means no cap on the number of
+    posts: the volume thresholds alone decide, and a pillar of up to small_pillar clusters keeps all of them. With
+    max_posts > 0 nothing is merged unless the pillar has more than max_posts clusters, and at most max_posts are kept.
 
     Candidate sub-topics are the clusters' cores and every single word of them. Greedily, the sub-topic that would own
     the most volume (clusters whose core contains it and that no more specific kept sub-topic owns yet) is kept while
@@ -330,7 +331,7 @@ def select_posts(hub: dict | None, members: list[dict], max_posts: int, min_post
     kindergarten', 4,640, next to 'the first thanksgiving', 158,000). The post is named after its representative
     cluster; the other clusters it owns are merged into it."""
     others = [m for m in members if hub is None or m["cluster_id"] != hub["cluster_id"]]
-    if len(members) <= max_posts:
+    if len(members) <= (max_posts or small_pillar):
         return others, {}
     base = core_of(hub) if hub else frozenset()
     floor = max(min_post_volume, min_post_share * sum(volume(r) for r in others))
@@ -345,7 +346,7 @@ def select_posts(hub: dict | None, members: list[dict], max_posts: int, min_post
     owner = {r["cluster_id"]: base for r in others}
     selected: list[frozenset] = []
     gain_of: dict[frozenset, int] = {}
-    while len(selected) < max_posts - (1 if hub else 0):
+    while not max_posts or len(selected) < max_posts - (1 if hub else 0):
         best = None
         for n in nodes:
             if n in gain_of:
@@ -464,8 +465,9 @@ def dedupe_across_pillars(plans: list[dict]) -> None:
 
 
 def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | None, max_pillar_size: int = 30,
-          max_posts: int = 12, min_post_volume: int = 300, max_sub_pillars: int = 10, target_posts: int = 0,
-          min_post_share: float = 0.02, keep_volume: int = 2000):
+          max_posts: int = 0, min_post_volume: int = 300, max_sub_pillars: int = 10, target_posts: int = 0,
+          min_post_share: float = 0.02, keep_volume: int = 2000, small_pillar: int = 12,
+          promote_min_volume: int = 50, promote_min_share: float = 0.15):
     live = [r for r in rows if r["blog_fit"] != "low"]
     skipped = [r for r in rows if r["blog_fit"] == "low"]
     real, leftovers = assign_groups(live, priority, min_clusters)
@@ -512,8 +514,14 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         pillar_ids[(market, ptype, key)] = pid
         title = theme_pillar_title(ptype, key.split("/", 1)[0], theme, market, tax) if theme else pillar_title(ptype, key, market, tax)
         chosen = choose_theme_hub(members) if theme else choose_pillar_cluster(members, ptype)
-        kept, merged = select_posts(chosen, members, max_posts, min_post_volume, min_post_share, keep_volume)
-        plans.append({"pid": pid, "theme": theme, "members": members, "chosen": chosen, "kept": kept, "merged": merged,
+        promoted = False
+        if chosen is None and members:  # no broad head keyword: the strongest cluster becomes the real pillar if strong enough
+            top = max(members, key=lambda r: (volume(r), priority_score(r)))
+            total = sum(volume(r) for r in members)
+            if volume(top) >= promote_min_volume and total and volume(top) / total >= promote_min_share:
+                chosen, promoted = top, True
+        kept, merged = select_posts(chosen, members, max_posts, min_post_volume, min_post_share, keep_volume, small_pillar)
+        plans.append({"pid": pid, "promoted": promoted, "no_pillar": chosen is None, "theme": theme, "members": members, "chosen": chosen, "kept": kept, "merged": merged,
                       "topic": (market, ptype, key.split("/", 1)[0]),
                       "base": {"pillar_id": pid, "pillar_type": ptype, "pillar_key": key, "pillar_name": title,
                                "market": market}})
@@ -522,8 +530,6 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
     for plan in plans:  # slugs first, in plan order, so a post merged across pillars can point to its target
         if plan["chosen"]:
             slug_of[plan["chosen"]["cluster_id"]] = unique_slug(plan["chosen"]["cluster_name"])
-        else:
-            plan["virtual_slug"] = unique_slug(plan["base"]["pillar_name"])
         for r in sorted(plan["kept"], key=lambda r: -volume(r)):
             slug_of[r["cluster_id"]] = unique_slug(r["cluster_name"])
     for plan in plans:
@@ -537,18 +543,12 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
                         "post_type": "pillar-hub", "reader_need": chosen["reader_need"],
                         "cluster_volume": volume(chosen), "priority_score": priority_score(chosen),
                         **facet_cols(chosen), "keywords": chosen["keywords"], "parent_hint": "",
-                        "note": f"pillar chosen from cluster {chosen['cluster_id']}; write it as a hub that covers the clusters below",
-                        "merged_into": ""})
-        else:
-            out.append({**base, "role": "pillar", "cluster_id": "", "primary_keyword": base["pillar_name"].lower(),
-                        "planned_slug": plan["virtual_slug"], "post_type": "pillar-hub", "reader_need": "inspire",
-                        "cluster_volume": 0, "priority_score": round(total * 0.3),
-                        "season": next(iter(seasons)) if len(seasons) == 1 else "", "occasion": "", "recipient": "",
-                        "interest": "", "product": "", "craft": "", "theme": "", "keywords": "", "parent_hint": "",
-                        "note": "VIRTUAL pillar: no cluster is broad enough; research a head keyword, then write the hub",
+                        "note": (f"promoted to real pillar: strongest cluster of the group ({volume(chosen):,} of {total:,}), no broad head keyword; "
+                                 "write it as a hub that covers the clusters below" if plan["promoted"] else
+                                 f"pillar chosen from cluster {chosen['cluster_id']}; write it as a hub that covers the clusters below"),
                         "merged_into": ""})
         for r in sorted(plan["kept"], key=lambda r: -volume(r)):
-            out.append(post_row(base, r, "cluster", slug_of[r["cluster_id"]]))
+            out.append(post_row(base, r, "cluster", slug_of[r["cluster_id"]], note=NO_PILLAR_NOTE if plan["no_pillar"] else ""))
         for r in sorted((m for m in members if m["cluster_id"] in plan["merged"]), key=lambda r: -volume(r)):
             target = plan["merged"][r["cluster_id"]]
             out.append(post_row(base, r, "merged", "", merged_into=slug_of.get(target["cluster_id"], ""),
@@ -619,6 +619,7 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
     return out, gaps
 
 
+NO_PILLAR_NOTE = "No real pillar yet: research a head keyword for this group; until then link these posts to each other"
 PLANNED_ROLES = ("pillar", "cluster", "standalone")
 THEME_GAPS = {
     "gifts": "gift ideas, shirts and custom products for {topic} (the closest fit for Printerval): export seed keywords "
@@ -646,12 +647,14 @@ def write_md(path: str, out: list[dict], gaps: dict) -> None:
             merged_vol[o["merged_into"]] += o["cluster_volume"]
             merged_n[o["merged_into"]] += 1
     for pid, rows in by_pillar.items():
-        head = next(r for r in rows if r["role"] == "pillar")
+        head = next((r for r in rows if r["role"] == "pillar"), None)
+        first = head or rows[0]
         total = sum(r["cluster_volume"] for r in rows)
-        season = f" · season: {head['season']}" if head["season"] else ""
-        lines += [f"## {pid} · {head['pillar_name']}  ({head['pillar_type']} · {head['market']}{season})",
-                  f"Total cluster volume: {total:,}. Pillar: `{head['planned_slug']}` – {head['primary_keyword']}"
-                  + (" (virtual pillar)" if not head["cluster_id"] else ""), "",
+        season = f" · season: {first['season']}" if first["season"] else ""
+        lines += [f"## {pid} · {first['pillar_name']}  ({first['pillar_type']} · {first['market']}{season})",
+                  f"Total cluster volume: {total:,}. "
+                  + (f"Pillar: `{head['planned_slug']}` – {head['primary_keyword']}" if head else
+                     "**No real pillar yet**: research a head keyword for this group."), "",
                   "| Role | Slug | Post type | Reader need | Volume | + merged clusters | Priority |", "|---|---|---|---|---:|---|---|"]
         for r in rows:
             if r["role"] == "merged":
@@ -692,8 +695,15 @@ def main(argv=None) -> int:
     ap.add_argument("--min-clusters", type=int, default=3)
     ap.add_argument("--max-pillar-size", type=int, default=30,
                     help="split a pillar with more clusters than this into one pillar per theme (default 30)")
-    ap.add_argument("--max-posts", type=int, default=12,
-                    help="posts kept per pillar (hub included) when a pillar has more clusters; the rest are merged into the closest post")
+    ap.add_argument("--max-posts", type=int, default=0,
+                    help="optional cap on posts kept per pillar (hub included); default 0 = no cap, the volume thresholds decide")
+    ap.add_argument("--keep-all-up-to", type=int, default=12,
+                    help="with no cap, a pillar of at most this many clusters keeps every cluster (default 12)")
+    ap.add_argument("--promote-min-volume", type=int, default=50,
+                    help="a group with no broad head keyword promotes its strongest cluster to real pillar if it has at least "
+                         "this volume (default 50)")
+    ap.add_argument("--promote-min-share", type=float, default=0.15,
+                    help="... and at least this share of the group's volume (default 0.15)")
     ap.add_argument("--min-post-volume", type=int, default=300,
                     help="in a pillar that is too big, a sub-topic owning less volume than this is merged instead of "
                          "being a post (default 300)")
@@ -718,18 +728,19 @@ def main(argv=None) -> int:
     priority = [p.strip() for p in args.priority.split(",") if p.strip()]
     out, gaps = build(rows, priority, args.min_clusters, tax, args.max_pillar_size, args.max_posts,
                       args.min_post_volume, args.max_sub_pillars, args.target_posts, args.min_post_share,
-                      args.keep_volume)
+                      args.keep_volume, args.keep_all_up_to, args.promote_min_volume, args.promote_min_share)
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "topic-map.csv"), "w", encoding="utf-8", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS)
         w.writeheader()
         w.writerows(out)
     write_md(os.path.join(args.out, "topic-map.md"), out, gaps)
-    n_p = len({o["pillar_id"] for o in out if o["pillar_id"]})
+    n_p = len({o["pillar_id"] for o in out if o["role"] == "pillar"})
+    n_np = len({o["pillar_id"] for o in out if o["pillar_id"]}) - n_p
     counts = defaultdict(int)
     for o in out:
         counts[o["role"]] += 1
-    print(f"{len(rows)} clusters -> {n_p} pillars | " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    print(f"{len(rows)} clusters -> {n_p} pillars ({n_np} groups with no real pillar yet) | " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     print(f"Written to: {os.path.abspath(args.out)}")
     return 0
 

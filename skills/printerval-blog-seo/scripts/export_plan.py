@@ -64,6 +64,7 @@ TEAM_COLUMNS = ["Category", "Title SEO", "Meta Description SEO", "Outline", "Trá
 CHANGES_COLUMNS = ["STT", "Main Keyword", "Change", "Detail"]
 CHANGES_WIDTHS = [6, 44, 30, 90]
 PLANNED = ("pillar", "cluster", "standalone")
+NO_PILLAR = "No real pillar yet (research a head keyword)"
 BODY_LINKS = ("to_pillar", "contextual", "cross_pillar", "from_pillar", "orphan_fix", "related", "backlink_old_post")
 STOP = {"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was", "were", "do", "does", "did", "and"}
 YEAR_RX = re.compile(r"^(19|20)\d\d$")
@@ -153,6 +154,9 @@ class Plan:
         for p in pillars:
             order.append(p)
             order += sorted(by_pillar[p["pillar_id"]], key=lambda r: (-to_int(r["priority_score"], 0), -to_int(r["cluster_volume"], 0)))
+        have = {p["pillar_id"] for p in pillars}
+        for pid in sorted((x for x in by_pillar if x not in have), key=lambda x: (-pillar_vol[x], x)):  # groups with no real pillar yet
+            order += sorted(by_pillar[pid], key=lambda r: (-to_int(r["priority_score"], 0), -to_int(r["cluster_volume"], 0)))
         return order + sorted(loose, key=lambda r: -to_int(r["cluster_volume"], 0))
 
     def url(self, target: str) -> str:
@@ -224,6 +228,15 @@ class Plan:
                 roles.append((k, "also covers"))
         return [k["keyword"] for k in picked], roles
 
+    @staticmethod
+    def anchor_for(target: dict, n: int) -> str:
+        """Fallback anchor when there is no link plan: rotate through the target's main and secondary keywords (by the
+        linking post's STT) so the anchors are not all the main keyword. The URL still follows the main keyword."""
+        cands = [target["primary_keyword"]] + [k for k in target["keywords"].split("|")
+                                               if k and k != target["primary_keyword"] and 2 <= len(k.split()) <= 6
+                                               and not re.search(r"\b(19|20)\d\d\b", k)][:3]
+        return cands[n % len(cands)]
+
     def link_targets(self, post: dict) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
         """(internal links, related posts) as (anchor, target slug)."""
         slug = post["planned_slug"]
@@ -235,12 +248,12 @@ class Plan:
         if not self.links:  # no link plan: hub <-> pillar links and the biggest siblings
             pillar = self.pillar_of(post)
             if post["role"] == "pillar":
-                internal = [(r["primary_keyword"], r["planned_slug"]) for r in self.posts
+                internal = [(self.anchor_for(r, self.stt[slug]), r["planned_slug"]) for r in self.posts
                             if r is not post and self.pillar_of(r) is post]
             elif pillar:
-                internal = [(pillar["primary_keyword"], pillar["planned_slug"])]
+                internal = [(self.anchor_for(pillar, self.stt[slug]), pillar["planned_slug"])]
                 sibs = [r for r in self.posts if r is not post and r is not pillar and self.pillar_of(r) is pillar]
-                related = [(r["primary_keyword"], r["planned_slug"]) for r in sibs]
+                related = [(self.anchor_for(r, self.stt[slug]), r["planned_slug"]) for r in sibs]
         if post["role"] == "pillar":  # a hub also shows the other hubs of the plan
             others = [p for p in self.posts if p["role"] == "pillar" and p is not post and p["market"] == post["market"]]
             related = [(p["primary_keyword"], p["planned_slug"]) for p in others]
@@ -263,7 +276,8 @@ class Plan:
             secondary, roles = self.secondary(post)
             internal, related = self.link_targets(post)
             yield {"n": n, "post": post, "kind": kind, "volume": vol, "kd": kd, "secondary": secondary, "roles": roles,
-                   "pillar": "" if kind == "Pillar" or not pillar else pillar["primary_keyword"],
+                   "pillar": ("" if kind == "Pillar" else pillar["primary_keyword"] if pillar else
+                              NO_PILLAR if post["pillar_id"] else ""),
                    "internal": internal, "related": related, "url": self.url(post["planned_slug"])}
 
 

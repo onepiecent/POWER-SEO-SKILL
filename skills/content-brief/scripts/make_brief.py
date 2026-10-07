@@ -101,7 +101,7 @@ def build_brief(row: dict, topic_rows: list[dict], links: list[dict], seasonal: 
          f"- Planned slug: `{slug}`",
          f"- Market and English variant: {row['market'].upper() if row['market'] != 'all' else 'US (default)'} - {english_variant(row['market'])}",
          f"- Post type: {pt} (role: {row['role']}; priority bucket: {row['bucket'] or '-'})",
-         f"- Pillar: {pillar['pillar_name'] + ' (' + pillar['planned_slug'] + ')' if pillar else (row['pillar_name'] or 'none (standalone)')}",
+         f"- Pillar: {pillar['pillar_name'] + ' (' + pillar['planned_slug'] + ')' if pillar else ('no real pillar yet (research a head keyword; link to the sibling posts of the group)' if row['pillar_id'] else 'none (standalone)')}",
          f"- Reader need: {need}; cluster volume (upper bound): {int(row['cluster_volume'] or 0):,}"]
     if seas:
         L.append(f"- Season: {seas['season']} - event {seas['event_date'] or 'n/a'}; publish new by {seas['publish_new_by'] or 'n/a'}; "

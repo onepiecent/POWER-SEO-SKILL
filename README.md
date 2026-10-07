@@ -120,7 +120,7 @@ python3 -W error::ResourceWarning -m unittest discover -s tests
 python3 tests/make_big_fixture.py 150000 /tmp/big.csv   # performance check
 ```
 
-125 tests: multi-format file reading (including .xlsx), spelling fixes (typos, split, glued and cut-off words), facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, natural post names, filters, topic map with theme pillars, sub-topic posts and merged posts, link plan and audit, contextual links, the final plan export (secondary keywords, schedule, QA and research sheets, published posts, re-runs on a previous plan), the one-command pipeline, holiday dates checked against the real calendar, briefs and the three checkers.
+131 tests: multi-format file reading (including .xlsx), spelling fixes (typos, split, glued and cut-off words), facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, natural post names, filters, topic map with theme pillars, sub-topic posts and merged posts, link plan and audit, contextual links, the final plan export (secondary keywords, schedule, QA and research sheets, published posts, re-runs on a previous plan), the one-command pipeline, holiday dates checked against the real calendar, briefs and the three checkers.
 
 ## Layout
 

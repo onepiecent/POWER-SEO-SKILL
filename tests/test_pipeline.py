@@ -184,14 +184,14 @@ class Pipeline(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             links, plan_dir = self.plan()
             code, *_ = run_main(mb.main, ["--topic-map", os.path.join(self.out, "topic-map.csv"), "--link-plan",
-                                          os.path.join(plan_dir, "link-plan.csv"), "--slug", "mothers-day-gifts-for-grandma,how-to-wash-a-graphic-tee",
+                                          os.path.join(plan_dir, "link-plan.csv"), "--slug", "mothers-day-gifts-for-grandma,how-to-keep-graphic-tees-from-fading",
                                           "--out", d])
             self.assertEqual(code, 0)
             brief = read_text(os.path.join(d, "mothers-day-gifts-for-grandma.md"))
             for needle in ("## Metadata", "American English", "## Outline to follow", "First-hand angle", "[PRODUCT-SLOT:",
                            "[TO FILL", "## Internal links", "mothers-day-gift-ideas", "Definition of done"):
                 self.assertIn(needle, brief)
-            howto = read_text(os.path.join(d, "how-to-wash-a-graphic-tee.md"))
+            howto = read_text(os.path.join(d, "how-to-keep-graphic-tees-from-fading.md"))
             self.assertIn("Quick answer", howto)
 
 
