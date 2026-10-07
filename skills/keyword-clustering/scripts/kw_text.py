@@ -74,11 +74,13 @@ def stem(tok: str) -> str:
 
 
 def weighted_jaccard(a: frozenset, b: frozenset, weak: frozenset) -> float:
+    """Jaccard with weak tokens ('gift', 'ideas', 'best') weighing 0.3. Weights are summed as integers (10 and 3) so
+    the score does not depend on set order: float sums did, and a pair exactly at the threshold flipped between runs."""
     if not a or not b:
         return 0.0
-    inter = union = 0.0
+    inter = union = 0
     for t in a | b:
-        w = 0.3 if t in weak else 1.0
+        w = 3 if t in weak else 10
         union += w
         if t in a and t in b:
             inter += w
@@ -264,11 +266,13 @@ class Taxonomy:
             return self.theme_year_only
         return ""
 
-    def classify_need(self, norm: str, facets: dict) -> str:
+    def classify_need(self, norm: str, facets: dict, product_shop: bool = True) -> str:
+        """First matching rule; else a keyword that only names a product is 'shop' (product_shop=False skips that
+        fallback, used when the tool's intent or the SERP features say the reader wants information)."""
         for need, rx in self.need_rx:
             if rx.search(norm):
                 return need
-        if facets["product"]:
+        if facets["product"] and product_shop:
             return "shop"
         if facets.get("theme") and self.theme_need.get(facets["theme"]):
             return self.theme_need[facets["theme"]]
@@ -434,25 +438,35 @@ class Respeller:
                 completions[(a, b)] = ranked[0][1]
         return cls(typos, joins, splits, completions)
 
-    def apply(self, norm: str) -> str:
+    def apply(self, norm: str, trace: list | None = None) -> str:
+        """The corrected text. trace (a list) receives every fix applied: (kind, from, to) with kind in typo, join,
+        split, completion (written to spelling-fixes.csv)."""
         if not (self.typos or self.joins or self.splits or self.completions):
             return norm
         toks, out, i = norm.split(), [], 0
         while i < len(toks):
             if i + 1 < len(toks) and (toks[i], toks[i + 1]) in self.joins:
                 out.append(self.joins[(toks[i], toks[i + 1])])
+                if trace is not None:
+                    trace.append(("join", f"{toks[i]} {toks[i + 1]}", out[-1]))
                 i += 2
             elif toks[i] in self.splits:
                 out.extend(self.splits[toks[i]])
+                if trace is not None:
+                    trace.append(("split", toks[i], " ".join(self.splits[toks[i]])))
                 i += 1
             else:
                 out.append(toks[i])
                 i += 1
         fixed = [self.typos.get(t, t) for t in out]
+        if trace is not None:
+            trace += [("typo", a, b) for a, b in zip(out, fixed) if a != b]
         if len(out) >= 2:  # only the LAST word can be cut off
             for prev in (out[-2], fixed[-2]):
                 if (prev, out[-1]) in self.completions:
                     fixed[-1] = self.completions[(prev, out[-1])]
+                    if trace is not None:
+                        trace.append(("completion", f"{prev} {out[-1]}", f"{prev} {fixed[-1]}"))
                     break
         return " ".join(fixed)
 

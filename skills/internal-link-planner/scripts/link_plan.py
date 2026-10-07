@@ -129,10 +129,25 @@ class Planner:
     def shared(self, a: dict, b: dict) -> int:
         return sum(1 for f in FACETS if a.get(f) and a.get(f) == b.get(f))
 
-    def pick_anchor(self, target: dict) -> tuple[str, str]:
+    def pick_anchor(self, target: dict, source: dict | None = None) -> tuple[str, str]:
+        """Diverse, descriptive anchors. The target's URL always comes from its MAIN keyword; the anchor does not have
+        to be it. Candidates are the main keyword and the target's secondary keywords. Each exact text is used as
+        little as possible, one text never points at two targets (cannibalisation), the candidate that best fits the
+        SOURCE post's own wording comes first (semantic context), and the exact main keyword is kept to about a quarter
+        of the links to a target (but is used when it was never used and the target has 3 or more links)."""
         slug = target["planned_slug"]
         cands = anchor_candidates(target)
-        order = sorted(range(len(cands)), key=lambda i: (self.anchor_use[f"{slug}|{cands[i]}"], i))
+        ctx = self.words.get(source["planned_slug"], {}) if source else {}
+        total = sum(self.anchor_use[f"{slug}|{c}"] for c in cands)
+        main_uses = self.anchor_use[f"{slug}|{cands[0]}"]
+        want_main = total >= 3 and main_uses * 4 < total
+
+        def overlap(c: str) -> int:
+            return sum(1 for t in word_counts([c]) if t in ctx)
+        order = sorted(range(len(cands)), key=lambda i: (
+            self.anchor_use[f"{slug}|{cands[i]}"],
+            (i != 0) if want_main else (i == 0),  # main first only when it is owed, else secondary keywords first
+            -overlap(cands[i]), i))
         for i in order:
             owner = self.anchor_owner.get(cands[i].lower())
             if owner in (None, slug):
@@ -155,9 +170,10 @@ class Planner:
     def add(self, src: str, dst: str, ltype: str, placement: str, priority: int, reason: str) -> None:
         if src == dst or src not in self.posts or dst not in self.posts or (src, dst) in self.links:
             return
-        anchor, alts = self.pick_anchor(self.posts[dst])
+        anchor, alts = self.pick_anchor(self.posts[dst], self.posts[src])
         self.links[(src, dst)] = {
             "source_slug": src, "source_keyword": self.posts[src]["primary_keyword"], "target_slug": dst,
+            "target_main_keyword": self.posts[dst]["primary_keyword"],
             "link_type": ltype, "anchor": anchor, "anchor_alternatives": alts, "placement": placement,
             "priority": priority, "status": self.status(src, dst), "reason": reason}
 
@@ -181,9 +197,11 @@ class Planner:
             if p["pillar_id"]:
                 by_pillar[p["pillar_id"]].append(p)
         for pid, members in by_pillar.items():
-            pillar = self.pillar_slug[pid]
+            pillar = self.pillar_slug.get(pid)  # None: the group has no real pillar yet, its posts link to each other
             clusters = [m for m in members if m["role"] == "cluster"]
             for c in clusters:
+                if not pillar:
+                    break
                 self.add(c["planned_slug"], pillar, "to_pillar", "intro or first H2 (first half of the post)", 1,
                          "cluster links up to its pillar")
                 self.add(pillar, c["planned_slug"], "from_pillar", "section that covers this angle", 1,
@@ -283,7 +301,7 @@ class Planner:
                         incoming_old.append(src["planned_slug"])
 
 
-FIELDS = ["source_slug", "source_keyword", "target_slug", "link_type", "anchor", "anchor_alternatives",
+FIELDS = ["source_slug", "source_keyword", "target_slug", "target_main_keyword", "link_type", "anchor", "anchor_alternatives",
           "placement", "priority", "status", "reason"]
 
 
@@ -312,6 +330,7 @@ def run_plan(args) -> int:
     lines = ["# Internal link plan summary", "",
              f"- {len(pl.posts)} posts, {len(links)} proposed links", "- By type: " +
              ", ".join(f"{k}={v}" for k, v in sorted(types.items())),
+             f"- Anchors that are the exact main keyword of the target: {sum(1 for l in links if l['anchor'].lower() == l['target_main_keyword'].lower())} of {len(links)} (the URL slug always follows the main keyword, the anchor may be a secondary keyword)",
              f"- Posts with no inbound link: {sum(1 for s in pl.posts if pl.inbound(s) == 0)}",
              f"- Posts with no outbound link: {sum(1 for s in pl.posts if pl.outbound(s) == 0)}", ""]
     if pl.unresolved:
@@ -320,7 +339,7 @@ def run_plan(args) -> int:
         lines += [f"- `{s}`: {why}" for s, why in pl.unresolved] + [""]
     if warn:
         lines += ["## Density to check", *warn, ""]
-    lines += ["## Notes for writers", "- Anchors are suggestions only: rewrite them to fit the sentence (2-8 words) and to describe the target page accurately.",
+    lines += ["## Notes for writers", "- The target URL is built from the target's MAIN keyword; the anchor is chosen for the sentence it sits in and may be one of the target's secondary keywords.", "- Anchors are suggestions only: rewrite them to fit the sentence (2-8 words) and to describe the target page accurately.",
               "- Link to each target URL only once per post; put the 1-2 most important links in the first half of the post.",
               "- For UK posts use British spelling in anchors (mum, personalised)."]
     with open(os.path.join(args.out, "link-summary.md"), "w", encoding="utf-8") as fh:

@@ -245,6 +245,133 @@ class PlanQA(unittest.TestCase):
         self.assertIn("items to review", plan_qa.summary(qa))
 
 
+class NoClusterCap(unittest.TestCase):
+    def test_no_cap_keeps_every_strong_sub_topic(self):
+        members = [row("H", "thanksgiving activities", 9000)]
+        members += [row(f"S{i}", f"thanksgiving topic{i}", 1000, f"topic{i}") for i in range(30)]
+        kept, _ = tm.select_posts(members[0], members, 0, 300)
+        self.assertEqual(len(kept), 30)  # no 12-post cap: every sub-topic over the thresholds is a post
+        kept, merged = tm.select_posts(members[0], members, 12, 300)
+        self.assertEqual(len(kept), 11)  # an explicit --max-posts still caps
+        self.assertEqual(len(merged), 19)
+
+    def test_small_pillar_keeps_everything_without_a_cap(self):
+        members = [row("H", "thanksgiving activities", 900), row("A", "thanksgiving games", 50, "game")]
+        kept, merged = tm.select_posts(members[0], members, 0, 300)
+        self.assertEqual(([r["cluster_id"] for r in kept], merged), (["A"], {}))
+
+
+def cl(cid, name, vol, need="how_to", **facets):
+    d = {"cluster_id": cid, "cluster_name": name, "cluster_volume": str(vol), "seed_volume": str(vol), "core": "",
+         "seed_kd": "30", "blog_fit": "high", "reader_need": need, "theme": "", "name_fluency": "-2",
+         "keywords": f"{name}|{name} tips|{name} at home", "market": "us", "season": "", "occasion": "",
+         "recipient": "", "interest": "", "product": "", "craft": ""}
+    d.update(facets)
+    return d
+
+
+class RealPillarsOnly(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        rows = [cl("M1", "how to make custom mugs", 110, product="mug"), cl("M2", "how to print on a mug", 80, product="mug"),
+                cl("M3", "how to wash printed mugs", 50, product="mug"), cl("M4", "mug care tips", 40, product="mug"),
+                cl("D1", "how to design a logo", 30, craft="design"), cl("D2", "how to design a poster", 25, craft="design"),
+                cl("D3", "how to design a tee", 25, craft="design"), cl("D4", "how to design a flyer", 20, craft="design")]
+        cls.out, _ = tm.build(rows, ["occasion", "interest", "recipient", "craft", "product"], 3, None)
+
+    def test_strong_group_promotes_its_best_cluster_weak_group_gets_no_pillar(self):
+        pillars = [o for o in self.out if o["role"] == "pillar"]
+        self.assertEqual([p["primary_keyword"] for p in pillars], ["how to make custom mugs"])  # no virtual pillar
+        self.assertIn("promoted", pillars[0]["note"])
+        design = [o for o in self.out if o["role"] == "cluster" and o["pillar_key"] == "design"]
+        self.assertEqual(len(design), 4)
+        self.assertTrue(all(tm.NO_PILLAR_NOTE == o["note"] for o in design))
+        self.assertFalse([o for o in self.out if o["role"] != "skip" and o["planned_slug"] == "design-guide"])
+
+    def test_links_and_plan_without_a_pillar(self):
+        planner = lp.Planner(self.out, None, 3, 2)
+        planner.build()
+        design = {o["planned_slug"] for o in self.out if o["pillar_key"] == "design"}
+        links = [l for l in planner.links.values() if l["source_slug"] in design]
+        self.assertTrue(links and all(l["target_slug"] in design for l in links))  # siblings only, no dangling pillar
+        self.assertNotIn("guide to", " ".join(l["anchor"] for l in planner.links.values()))
+        csv_rows = [o for o in self.out if o["role"] in ("pillar", "cluster", "standalone")]
+        plan = ep.Plan(csv_rows, [], None, "https://printerval.com/{slug}", 10, "main", 3, year=2026)
+        pillar_col = {r["post"]["planned_slug"]: r["pillar"] for r in plan.rows()}
+        self.assertEqual(pillar_col["how-to-design-a-logo"], ep.NO_PILLAR)
+        self.assertEqual(pillar_col["how-to-print-on-a-mug"], "how to make custom mugs")
+
+
+class SeoPillarsAreKept(unittest.TestCase):
+    """A grouped file that already has pillars (the plan's Category Kind / Thuộc Pillar) keeps them: the engine would
+    have made 'secret santa gift ideas' the hub of every Christmas post."""
+
+    def test_the_grouped_files_pillars_win_and_the_rest_goes_to_the_engine(self):
+        seo = dict(occasion="christmas", theme="gifts")
+        rows = [cl("S1", "christmas gift ideas", 9000, "inspire", prior_group="1", prior_role="Pillar", **seo),
+                cl("S2", "christmas gifts for mom", 6000, "inspire", prior_group="2", prior_role="Cluster",
+                   prior_pillar="christmas gift ideas", recipient="mom", **seo),
+                cl("S3", "secret santa gift ideas", 8000, "inspire", prior_group="3", prior_role="Cluster",
+                   prior_pillar="Christmas Gift Ideas", **seo),
+                cl("S4", "christmas card messages", 7000, "copy_ideas", prior_group="4", prior_role="Cluster",
+                   prior_pillar="No real pillar yet (research a head keyword)", occasion="christmas", theme="messages"),
+                cl("E1", "christmas quotes", 20000, "copy_ideas", occasion="christmas", theme="messages"),
+                cl("E2", "funny christmas quotes", 3000, "copy_ideas", occasion="christmas", theme="messages")]
+        out, _ = tm.build(rows, ["occasion", "interest", "recipient", "craft", "product"], 3, None)
+        hub = next(o for o in out if o["primary_keyword"] == "christmas gift ideas")
+        self.assertEqual(hub["role"], "pillar")
+        self.assertIn("SEO's grouped file", hub["note"])
+        under = {o["primary_keyword"] for o in out if o["pillar_id"] == hub["pillar_id"] and o["role"] == "cluster"}
+        self.assertEqual(under, {"christmas gifts for mom", "secret santa gift ideas"})
+        rest = {o["primary_keyword"]: o for o in out if o["primary_keyword"] in ("christmas card messages", "christmas quotes")}
+        self.assertNotEqual(rest["christmas card messages"]["pillar_id"], hub["pillar_id"])  # not named: the engine decides
+        self.assertTrue(all(o["role"] in ("pillar", "cluster", "standalone") for o in rest.values()))
+
+
+class AudienceHubCoversItsGroup(unittest.TestCase):
+    def test_a_product_or_recipient_cluster_never_heads_an_occasion_pillar(self):
+        xmas = dict(occasion="christmas")
+        rows = [cl("Q", "christmas quotes", 60500, "copy_ideas", theme="messages", **xmas),
+                cl("O", "diy christmas ornaments", 36100, "how_to", theme="crafts", product="ornament", **xmas),
+                cl("C", "christmas card messages", 24700, "copy_ideas", theme="messages", **xmas),
+                cl("S", "christmas shirt ideas", 4800, "inspire", theme="gifts", product="shirt", **xmas),
+                cl("M", "christmas gifts for mom", 3000, "inspire", theme="gifts", recipient="mom", **xmas)]
+        out, _ = tm.build(rows, ["occasion", "interest", "recipient", "craft", "product"], 3, None)
+        hub = [o["primary_keyword"] for o in out if o["role"] == "pillar"]
+        self.assertEqual(hub, ["christmas quotes"])  # the broad cluster, promoted; not the shirt or mom post
+        self.assertIn("promoted", next(o for o in out if o["role"] == "pillar")["note"])
+
+
+class DiverseAnchors(unittest.TestCase):
+    def setUp(self):
+        def p(slug, kw, kws, vol=500):
+            return {"pillar_id": "P01", "pillar_key": "mug", "role": "cluster", "cluster_id": slug, "primary_keyword": kw,
+                    "planned_slug": slug, "cluster_volume": str(vol), "priority_score": str(vol), "market": "us",
+                    "keywords": "|".join([kw] + kws), "post_type": "how-to", "parent_hint": "", "merged_into": "",
+                    "product": "mug"}
+        self.rows = [p("how-to-make-custom-mugs", "how to make custom mugs",
+                       ["custom mug design ideas", "make your own mug at home", "personalised mug tips", "diy photo mugs"], 900)]
+        self.rows += [p(f"mug-post-{i}", f"mug topic {i}", [f"mug topic {i} extra"], 100) for i in range(6)]
+
+    def test_anchors_vary_and_the_slug_follows_the_main_keyword(self):
+        planner = lp.Planner(self.rows, None, 6, 2)
+        planner.build()
+        into = [l for l in planner.links.values() if l["target_slug"] == "how-to-make-custom-mugs"]
+        self.assertGreaterEqual(len(into), 5)
+        anchors = [l["anchor"] for l in into]
+        self.assertEqual(len(set(anchors)), 5)  # all 5 candidate texts are used before any is repeated
+        self.assertLessEqual(sum(a == "how to make custom mugs" for a in anchors), 2)  # not mostly the main keyword
+        self.assertTrue(set(anchors) - {"how to make custom mugs"} <= set(self.rows[0]["keywords"].split("|")))
+        self.assertTrue(all(l["target_main_keyword"] == "how to make custom mugs" for l in into))
+        self.assertEqual(self.rows[0]["planned_slug"], tm.slugify(self.rows[0]["primary_keyword"]))
+
+    def test_main_keyword_is_still_used_as_exact_match_now_and_then(self):
+        planner = lp.Planner(self.rows, None, 6, 2)
+        planner.build()
+        into = [l["anchor"] for l in planner.links.values() if l["target_slug"] == "how-to-make-custom-mugs"]
+        self.assertIn("how to make custom mugs", into)
+
+
 class ContextualLinks(unittest.TestCase):
     def test_related_posts_in_other_theme_pillars_get_body_links(self):
         def t(pid, key, role, kw, slug, kws, merged_into=""):

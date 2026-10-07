@@ -21,7 +21,9 @@ Columns (the team's template, in this order):
 Other sheets: Keyword Map (every keyword placed in the plan and the post it belongs to), Schedule (writing order:
 deadlines from editorial-calendar's seasonal-plan.csv, then priority), QA (what a person should review before handing
 the plan over: overlapping posts, misplaced keywords, orphans...) and, for a one-topic export, Research Next (themes a
-POD blog needs that the file barely covers, with seed keywords to export).
+POD blog needs that the file barely covers, with seed keywords to export). After them (plan_review.py): Review (what
+each post rests on, from the data only), Back-check (--backcheck, status updated from the decision logs), Decisions
+(--decision-log) and Not Planned (backlog, skip and merged-away clusters, the biggest keywords of --excluded).
 """
 from __future__ import annotations
 
@@ -37,7 +39,9 @@ from collections import defaultdict
 from xml.sax.saxutils import escape
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import plan_decisions  # noqa: E402
 import plan_qa  # noqa: E402
+import plan_review  # noqa: E402
 import table_io  # noqa: E402
 from published import Published, anchor_from_title  # noqa: E402
 
@@ -64,6 +68,7 @@ TEAM_COLUMNS = ["Category", "Title SEO", "Meta Description SEO", "Outline", "Trá
 CHANGES_COLUMNS = ["STT", "Main Keyword", "Change", "Detail"]
 CHANGES_WIDTHS = [6, 44, 30, 90]
 PLANNED = ("pillar", "cluster", "standalone")
+NO_PILLAR = "No real pillar yet (research a head keyword)"
 BODY_LINKS = ("to_pillar", "contextual", "cross_pillar", "from_pillar", "orphan_fix", "related", "backlink_old_post")
 STOP = {"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was", "were", "do", "does", "did", "and"}
 YEAR_RX = re.compile(r"^(19|20)\d\d$")
@@ -119,6 +124,7 @@ class Plan:
         self.extra_internal: dict[str, list[tuple[str, str]]] = defaultdict(list)  # slug -> (anchor, published URL)
         self.extra_related: dict[str, list[tuple[str, str]]] = defaultdict(list)
         self.team: dict[str, dict[str, str]] = {}  # slug -> the content team's columns from a previous plan
+        self.angle_of: dict[str, str] = {}  # slug -> reviewed angle (set_angle decision), for the Review sheet
         self.topic = topic
         self.links = links or []
         self.kw_by_cluster: dict[str, list[dict]] = defaultdict(list)
@@ -153,6 +159,9 @@ class Plan:
         for p in pillars:
             order.append(p)
             order += sorted(by_pillar[p["pillar_id"]], key=lambda r: (-to_int(r["priority_score"], 0), -to_int(r["cluster_volume"], 0)))
+        have = {p["pillar_id"] for p in pillars}
+        for pid in sorted((x for x in by_pillar if x not in have), key=lambda x: (-pillar_vol[x], x)):  # groups with no real pillar yet
+            order += sorted(by_pillar[pid], key=lambda r: (-to_int(r["priority_score"], 0), -to_int(r["cluster_volume"], 0)))
         return order + sorted(loose, key=lambda r: -to_int(r["cluster_volume"], 0))
 
     def url(self, target: str) -> str:
@@ -224,6 +233,15 @@ class Plan:
                 roles.append((k, "also covers"))
         return [k["keyword"] for k in picked], roles
 
+    @staticmethod
+    def anchor_for(target: dict, n: int) -> str:
+        """Fallback anchor when there is no link plan: rotate through the target's main and secondary keywords (by the
+        linking post's STT) so the anchors are not all the main keyword. The URL still follows the main keyword."""
+        cands = [target["primary_keyword"]] + [k for k in target["keywords"].split("|")
+                                               if k and k != target["primary_keyword"] and 2 <= len(k.split()) <= 6
+                                               and not re.search(r"\b(19|20)\d\d\b", k)][:3]
+        return cands[n % len(cands)]
+
     def link_targets(self, post: dict) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
         """(internal links, related posts) as (anchor, target slug)."""
         slug = post["planned_slug"]
@@ -235,12 +253,12 @@ class Plan:
         if not self.links:  # no link plan: hub <-> pillar links and the biggest siblings
             pillar = self.pillar_of(post)
             if post["role"] == "pillar":
-                internal = [(r["primary_keyword"], r["planned_slug"]) for r in self.posts
+                internal = [(self.anchor_for(r, self.stt[slug]), r["planned_slug"]) for r in self.posts
                             if r is not post and self.pillar_of(r) is post]
             elif pillar:
-                internal = [(pillar["primary_keyword"], pillar["planned_slug"])]
+                internal = [(self.anchor_for(pillar, self.stt[slug]), pillar["planned_slug"])]
                 sibs = [r for r in self.posts if r is not post and r is not pillar and self.pillar_of(r) is pillar]
-                related = [(r["primary_keyword"], r["planned_slug"]) for r in sibs]
+                related = [(self.anchor_for(r, self.stt[slug]), r["planned_slug"]) for r in sibs]
         if post["role"] == "pillar":  # a hub also shows the other hubs of the plan
             others = [p for p in self.posts if p["role"] == "pillar" and p is not post and p["market"] == post["market"]]
             related = [(p["primary_keyword"], p["planned_slug"]) for p in others]
@@ -263,7 +281,8 @@ class Plan:
             secondary, roles = self.secondary(post)
             internal, related = self.link_targets(post)
             yield {"n": n, "post": post, "kind": kind, "volume": vol, "kd": kd, "secondary": secondary, "roles": roles,
-                   "pillar": "" if kind == "Pillar" or not pillar else pillar["primary_keyword"],
+                   "pillar": ("" if kind == "Pillar" else pillar["primary_keyword"] if pillar else
+                              NO_PILLAR if post["pillar_id"] else ""),
                    "internal": internal, "related": related, "url": self.url(post["planned_slug"])}
 
 
@@ -673,6 +692,17 @@ def main(argv=None) -> int:
                     help="related published posts listed first in Related Post (default 1)")
     ap.add_argument("--previous", help="a previous final-plan.xlsx/.csv the team already works in: keep its STT, "
                                        "the team's columns and real URLs (sheet Changes lists what moved)")
+    ap.add_argument("--decisions", help="decisions file (CSV, or .xlsx sheet Decisions): set_category/title/meta/outline "
+                                        "fill EMPTY team cells only, set_angle, research_seed (Research Next); "
+                                        "log decisions-log-export.csv next to --out")
+    ap.add_argument("--backcheck", help="backcheck.csv from keyword-clustering: sheet Back-check (status updated from "
+                                        "the decision logs) and Open Issues in sheet Review")
+    ap.add_argument("--decision-log", action="append", default=[],
+                    help="decisions-log-<step>.csv (repeatable): sheet Decisions and Decisions Applied in sheet Review")
+    ap.add_argument("--excluded", help="excluded.csv from keyword-clustering: its biggest keywords are listed in sheet "
+                                       "Not Planned")
+    ap.add_argument("--not-planned-max", type=int, default=300,
+                    help="excluded keywords listed in sheet Not Planned, largest first (default 300)")
     args = ap.parse_args(argv)
     if "{slug}" not in args.url_pattern:
         ap.error("--url-pattern must contain {slug}")
@@ -694,6 +724,9 @@ def main(argv=None) -> int:
         kept_rows, changes = carry_previous(plan, list(plan.rows()), previous)
     if pub or args.previous:
         rows = list(plan.rows())  # again, with the published URLs, links and stable STT
+    decision_log, decision_research = [], []
+    if args.decisions:  # after --previous: a team value always wins over a decision
+        decision_log, decision_research = plan_decisions.apply(plan_decisions.read_decisions(args.decisions), plan, rows)
     xlsx_rows, csv_rows, map_rows = build_outputs(plan, args.plain_links, rows)
     xlsx_rows += kept_rows
     csv_rows += kept_rows
@@ -702,17 +735,35 @@ def main(argv=None) -> int:
     seasonal = read_csv(args.seasonal_plan) if args.seasonal_plan else None
     schedule = schedule_rows(rows, seasonal, today, plan.url_override)
     with open(args.research_seeds, encoding="utf-8") as fh:
-        research = research_rows(topic, keywords, json.load(fh), pub)
+        research = research_rows(topic, keywords, json.load(fh), pub) + decision_research
+    # the other steps' logs, then this run's export log (its file is written below, after run_plan collected the logs)
+    logs = [row for path in args.decision_log if os.path.basename(path) != "decisions-log-export.csv"
+            for row in plan_review.read_rows(path)] + decision_log
+    decisions_file = getattr(args, "decisions", None)  # --decisions: reason and evidence of each logged decision
+    decisions = plan_review.read_decisions(decisions_file) if decisions_file else []
+    issues = plan_review.backcheck_status(plan_review.read_rows(args.backcheck), logs, decisions) if args.backcheck else None
+    review = plan_review.review_rows(plan, rows, signature, LIGHT, issues, logs)
+    not_planned = plan_review.not_planned_rows(plan, topic, plan_review.read_rows(args.excluded) if args.excluded else [],
+                                               signature, args.not_planned_max)
+    bc_columns = list(issues[0]) if issues else plan_review.BACKCHECK_COLUMNS
 
     out = args.out if args.out.lower().endswith(".xlsx") else args.out + ".xlsx"
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    if args.decisions:
+        plan_decisions.write_log(os.path.join(os.path.dirname(os.path.abspath(out)), "decisions-log-export.csv"), decision_log)
     write_xlsx(out, [("Plan", sheet_xml(COLUMNS, xlsx_rows, WIDTHS, [(col_letter(COL["Category Kind"]), ["Pillar", "Cluster"])])),
                      ("Keyword Map", sheet_xml(MAP_COLUMNS, map_rows, MAP_WIDTHS)),
                      ("Schedule", sheet_xml(SCHEDULE_COLUMNS, schedule, SCHEDULE_WIDTHS)),
                      ("QA", sheet_xml(plan_qa.QA_COLUMNS, qa, plan_qa.QA_WIDTHS))]
                + ([("Research Next", sheet_xml(RESEARCH_COLUMNS, research, RESEARCH_WIDTHS))] if research else [])
                + ([("Published Match", sheet_xml(PUBLISHED_COLUMNS, published_sheet, PUBLISHED_WIDTHS))] if pub else [])
-               + ([("Changes", sheet_xml(CHANGES_COLUMNS, changes, CHANGES_WIDTHS))] if args.previous else []))
+               + ([("Changes", sheet_xml(CHANGES_COLUMNS, changes, CHANGES_WIDTHS))] if args.previous else [])
+               + [("Review", sheet_xml(plan_review.REVIEW_COLUMNS, review, plan_review.REVIEW_WIDTHS))]
+               + ([("Back-check", sheet_xml(bc_columns, [[i.get(c, "") for c in bc_columns] for i in issues],
+                                            [14] * len(bc_columns)))] if issues is not None else [])
+               + ([("Decisions", sheet_xml(plan_review.DECISIONS_COLUMNS, plan_review.decision_rows(logs, decisions),
+                                           plan_review.DECISIONS_WIDTHS))] if logs else [])
+               + [("Not Planned", sheet_xml(plan_review.NOT_PLANNED_COLUMNS, not_planned, plan_review.NOT_PLANNED_WIDTHS))])
     csv_path = out[:-5] + ".csv"
     with open(csv_path, "w", encoding="utf-8-sig", newline="") as fh:  # BOM: Excel opens the Vietnamese headers correctly
         w = csv.writer(fh)
@@ -736,6 +787,12 @@ def main(argv=None) -> int:
             kinds[x[2]] += 1
         print(f"Published: {len(pub.posts):,} posts read; " + ", ".join(f"{k} {v}" for k, v in kinds.items())
               + " (sheet Published Match; URL Blog uses the published URL for 'update this post')")
+    if args.decisions:
+        print(plan_decisions.summary(decision_log) + " (decisions-log-export.csv)")
+    unreviewed = sum(1 for x in review if x[plan_review.REVIEW_COLUMNS.index("Angle (reviewed)")] == "unreviewed")
+    print(f"Review: {len(review)} posts, {unreviewed} without a reviewed angle; Not Planned: {len(not_planned)} rows"
+          + (f"; Back-check: {sum(1 for i in issues if i.get('status') == 'open')} open issues" if issues is not None else "")
+          + (f"; Decisions: {len(logs)} logged" if logs else ""))
     gaps = [f"{x[1]} ({x[5]})" for x in research if x[5] in ("missing", "thin")]
     if gaps:
         print("Research Next: themes to export seed keywords for: " + ", ".join(gaps))

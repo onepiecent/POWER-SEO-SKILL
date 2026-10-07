@@ -21,16 +21,19 @@ Scope: **blog content**. No technical audit, no URL or sitemap work (being optim
 ## Workflow
 
 ```
-CSV or .xlsx from the SEO specialist
-  -> keyword-clustering -> clusters.csv + cluster-report.md   (read the report first)
+Raw export and/or a file the SEO already grouped (--prior)
+  -> keyword-clustering -> clusters.csv + cluster-report.md + backcheck.csv   (read the reports first)
     -> topic-map -> topic-map.csv
         |- editorial-calendar -> seasonal-plan.csv
         |- internal-link-planner -> link-plan.csv
-        |    '- export_plan.py -> final-plan.xlsx   (the content team's sheet + schedule, QA, research next)
+        |    '- export_plan.py -> final-plan.xlsx   (the content team's sheet + schedule, QA, research next,
+        |                                            review, back-check, decisions, not planned)
         '- content-brief -> briefs/*.md -> write the article
               -> helpful-content-editor + claims-compliance-check
               -> product-slot (content team adds the links) -> publish
 ```
+
+Three kinds of input go through one command, `skills/printerval-blog-seo/scripts/run_plan.py`: a raw export (`run_plan.py export.xlsx --market us --out outputs`), a file the SEO already grouped (`--prior grouped.xlsx::us`; its groups are kept and back-checked against the data, never regrouped silently), or both (the export back-fills volume, KD, intent and SERP features and supplements missing keywords). Judgment calls go into a decisions file (`--decisions decisions.csv`), each with a reason and evidence; the scripts apply them deterministically, reject a Claude decision the SERP data contradicts and log every one in the final file. Claude reviews in two passes (structure, then content): see `skills/printerval-blog-seo/SKILL.md` and `skills/keyword-clustering/references/backcheck-and-decisions.md`.
 
 ## Quick start (Python 3, standard library only; tested on 3.13)
 
@@ -92,7 +95,7 @@ SEO specialists describe what they need in plain words; the skill turns that int
 | US and UK | `us.csv::us uk.csv::uk`, or a Country column |
 | New niches | `--extend-taxonomy extra.json` (suggestions are written to `taxonomy-suggestions.csv`) |
 
-The script reads Excel files and UTF-16/tab files (Keyword Planner), description lines above the header, `, ; tab |` delimiters and numbers such as `1K - 10K` or `1.234`. It fixes typos learned from the file itself and drops noisy keywords (retailers, "near me", Spanish, politics, homework answer keys, opening hours, TV shows, restaurant menus, school calendars, and similar) **with a reason for each** in `excluded.csv`. 150,000 keywords take about 80 seconds.
+The script reads Excel files (every sheet) and UTF-16/tab files (Keyword Planner), description lines above the header, `, ; tab |` delimiters, cells with several lines, and numbers such as `1K - 10K` or `1.234`. It keeps the evidence the tools export (intent, SERP features, Semrush Trend, Ahrefs SV trend and Traffic potential, Keyword Planner monthly searches, the ranking URL), names the tool and the market of each file, counts a keyword found in two files once, and says in `cluster-report.md` how much of the grouping rests on SERP data; `serp-check.csv` lists the groupings to check on the live SERP and `spelling-fixes.csv` every spelling correction. It fixes typos learned from the file itself and drops noisy keywords (retailers, "near me", Spanish, politics, homework answer keys, opening hours, TV shows, restaurant menus, school calendars, and similar) **with a reason for each** in `excluded.csv`. 150,000 keywords take about 85 seconds.
 
 ## Content principles
 
@@ -120,7 +123,7 @@ python3 -W error::ResourceWarning -m unittest discover -s tests
 python3 tests/make_big_fixture.py 150000 /tmp/big.csv   # performance check
 ```
 
-125 tests: multi-format file reading (including .xlsx), spelling fixes (typos, split, glued and cut-off words), facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, natural post names, filters, topic map with theme pillars, sub-topic posts and merged posts, link plan and audit, contextual links, the final plan export (secondary keywords, schedule, QA and research sheets, published posts, re-runs on a previous plan), the one-command pipeline, holiday dates checked against the real calendar, briefs and the three checkers.
+205 tests: multi-format file reading (including .xlsx with every sheet, multi-line cells and fixtures built on real Semrush, Ahrefs, Keyword Planner and Search Console headers), evidence parsing (intent, SERP features, trend, Keyword Planner buckets), joining the same keyword from several files, spelling fixes (typos, split, glued and cut-off words), facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, natural post names, filters, topic map with theme pillars, sub-topic posts and merged posts, link plan and audit, contextual links, the final plan export (secondary keywords, schedule, QA and research sheets, published posts, re-runs on a previous plan), the one-command pipeline, the SEO's grouped file kept as the baseline (with its pillars), the back-check of every group with a proposed decision per issue, the decisions file applied by the cluster, topic and export steps with a log per decision, the Review, Back-check, Decisions and Not Planned sheets, holiday dates checked against the real calendar, briefs and the three checkers.
 
 ## Layout
 
