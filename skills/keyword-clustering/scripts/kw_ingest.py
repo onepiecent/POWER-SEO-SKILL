@@ -2,21 +2,28 @@
 """Read "real" keyword export files from SEO specialists. Standard library only.
 
 Situations handled:
-  * Excel workbooks (.xlsx/.xlsm, the default Semrush export): the first sheet with a keyword column is read;
+  * Excel workbooks (.xlsx/.xlsm, the default Semrush export): read_tables reads every sheet with a keyword column
+    (one per group in a Semrush "export with groups" or a hand-made workbook); read_keywords reads the first one;
   * UTF-16 + tab (Google Keyword Planner, some Ahrefs exports), UTF-8 with BOM, cp1252;
   * the header row is not the first line (Keyword Planner has 2-3 description lines above it);
-  * delimiters , ; tab |;
+  * delimiters , ; tab |; a quoted cell may hold several lines (Alt+Enter in Sheets/Excel) and stays one cell;
   * numbers such as 1,234 / 1.234 / 1K / 1.2M / "1K - 10K" / "<10" / "35%";
-  * column names from Semrush, Ahrefs, Keyword Planner, Google Search Console and hand-made Google Sheets.
+  * column names from Semrush, Ahrefs, Keyword Planner, Google Search Console, hand-made Google Sheets and
+    Vietnamese headers (NFC-normalised); every column that is not used is listed in info["ignored_columns"].
 """
 from __future__ import annotations
 
 import csv
+import io
+import os
 import posixpath
 import re
+import unicodedata
 import zipfile
 from typing import Iterator
 from xml.etree import ElementTree as ET
+
+from kw_evidence import detect_source_tool, gsc_filters, market_date_from_filename, monthly_columns
 
 DELIMS = [",", "\t", ";", "|"]
 SCAN_LINES = 40
@@ -24,25 +31,65 @@ NA_VALUES = {"", "-", "--", "n/a", "na", "null", "none", "nan", "—"}
 
 ALIASES = {
     "keyword": ["keyword", "keywords", "query", "queries", "top queries", "top query", "search term",
-                "search terms", "term", "phrase"],
+                "search terms", "term", "phrase", "từ khóa", "từ khoá"],
     "volume": ["volume", "search volume", "avg. monthly searches", "avg monthly searches", "monthly searches",
                "monthly volume", "sv", "us volume", "uk volume"],
     "impressions": ["impressions"],
     "clicks": ["clicks"],
-    "kd": ["kd", "kd %", "kd%", "keyword difficulty", "difficulty", "seo difficulty"],
+    # Semrush Personal Keyword Difficulty is preferred when both are exported
+    "kd": ["personal keyword difficulty", "kd", "kd %", "kd%", "keyword difficulty", "keyword difficulty index",
+           "difficulty", "seo difficulty"],
     "cpc": ["cpc", "cost per click"],
-    "market": ["market", "country", "location", "geo", "country code"],
+    "market": ["market", "country", "location", "geo", "country code", "database"],
     "serp": ["serp_urls", "serp urls", "top_urls", "top urls", "serp", "top 10 urls", "serp results"],
-    "intent": ["intent", "intents", "search intent"],
+    "intent": ["intent", "intents", "search intent", "keyword intents"],
     "parent": ["parent topic", "parent_topic", "parent keyword"],
     "position": ["position", "avg. position", "average position", "current position"],
+    # evidence columns (kw_evidence.py reads their values)
+    "serp_features": ["serp features", "serp features by keyword"],
+    "trend": ["trend", "trends", "sv trend"],  # the raw header is kept: Ahrefs puts the month range in brackets
+    "traffic_potential": ["traffic potential"],
+    "ranking_url": ["url", "current url"],
+    "competitive_density": ["competitive density"],
+    "results": ["number of results"],
+    "click_potential": ["click potential"],
+    "change_3m": ["three month change"],
+    "change_yoy": ["yoy change"],
+    "flag_branded": ["branded"],  # Ahrefs Site Explorer true/false columns
+    "flag_local": ["local"],
+    "flag_informational": ["informational"],
+    "flag_commercial": ["commercial"],
+    "flag_transactional": ["transactional"],
+    "flag_navigational": ["navigational"],
+    # columns of a file that was already grouped ('topic' is handled in _colmap: a pillar beside 'page', else a group)
+    "group": ["cluster", "cluster name", "group", "keyword group", "nhóm", "cụm", "nhóm từ khóa", "nhóm từ khoá",
+              "chủ đề"],
+    "main": ["main keyword", "primary keyword", "từ khóa chính", "từ khoá chính", "page"],
+    "secondary": ["secondary keyword", "secondary keywords", "từ khóa phụ", "từ khoá phụ"],
+    "role": ["page type", "category kind"],
+    "pillar": ["pillar", "thuộc pillar"],
+    "stt": ["stt"],
+    "status": ["trạng thái", "status"],
+    "url_blog": ["url blog", "target url"],
+    "category": ["category", "danh mục"],
 }
 VOLUME_FALLBACK_ORDER = ["volume", "impressions", "clicks"]
+# Columns that look useful but must never feed a decision (shown as 'ignored on purpose' in the report).
+IGNORED_ON_PURPOSE = {
+    "global volume": "worldwide volume, not the US/UK market: never used as volume",
+    "global traffic potential": "worldwide, not the US/UK market",
+    "competition": "advertising competition, not SEO difficulty",
+    "sv forecasting trend": "a forecast, not measured searches",
+    "#": "row number",
+}
 
 
 def norm_header(h: str) -> str:
-    h = (h or "").replace("\ufeff", "").replace("\u00a0", " ").strip().strip('"').lower()
+    h = unicodedata.normalize("NFC", h or "").replace("\ufeff", "").replace("\u00a0", " ").strip().strip('"').lower()
     return re.sub(r"\s+", " ", h)
+
+
+ALIASES = {k: [norm_header(a) for a in v] for k, v in ALIASES.items()}  # NFC, like the headers they are matched to
 
 
 def header_variants(h: str) -> list[str]:
@@ -208,6 +255,15 @@ def _xlsx_rows(zf: zipfile.ZipFile, sheet_path: str, shared: list[str]) -> Itera
             yield [cells.get(i, "") for i in range(max(cells) + 1)] if cells else []
 
 
+def _has_keyword_header(cells: list[str], keyword_names: set[str]) -> bool:
+    return any(v in keyword_names for c in cells for v in header_variants(c))
+
+
+def _no_keyword_sheet(preview: list[str]) -> SystemExit:
+    return SystemExit("No sheet has a header row with a keyword/query column in its first 40 rows.\n"
+                      "Use --map keyword=<column name> if the column has an unusual name. First rows:\n" + "\n".join(preview))
+
+
 def _read_xlsx(path: str, keyword_names: set[str]) -> tuple[str, int, list[list[str]]]:
     """Return (sheet name, header row index, rows) for the first sheet that has a keyword column near the top."""
     with zipfile.ZipFile(path) as zf:
@@ -218,11 +274,33 @@ def _read_xlsx(path: str, keyword_names: set[str]) -> tuple[str, int, list[list[
                 continue
             rows = list(_xlsx_rows(zf, sheet_path, shared))
             for i, cells in enumerate(rows[:SCAN_LINES]):
-                if any(v in keyword_names for c in cells for v in header_variants(c)):
+                if _has_keyword_header(cells, keyword_names):
                     return name, i, rows
             preview = preview or [f"[{name}] " + " | ".join(r) for r in rows[:5]]
-    raise SystemExit("No sheet has a header row with a keyword/query column in its first 40 rows.\n"
-                     "Use --map keyword=<column name> if the column has an unusual name. First rows:\n" + "\n".join(preview))
+    raise _no_keyword_sheet(preview)
+
+
+def _read_xlsx_all(path: str, keyword_names: set[str]) -> tuple[list[tuple[str, int, list[list[str]]]], list[tuple]]:
+    """Every sheet with a keyword column near the top: ([(sheet name, header row index, rows)], [(skipped sheet,
+    reason, rows)]). A workbook with one sheet per group ('export with groups', hand-made files) loses nothing."""
+    found, skipped, preview = [], [], []
+    with zipfile.ZipFile(path) as zf:
+        shared = _xlsx_shared_strings(zf)
+        for name, sheet_path in _xlsx_sheets(zf):
+            if sheet_path not in zf.namelist():
+                skipped.append((name, "sheet XML missing", []))
+                continue
+            rows = list(_xlsx_rows(zf, sheet_path, shared))
+            idx = next((i for i, cells in enumerate(rows[:SCAN_LINES]) if _has_keyword_header(cells, keyword_names)), None)
+            if idx is not None:
+                found.append((name, idx, rows))
+                continue
+            skipped.append((name, "no keyword column in the first 40 rows" if any(any(c.strip() for c in r) for r in rows)
+                            else "empty", rows))
+            preview = preview or [f"[{name}] " + " | ".join(r) for r in rows[:5]]
+    if not found:
+        raise _no_keyword_sheet(preview)
+    return found, skipped
 
 
 # --------------------------------------------------------------------------- reading
@@ -241,7 +319,7 @@ def _find_header(lines: list[str], keyword_names: set[str]) -> tuple[int, str]:
         best = None
         for delim in DELIMS:
             cells = split_line(line, delim)
-            if any(v in keyword_names for c in cells for v in header_variants(c)):
+            if _has_keyword_header(cells, keyword_names):
                 if best is None or len(cells) > best[0]:
                     best = (len(cells), delim)
         if best:
@@ -251,21 +329,7 @@ def _find_header(lines: list[str], keyword_names: set[str]) -> tuple[int, str]:
                      "Use --map keyword=<column name> if the column has an unusual name. First 5 lines:\n" + preview)
 
 
-def read_keywords(path: str, overrides: dict | None = None) -> Table:
-    overrides = {k: norm_header(v) for k, v in (overrides or {}).items()}
-    keyword_names = set(ALIASES["keyword"]) | ({overrides["keyword"]} if "keyword" in overrides else set())
-    if is_xlsx(path):
-        sheet, header_idx, xrows = _read_xlsx(path, keyword_names)
-        header, body = xrows[header_idx], iter(xrows[header_idx + 1:])
-        encoding, delim_label = "xlsx", f"sheet '{sheet}'"
-    else:
-        with open(path, "rb") as fh:
-            text, encoding = decode_bytes(fh.read())
-        lines = text.splitlines()
-        header_idx, delim = _find_header(lines, keyword_names)
-        header = split_line(lines[header_idx], delim)
-        body = csv.reader(lines[header_idx + 1:], delimiter=delim)
-        delim_label = {"\t": "TAB"}.get(delim, delim)
+def _colmap(header: list[str], overrides: dict) -> tuple[dict[str, int], dict[str, str]]:
     colmap: dict[str, int] = {}
     used_headers: dict[str, str] = {}
     for canon in ALIASES:
@@ -278,18 +342,109 @@ def read_keywords(path: str, overrides: dict | None = None) -> Table:
                     break
             if canon in colmap:
                 break
+    # 'Topic' is the pillar in a Semrush Keyword Strategy Builder export (beside 'Page', the post), else a group name
+    names = [norm_header(h) for h in header]
+    if "topic" in names and names.index("topic") not in colmap.values():
+        canon = "pillar" if "page" in names else "group"
+        if canon not in colmap:
+            colmap[canon] = names.index("topic")
+            used_headers[canon] = header[colmap[canon]].strip()
+    return colmap, used_headers
+
+
+def _make_table(path: str, encoding: str, delim_label: str, header_idx: int, header: list[str], body,
+                overrides: dict, sheet: str | None = None) -> Table:
+    colmap, used_headers = _colmap(header, overrides)
+    months = monthly_columns(header)
+    month_idx = {i for i, _ in months}
+    ignored = []
+    for idx, h in enumerate(header):
+        if idx in colmap.values() or idx in month_idx or not h.strip():
+            continue
+        why = next((IGNORED_ON_PURPOSE[v] for v in header_variants(h) if v in IGNORED_ON_PURPOSE), "")
+        ignored.append((h.strip(), why))
     volume_source = next((c for c in VOLUME_FALLBACK_ORDER if c in colmap), "none")
+    fn_market, fn_date, fn_pattern = market_date_from_filename(os.path.basename(path))
     info = {"path": path, "encoding": encoding, "delimiter": delim_label,
             "header_row": header_idx + 1, "columns": used_headers, "volume_source": volume_source,
-            "rows": 0, "skipped_blank": 0}
+            "rows": 0, "skipped_blank": 0, "sheet": sheet or "", "sheets_read": [sheet] if sheet else [],
+            "sheets_skipped": [], "ignored_columns": ignored, "monthly_columns": months,
+            "source_tool": detect_source_tool(header, os.path.basename(path)), "filename_market": fn_market,
+            "filename_date": fn_date, "filename_pattern": fn_pattern, "gsc_filters": None}
 
     def generate() -> Iterator[dict]:
-        for cells in body:
-            if not any(c.strip() for c in cells):
-                info["skipped_blank"] += 1
-                continue
-            rec = {canon: (cells[idx].strip() if idx < len(cells) else "") for canon, idx in colmap.items()}
-            info["rows"] += 1
-            yield rec
+        try:
+            for cells in body:
+                if not any(c.strip() for c in cells):
+                    info["skipped_blank"] += 1
+                    continue
+                rec = {canon: (cells[idx].strip() if idx < len(cells) else "") for canon, idx in colmap.items()}
+                if months:
+                    rec["_monthly"] = {ym: (cells[idx].strip() if idx < len(cells) else "") for idx, ym in months}
+                if sheet is not None:
+                    rec["_sheet"] = sheet
+                info["rows"] += 1
+                yield rec
+        except csv.Error as exc:
+            raise SystemExit(f"{os.path.basename(path)}: cannot parse the CSV after data row {info['rows']} ({exc}). "
+                             "A quote that is never closed makes the rest of the file one cell; fix that cell.")
 
     return Table(info, generate())
+
+
+def _read_csv(path: str, overrides: dict, keyword_names: set[str]) -> Table:
+    with open(path, "rb") as fh:
+        text, encoding = decode_bytes(fh.read())
+    # the header is found on physical lines; the body is parsed as a whole so a quoted cell keeps its line breaks
+    head = text[:500_000].splitlines(keepends=True)[:SCAN_LINES]
+    lines = [(ln.splitlines() or [""])[0] for ln in head]
+    header_idx, delim = _find_header(lines, keyword_names)
+    offset = sum(len(ln) for ln in head[:header_idx + 1])
+    header = split_line(lines[header_idx], delim)
+    body = csv.reader(io.StringIO(text[offset:], newline=""), delimiter=delim)
+    return _make_table(path, encoding, {"\t": "TAB"}.get(delim, delim), header_idx, header, body, overrides)
+
+
+def _keyword_names(overrides: dict) -> set[str]:
+    return set(ALIASES["keyword"]) | ({overrides["keyword"]} if "keyword" in overrides else set())
+
+
+def read_keywords(path: str, overrides: dict | None = None) -> Table:
+    """The first table of the file (an .xlsx: the first sheet with a keyword column). read_tables reads every sheet."""
+    overrides = {k: norm_header(v) for k, v in (overrides or {}).items()}
+    keyword_names = _keyword_names(overrides)
+    if is_xlsx(path):
+        sheet, header_idx, xrows = _read_xlsx(path, keyword_names)
+        return _make_table(path, "xlsx", f"sheet '{sheet}'", header_idx, xrows[header_idx], iter(xrows[header_idx + 1:]),
+                           overrides)
+    return _read_csv(path, overrides, keyword_names)
+
+
+def read_tables(path: str, overrides: dict | None = None) -> list[Table]:
+    """One Table per sheet with a keyword column (one for a CSV); each record of an .xlsx carries '_sheet'.
+    info['sheets_read'] / info['sheets_skipped'] (name, reason) say what happened to every sheet. A Search Console
+    export also gets info['gsc_filters'] from its Filters sheet or the Filters.csv next to it ({} when absent)."""
+    overrides = {k: norm_header(v) for k, v in (overrides or {}).items()}
+    keyword_names = _keyword_names(overrides)
+    filters_rows = None
+    if is_xlsx(path):
+        found, skipped = _read_xlsx_all(path, keyword_names)
+        tables = [_make_table(path, "xlsx", f"sheet '{name}'", idx, rows[idx], iter(rows[idx + 1:]), overrides, sheet=name)
+                  for name, idx, rows in found]
+        for t in tables:
+            t.info["sheets_read"] = [name for name, _, _ in found]
+            t.info["sheets_skipped"] = [(name, why) for name, why, _ in skipped]
+        filters_rows = next((rows for name, _, rows in skipped if norm_header(name) == "filters"), None)
+    else:
+        tables = [_read_csv(path, overrides, keyword_names)]
+        if tables[0].info["source_tool"] == "gsc":  # Search Console zips hold Queries.csv next to Filters.csv
+            folder = os.path.dirname(os.path.abspath(path))
+            sibling = next((f for f in sorted(os.listdir(folder)) if f.lower() == "filters.csv"), None)
+            if sibling:
+                with open(os.path.join(folder, sibling), "rb") as fh:
+                    ftext, _ = decode_bytes(fh.read())
+                filters_rows = list(csv.reader(io.StringIO(ftext, newline="")))
+    for t in tables:
+        if t.info["source_tool"] == "gsc":
+            t.info["gsc_filters"] = gsc_filters(filters_rows or [])
+    return tables

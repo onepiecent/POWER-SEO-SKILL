@@ -4,36 +4,77 @@ Every file is UTF-8 CSV with a header row (the final plan is also written as .xl
 
 ## SEO specialist input (read directly by keyword-clustering)
 
-CSV or Excel (`.xlsx`, the first sheet with a keyword column). Only a keyword column is required. The other columns are detected by name automatically (case-insensitive, ignoring a trailing parenthesised part):
+CSV or Excel (`.xlsx`: **every** sheet with a keyword column within its first 40 rows; `source_file` is then `file.xlsx [Sheet]`). Only a keyword column is required. The other columns are detected by name automatically (case-insensitive, NFC-normalised, ignoring a trailing parenthesised part). Real headers per tool: `keyword-clustering/references/export-formats.md`.
 
 | Standard column | Column names recognised |
 |---|---|
-| keyword | Keyword, Keywords, Query, Top queries, Search term |
-| volume | Volume, Search Volume, Avg. monthly searches, Monthly searches |
+| keyword | Keyword, Keywords, Query, Top queries, Search term, Phrase, Từ khóa |
+| volume | Volume, Search Volume, Avg. monthly searches, Monthly searches, SV |
 | impressions / clicks | Impressions, Clicks (GSC; used as volume only when there is no volume column, with a warning) |
-| kd | KD, KD %, Keyword Difficulty, Difficulty |
+| kd | Personal Keyword Difficulty (preferred), KD, KD %, Keyword Difficulty, Keyword Difficulty Index, Difficulty |
 | cpc | CPC, CPC (USD) |
-| market | Market, Country, Location, Geo |
+| market | Market, Country, Location, Geo, Database |
 | serp | serp_urls, Top URLs, SERP (the top-10 URLs, separated by a pipe or whitespace) |
-| intent | Intent, Intents (kept for reference only) |
+| intent | Intent, Intents, Keyword Intents (words, Semrush API codes 0–3, I/N/C/T letters) |
 | parent | Parent Topic, Parent Keyword (Ahrefs) |
-| position | Position, Avg. position (GSC) |
+| position | Position, Avg. position, Current position |
+| serp_features | SERP Features, SERP Features by Keyword |
+| trend | Trend, Trends, SV trend (MM-YYYY - MM-YYYY) |
+| traffic_potential | Traffic potential |
+| ranking_url | URL, Current URL |
+| flag_branded, flag_local, flag_informational, flag_commercial, flag_transactional, flag_navigational | Branded, Local, Informational, Commercial, Transactional, Navigational (Ahrefs Site Explorer true/false) |
+| monthly searches | `Searches: Mon YYYY` (Keyword Planner; matched by pattern, not by `--map`) |
+| competitive_density, results, click_potential, change_3m, change_yoy | Competitive Density, Number of Results, Click potential, Three month change, YoY change (recognised, not used yet) |
+| group, main, secondary, role, pillar | Cluster, Group, Keyword Group, Nhóm, Cụm, Chủ đề / Main Keyword, Primary Keyword, Page, Từ khóa chính / Secondary Keyword(s), Từ khóa phụ / Page type, Category Kind / Pillar, Thuộc Pillar; `Topic` is the pillar when `Page` is present, else the group (recognised; an existing grouping is not used yet and the report warns) |
+| stt, status, url_blog, category | STT / Trạng thái, Status / URL Blog, Target URL / Category, Danh mục (recognised, not used) |
 
-Unusual columns: `--map keyword="Top queries" volume=Impressions`.
+Never used as a value: `Global volume`, `Global traffic potential`, `Competition` (ads), `SV Forecasting trend`, `#`; they are listed as ignored on purpose in `cluster-report.md`.
+
+Unusual columns: `--map keyword="Top queries" volume=Impressions` (any standard column above).
+
+**Market of a row:** its market cell; otherwise the `file::us` suffix, the market in the tool's file name (`_us_2026-05-01`, `-organic.Positions-uk-`, `google_gb_`), the Search Console `Country` filter, `--market`; otherwise `all`. `gb` = `uk`. Rows of any other market are excluded with the reason `market:<code>`.
 
 ## keyword-clustering output
 
-**`clusters.csv`** (one row per cluster = one blog post): `cluster_id, market, cluster_name, keyword_count, seed_volume, cluster_volume, seed_kd, kd_min, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, theme, core, category, season, market_terms, parent_topic, keywords, name_fluency`
+**`clusters.csv`** (one row per cluster = one blog post): `cluster_id, market, cluster_name, keyword_count, seed_volume, cluster_volume, seed_kd, kd_min, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, theme, core, category, season, market_terms, parent_topic, keywords, name_fluency, grouping_basis, serp_verified_share, seed_basis, prior_group, prior_pillar, prior_role, intents_mix, serp_features_main, traffic_potential_main, cluster_volume_dedup, peak_month, ramp_month, peak_ratio, seasonality_source, decision_ids`
 
-**`keyword-map.csv`** (one row per keyword): `cluster_id, market, keyword, volume, volume_estimated, kd, cpc, is_seed, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, theme, category, market_terms, parent_topic, intent_source, variants, source_file, spelling_fixed, variant_volumes`
+**`keyword-map.csv`** (one row per keyword): `cluster_id, market, keyword, volume, volume_estimated, kd, cpc, is_seed, reader_need, blog_fit, occasion, recipient, interest, product, style, craft, theme, category, market_terms, parent_topic, intent_source, variants, source_file, spelling_fixed, variant_volumes, normalized_keyword, joined_by, need_source, prior_group, prior_main, prior_role, prior_pillar, intents, intent_branded, intent_local, serp_features, traffic_potential, ranking_url, position, trend, trend_end, peak_month, volume_range, volume_sources, kd_source, decision_ids`
 
 - `theme` ∈ the theme keys of `assets/taxonomy.json` (dates, history, meaning, facts, printables, humor, crafts, decor, images, world, gifts, events, activities, food, messages) or empty. `core` = the words that say what the keyword asks once the topic, the theme's generic words and stop words are removed (space-separated; empty = the broad question of the theme).
 - `variants` / `variant_volumes`: same-meaning variants merged into this keyword (word order, a year, a fixed typo) and their volumes, `|`-separated. `spelling_fixed` = 1 when a typo or split word was corrected before matching.
 - `name_fluency`: how natural the cluster's name reads (mean log probability per word pair, learned from the file; higher = more natural, usually -1 to -4). topic-map uses it to break ties when naming a post.
 
-Others: `excluded.csv` (keyword, volume, reason, source_file), `unclassified.csv`, `taxonomy-suggestions.csv`, `merge-candidates.csv`, `groups.csv/.md`, `cluster-report.md`.
+Evidence columns of `keyword-map.csv` (empty when the export has no such data):
 
-Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop. `blog_fit` ∈ high, medium, low (shop = low). `market` ∈ us, uk, all (or another original value).
+- `normalized_keyword`: the keyword's canonical tokens, sorted and space-separated (spelling fixed, UK→US, plurals and years removed).
+- `joined_by`: how the keyword joined its cluster: `seed` (the cluster's first keyword), `serp:<n>` (n shared SERP URLs), `parent` (same Parent Topic, `--trust-parent-topic`), `lexical:<similarity>` (weighted Jaccard, 2 decimals), `core:<core words>` (absorbed when clusters asking the same question were consolidated; `core:-` = empty core).
+- `need_source`: `rule` (the taxonomy regexes and themes) or `conflict: regex shop vs <tool> <intents>` / `conflict: regex shop vs SERP features <features>`: the regex gave `shop` only through the product fallback while the tool's intent was informational/commercial or the SERP had paa/featured_snippet/ai_overview, so the need was recomputed without that fallback (see `keyword-clustering/references/reader-needs.md`).
+- `intents`: the tool's intent labels, `|`-separated, from {informational, commercial, transactional, navigational}. `intent_branded` / `intent_local`: 1, 0 or empty (Ahrefs). `intent_source` keeps the raw cell.
+- `serp_features`: slugs, `|`-separated (`paa`, `featured_snippet`, `ai_overview`, `image_pack`, `video`, `shopping`, `local_pack`, `top_stories`, `knowledge_panel`, `discussions`, `ads`, `sitelinks`, `things_to_know`, `reviews`, `instant_answer`, `thumbnail`, or `other:<name>`).
+- `traffic_potential`: Ahrefs Traffic potential. `ranking_url` / `position`: the URL that ranks and its position (positions exports, Ahrefs Site Explorer; GSC Position); when rows are joined, the best position and its URL.
+- `trend`: comma-separated values, oldest first: relative 0–1 with 2 decimals (Semrush Trend, Organic Research Trends ÷100) or absolute monthly volumes (Ahrefs SV trend, Keyword Planner months). `trend_end`: `YYYY-MM` of the last value, only when the months are known (Keyword Planner with every month filled, Ahrefs SV trend whose length matches its header); `peak_month` (`Jan`...`Dec`, the latest on a tie) only then.
+- `volume_range`: the range behind an estimated volume (`1K–10K`, from a text range or a Keyword Planner bucket value), else empty.
+- `volume_sources`: every source of the keyword after exact duplicates were joined, `tool:value` `|`-separated, `~` before an estimate, `-` for an empty cell (`semrush-kmt:40500|ahrefs-ke:38000`, `gkp:~1000`). Tools: semrush-kmt, semrush-ksb, semrush-api, semrush-positions, ahrefs-ke, ahrefs-se, gkp, gsc, team-plan, generic. `kd_source`: the tool the KD came from.
+- `prior_group, prior_main, prior_role, prior_pillar` (and `prior_*` in `clusters.csv`), `decision_ids`: reserved for back-checking an existing grouping and for review decisions; always empty in this version.
+
+Columns of `clusters.csv` added for evidence:
+
+- `grouping_basis` ∈ `single`, `serp`, `parent_topic`, `lexical (not verified by SERP)` (`lexical` and `core` joins), `mixed`.
+- `serp_verified_share`: share of the cluster volume whose membership rests on shared SERP URLs or the Parent Topic (the seed counts once a member is verified), 2 decimals; empty for a single keyword.
+- `seed_basis`: why the post is named after its main keyword: `max_volume`, `evergreen (no year)`, `spelled correctly`, `more natural phrasing`, `plain phrasing`.
+- `intents_mix`: the members' tool intent labels with counts and volume (`informational (3 kw, 8,100) | no label (1 kw, 90)`); empty when no member has a label. `serp_features_main` / `traffic_potential_main`: those of the main keyword.
+- `cluster_volume_dedup`: an estimate next to the `cluster_volume` sum; a keyword and its variants that report the **same** volume count once.
+- `peak_month, ramp_month, peak_ratio, seasonality_source`: reserved for cluster seasonality from data; empty in this version.
+
+**`merge-candidates.csv`**: `cluster_a, name_a, cluster_b, name_b, score, reason, evidence_type, volume_a, volume_b, need_a, need_b, theme_a, theme_b, core_a, core_b, guard_diff, keywords_a, keywords_b`. `evidence_type` ∈ lexical, serp, parent_topic; `guard_diff` lists the guard fields that differ (`interest: hunting vs -`); at most 300 pairs (the report says when the cap is hit).
+
+**`spelling-fixes.csv`** (one row per learned correction): `kind, from, to, keywords_changed, examples, from_volume, to_volume, vetoed`. `kind` ∈ typo, join, split, completion; `from_volume` / `to_volume` = the volume of the keywords already typed with each form; `vetoed` is reserved (empty).
+
+**`serp-check.csv`** (for the SEO to check on the live SERP, largest first, `--serp-check-max` rows, default 30): `market, keyword_a, volume_a, keyword_b, volume_b, why, current_grouping, question`. Rows are merge candidates near a threshold (`current_grouping` = `separate posts (C0003, C0010)`) and clusters grouped by words only (`same post (C0004)`).
+
+Others: `excluded.csv` (keyword, volume, reason, source_file; reasons include `market:<code>`), `unclassified.csv`, `taxonomy-suggestions.csv`, `groups.csv/.md`, `cluster-report.md`.
+
+Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop. `blog_fit` ∈ high, medium, low (shop = low). `market` ∈ us, uk, all.
 
 ## topic-map.csv
 

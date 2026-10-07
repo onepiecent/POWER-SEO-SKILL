@@ -92,7 +92,7 @@ SEO specialists describe what they need in plain words; the skill turns that int
 | US and UK | `us.csv::us uk.csv::uk`, or a Country column |
 | New niches | `--extend-taxonomy extra.json` (suggestions are written to `taxonomy-suggestions.csv`) |
 
-The script reads Excel files and UTF-16/tab files (Keyword Planner), description lines above the header, `, ; tab |` delimiters and numbers such as `1K - 10K` or `1.234`. It fixes typos learned from the file itself and drops noisy keywords (retailers, "near me", Spanish, politics, homework answer keys, opening hours, TV shows, restaurant menus, school calendars, and similar) **with a reason for each** in `excluded.csv`. 150,000 keywords take about 80 seconds.
+The script reads Excel files (every sheet) and UTF-16/tab files (Keyword Planner), description lines above the header, `, ; tab |` delimiters, cells with several lines, and numbers such as `1K - 10K` or `1.234`. It keeps the evidence the tools export (intent, SERP features, Semrush Trend, Ahrefs SV trend and Traffic potential, Keyword Planner monthly searches, the ranking URL), names the tool and the market of each file, counts a keyword found in two files once, and says in `cluster-report.md` how much of the grouping rests on SERP data; `serp-check.csv` lists the groupings to check on the live SERP and `spelling-fixes.csv` every spelling correction. It fixes typos learned from the file itself and drops noisy keywords (retailers, "near me", Spanish, politics, homework answer keys, opening hours, TV shows, restaurant menus, school calendars, and similar) **with a reason for each** in `excluded.csv`. 150,000 keywords take about 85 seconds.
 
 ## Content principles
 
@@ -120,7 +120,7 @@ python3 -W error::ResourceWarning -m unittest discover -s tests
 python3 tests/make_big_fixture.py 150000 /tmp/big.csv   # performance check
 ```
 
-131 tests: multi-format file reading (including .xlsx), spelling fixes (typos, split, glued and cut-off words), facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, natural post names, filters, topic map with theme pillars, sub-topic posts and merged posts, link plan and audit, contextual links, the final plan export (secondary keywords, schedule, QA and research sheets, published posts, re-runs on a previous plan), the one-command pipeline, holiday dates checked against the real calendar, briefs and the three checkers.
+157 tests: multi-format file reading (including .xlsx with every sheet, multi-line cells and fixtures built on real Semrush, Ahrefs, Keyword Planner and Search Console headers), evidence parsing (intent, SERP features, trend, Keyword Planner buckets), joining the same keyword from several files, spelling fixes (typos, split, glued and cut-off words), facet and theme detection, clustering (checked against pairwise comparison) and question consolidation, natural post names, filters, topic map with theme pillars, sub-topic posts and merged posts, link plan and audit, contextual links, the final plan export (secondary keywords, schedule, QA and research sheets, published posts, re-runs on a previous plan), the one-command pipeline, holiday dates checked against the real calendar, briefs and the three checkers.
 
 ## Layout
 

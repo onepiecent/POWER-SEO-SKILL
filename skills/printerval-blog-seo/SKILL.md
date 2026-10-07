@@ -90,10 +90,10 @@ CSV schemas: `references/data-contracts.md`. Sources and verification levels: `r
 
 ## Working with the SEO specialist
 
-- **Files are usually large, messy and different for every tool.** Run the script and **read `cluster-report.md` before saying anything about the result**: rows read, encoding, which columns were recognised, excluded keywords and reasons, the unclassified share, warnings.
+- **Files are usually large, messy and different for every tool.** Run the script and **read `cluster-report.md` before saying anything about the result**: rows read, encoding, the tool and market detected for each file, which columns were recognised and which were ignored, excluded keywords and reasons, the unclassified share, the evidence coverage (how much of the volume is grouped by SERP data and how much by words only), warnings.
 - Their requests ("group by recipient", "drop brand keywords", "US only", "volume from 200") are translated into options using the table in `keyword-clustering/SKILL.md`. State the assumptions you used. Ask only when the request is genuinely ambiguous: at most 1-2 questions, with a proposed default.
 - Ask once for the **list of published blog posts** (URL + title) and use it with `--published`, so the plan updates existing posts instead of duplicating them; and keep the last `final-plan.xlsx` the team works in for `--previous`.
-- The result is a **verified draft**, not the final truth: clusters built from vocabulary need Claude or the SEO to review `merge-candidates.csv`; when SERP overlap is available (a `serp_urls` column), trust the SERP more.
+- The result is a **verified draft**, not the final truth: clusters built from vocabulary need Claude or the SEO to review `merge-candidates.csv` and `spelling-fixes.csv`; when SERP overlap is available (a `serp_urls` column), trust the SERP more. Hand `serp-check.csv` to the SEO (the largest word-only groupings and borderline pairs, with the question to check on the live SERP); a web search is not a Google SERP. Tool intent labels and SERP features are hints [Convention: vendor docs], not proof: a `need_source` conflict in `keyword-map.csv` is a question to settle, not a verdict.
 - Do not say "done" before running the script and reading its output. Report honestly: which commands ran, the real figures, what is uncertain.
 
 ## Limits to tell the user about
