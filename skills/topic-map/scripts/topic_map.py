@@ -10,9 +10,9 @@ Main rules:
   * A pillar with more than --max-pillar-size clusters (typical of a one-topic export such as 'thanksgiving') is split
     into one pillar per theme (dates, history, meaning, activities, messages...). A theme that is too small joins its
     fallback theme (facts -> meaning, food -> activities...); clusters left without a pillar go to the backlog.
-  * A pillar with more than --max-posts clusters keeps its hub and its strongest SUB-TOPICS: words that many clusters
-    share ('games' in 'thanksgiving games for adults', '... for the table', '... youth group') are scored by the volume
-    they would own, so a long tail that adds up becomes one post. A sub-topic needs >= --min-post-volume and
+  * A pillar with more than --keep-all-up-to clusters (or --max-posts, when set) keeps its hub and its strongest
+    SUB-TOPICS: words that many clusters share ('games' in 'thanksgiving games for adults', '... for the table',
+    '... youth group') are scored by the volume they would own, so a long tail that adds up becomes one post. A sub-topic needs >= --min-post-volume and
     >= --min-post-share of the pillar's volume outside the hub; a narrower sub-topic of a kept post ('first' ->
     'first + food') needs >= 10% of that post's volume, and an audience-only narrowing ('books' -> 'books for kids')
     stays a section of it. Every other cluster is merged into the closest kept post (role 'merged', column
@@ -20,6 +20,11 @@ Main rules:
   * Long-tail clusters left without a theme pillar join a kept post that asks the same thing ('thanksgiving names'
     -> 'another name for thanksgiving'); only those that match nothing go to the backlog.
   * Clusters with blog_fit = low (pure shopping intent) are marked skip and left out of the blog map.
+  * The SEO's own pillars (clusters.csv from keyword-clustering --prior) come first; when keyword-clustering audited
+    them (prior:audited) the topic map checks the structure too: pillar fit, a broader hub the site can win, two
+    groups that ask the same thing, and groups too small for a page (--seo-min-post-volume) made sections; every
+    change is a row of seo-audit-topic.csv. Hubs are chosen by winnable volume (KD against the site's reach), and a
+    post whose subject word is shared by >= 3 kept posts of its pillar becomes their sub-hub (parent_post).
   * Priority score = cluster_volume x blog_fit weight x (0.5 + achievability), achievability = 1 - KD/100
     (missing KD -> 0.5). This is a ranking heuristic, not a Google metric.
   * --decisions FILE (the shared decisions contract): set_pillar, promote_pillar, demote_pillar, restore_backlog and
@@ -30,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import os
 import re
@@ -171,6 +177,10 @@ def post_type(row: dict, is_pillar: bool) -> str:
 
 
 def priority_score(row: dict) -> int:
+    """Winnable volume (KD against the site's reach, from keyword-clustering) x blog fit weight; with an older
+    clusters.csv: volume x fit weight x (0.5 + 1 - KD/100)."""
+    if row.get("cluster_winnable") not in (None, ""):
+        return round(to_int(row["cluster_winnable"]) * FIT_WEIGHT.get(row["blog_fit"], 0.6))
     kd = to_int(row.get("seed_kd"), -1)
     achievable = 0.5 if kd < 0 else max(0.0, 1 - kd / 100)
     return round(to_int(row["cluster_volume"]) * FIT_WEIGHT.get(row["blog_fit"], 0.6) * (0.5 + achievable))
@@ -195,17 +205,53 @@ def choose_pillar_cluster(rows: list[dict], own_facet: str) -> dict | None:
     def specificity(r):
         return sum(1 for f in ("occasion", "recipient", "interest", "product", "craft")
                    if f != own_facet and r.get(f))
-    return sorted(eligible, key=lambda r: (specificity(r), -to_int(r["cluster_volume"])))[0]
+    return sorted(eligible, key=lambda r: (specificity(r), -winnable(r), -to_int(r["cluster_volume"])))[0]
 
 
 SEO_PILLAR_ROLES = ("pillar", "pillar-hub", "pillar hub", "hub")
 
 
-def seo_pillars(live: list[dict]) -> tuple[list, dict, list[dict]]:
-    """The pillars the SEO's grouped file already set (clusters.csv prior_role / prior_pillar, from the plan's Category
-    Kind and Thuộc Pillar): a group whose Category Kind is 'Pillar' is a hub, and the groups whose Thuộc Pillar names
-    a hub's main keyword are its posts. They stay as the file set them, with no merging; a Thuộc Pillar that names no
-    blog cluster of this run (e.g. 'No real pillar yet ...') and every group without one go through the engine.
+AUDIT_FIELDS = ["audit_id", "step", "market", "seo_group", "seo_main", "seo_kind", "seo_pillar", "check", "action",
+                "keyword", "keyword_volume", "target_group", "target_main", "evidence_type", "evidence", "level"]
+HUB_SWITCH = 1.5  # an SEO pillar gives way to a group at least as broad that wins 1.5x its traffic [Convention]
+
+
+def audit_row(log: list, r: dict, check: str, action: str, target: dict | None = None, evidence: str = "",
+              level: str = "[Convention]") -> None:
+    log.append({"audit_id": f"ST-{len(log) + 1:04d}", "step": "topic", "market": r.get("market", ""),
+                "seo_group": r.get("prior_group", ""), "seo_main": r.get("cluster_name", ""),
+                "seo_kind": r.get("prior_role", ""), "seo_pillar": r.get("prior_pillar", ""), "check": check,
+                "action": action, "keyword": r.get("cluster_name", ""), "keyword_volume": volume(r),
+                "target_group": (target or {}).get("prior_group", ""), "target_main": (target or {}).get("cluster_name", ""),
+                "evidence_type": "lexical" if check != "pillar_kd" else "kd", "evidence": evidence, "level": level})
+
+
+def topic_words(rows: list[dict], hub: dict | None = None) -> set[str]:
+    """Words in the names of half of the clusters (at least 3): the topic itself ('christmas'), never a subject.
+    Within one pillar (hub given) only the hub's own words count ('decorate' in 'how to decorate for christmas'):
+    'tree' in half of the decor posts is still the subject of a sub-hub."""
+    share: dict[str, int] = defaultdict(int)
+    for r in rows:
+        for t in set(re.findall(r"[a-z0-9]+", (r.get("cluster_name") or "").lower())):
+            share[t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith(("ss", "us", "is")) else t] += 1
+    common = {t for t, n in share.items() if n >= max(3, 0.5 * len(rows))}
+    if hub is not None:
+        common &= {t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith(("ss", "us", "is")) else t
+                   for t in re.findall(r"[a-z0-9]+", (hub.get("cluster_name") or "").lower())}
+    return common
+
+
+def seo_pillars(live: list[dict], log: list | None = None) -> tuple[list, dict, list[dict]]:
+    """The pillars the SEO's grouped file set (clusters.csv prior_role / prior_pillar, from the plan's Category Kind
+    and Thuộc Pillar, or the Kind column and the row order): a group whose Category Kind is 'Pillar' is a hub, and the
+    groups whose Thuộc Pillar names a hub's main keyword are its posts. A Thuộc Pillar that names no blog cluster of
+    this run (e.g. 'No real pillar yet ...') and every group without one go through the engine.
+
+    --prior-mode keep: they stay exactly as the file set them. Audited groups (the default) are checked (log rows):
+      pillar_fit      a post that shares no subject word with its pillar but does with another SEO pillar moves there
+      pillar_changed  a group at least as broad as the SEO's pillar (its subject words are a subset of the pillar's)
+                      that wins >= 1.5x the pillar's winnable volume becomes the hub: the pillar should target the
+                      query the site can rank for, and the posts pass their link equity to it
     Returns ([(group key, (members, theme))], {group key: hub}, the clusters left to the engine)."""
     by_main: dict[tuple, dict] = {}
     for r in live:
@@ -218,15 +264,140 @@ def seo_pillars(live: list[dict]) -> tuple[list, dict, list[dict]]:
         if hub is not None and hub is not r and r.get("prior_group"):
             hubs[id(hub)] = hub  # named as the pillar of another group: a hub even without Category Kind
             posts[id(hub)].append(r)
+    if log is not None and len(hubs) > 1:
+        common = topic_words(live)
+        subj = {h: subject_words(hubs[h], common) for h in hubs}
+        for hid in list(hubs):
+            if not audited(hubs[hid]):
+                continue
+            for c in list(posts[hid]):
+                if id(c) in hubs:
+                    continue
+                sc = subject_words(c, common)
+                if sc & subj[hid]:
+                    continue
+                best = max(((len(sc & subj[o]), volume(hubs[o]), o) for o in hubs
+                            if o != hid and hubs[o]["market"] == c["market"]), default=(0, 0, None))
+                if best[0] > 0:
+                    posts[hid].remove(c)
+                    posts[best[2]].append(c)
+                    shared = ", ".join(sorted(sc & subj[best[2]]))
+                    audit_row(log, c, "pillar_fit", "moved", hubs[best[2]],
+                              f"shares no subject word with its pillar '{hubs[hid]['cluster_name']}' but shares "
+                              f"'{shared}' with the pillar '{hubs[best[2]]['cluster_name']}': a pillar links down to "
+                              "posts on its own subject")
     items, hub_of, taken = [], {}, set()
     for h in hubs.values():
         members = [h] + [m for m in posts[id(h)] if id(m) not in hubs and id(m) not in taken]
-        ptype = next((f for f in ("occasion", "interest", "recipient", "craft", "product") if h.get(f)), "topic")
-        key = (h["market"], ptype, "seo-" + slugify(h["cluster_name"]))
+        hub = h
+        if log is not None and audited(h):
+            broad = [m for m in members if m is not h and m["reader_need"] == h["reader_need"]
+                     and subject_core(m) <= subject_core(h)]
+            alt = max(broad, key=lambda m: (winnable(m), volume(m)), default=None)
+            if alt is not None and winnable(alt) >= HUB_SWITCH * max(1, winnable(h)):
+                hub = alt
+                audit_row(log, h, "pillar_changed", "pillar_changed", alt,
+                          f"'{alt['cluster_name']}' is at least as broad and wins ~{winnable(alt):,}/month against "
+                          f"~{winnable(h):,} for '{h['cluster_name']}' (KD {alt.get('seed_kd') or '-'} vs "
+                          f"{h.get('seed_kd') or '-'}, site reach {h.get('site_kd') or '-'}): the pillar targets the "
+                          "query the site can rank for")
+        ptype = next((f for f in ("occasion", "interest", "recipient", "craft", "product") if hub.get(f)), "topic")
+        # the topic part (before '/') is the facet value, as for a theme pillar, so cross-pillar and contextual links
+        # find it; the cluster id keeps two hubs whose names slugify alike apart
+        key = (hub["market"], ptype, f"{hub.get(ptype, '') or 'seo'}/seo-{slugify(hub['cluster_name'])}-"
+                                     f"{hub['cluster_id'].lower()}")
         items.append((key, (members, "")))
-        hub_of[key] = h
+        hub_of[key] = hub
         taken.update(id(m) for m in members)
     return items, hub_of, [r for r in live if id(r) not in taken]
+
+
+def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log: list) -> tuple[list[dict], dict]:
+    """Posts of an audited SEO pillar: every group stays a post of its own unless
+      same_subject  it asks what another group of the pillar asks once angle words are set aside ('... step by step'
+                    and '... professionally' are both the 'tree' post; a group with the pillar's own subject is the
+                    pillar): merged into the one that wins more traffic
+      section       its volume is below min_post_volume: too little demand for a page; it becomes a section (and its
+                    keywords secondary keywords) of the closest kept post, else of the pillar [Convention]
+    Returns (kept clusters, {cluster_id: target row})."""
+    others = [m for m in members if m is not hub]
+    merged: dict[str, dict] = {}
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    common = topic_words(members, hub)
+
+    def key_of(r: dict) -> tuple:
+        return (frozenset(subject_words(r, common)), "list" if r["reader_need"] in LIST_NEEDS else r["reader_need"])
+    for m in others:
+        groups[key_of(m)].append(m)
+    hub_key = key_of(hub)
+    pool = []
+    for key, ms in groups.items():
+        ms = sorted(ms, key=lambda m: (-winnable(m), -volume(m), m["cluster_id"]))
+        target = hub if key == hub_key else ms[0]
+        for m in ms:
+            if m is target:
+                continue
+            merged[m["cluster_id"]] = target
+            words = " ".join(sorted(key[0])) or "(none: the pillar's own subject)"
+            audit_row(log, m, "same_subject", "merged", target,
+                      f"same subject words as '{target['cluster_name']}' once angle words (step by step, "
+                      f"professionally, ideas, tips...) are set aside: {words}; one post answers both")
+        if target is not hub:
+            pool.append(target)
+    kept = [m for m in pool if volume(m) >= min_post_volume]
+    for m in pool:
+        if m in kept:
+            continue
+        target = nearest_by_words(m, kept, hub, common)
+        merged[m["cluster_id"]] = target
+        audit_row(log, m, "section", "section", target,
+                  f"{volume(m):,} searches/month is below {min_post_volume:,} (--seo-min-post-volume): too little "
+                  f"demand for a page of its own; a section of '{target['cluster_name']}' answers it")
+    return kept, merged
+
+
+def nearest_by_words(r: dict, kept: list[dict], hub: dict, common: set[str]) -> dict:
+    """The post a too-small group becomes a section of: a kept post whose subject words are all in r's (r is a
+    narrower version of it; the most specific wins), else the kept post or pillar sharing most subject words (who/when
+    words alone do not count), else the pillar."""
+    mine = subject_words(r, common)
+    best, best_score = hub, (0, 0.0, 0)
+    for t in kept + [hub]:
+        theirs = subject_words(t, common)
+        shared = (mine & theirs) - MODIFIERS
+        if theirs and theirs <= mine:
+            score = (2, len(theirs), volume(t))
+        elif shared:
+            score = (1, len(shared) / len(mine | theirs), volume(t))
+        else:
+            continue
+        if score > best_score:
+            best, best_score = t, score
+    return best
+
+
+def sub_hubs(kept: list[dict], members: list[dict] | None = None, hub: dict | None = None) -> dict[str, dict]:
+    """{cluster_id: sub-hub row}: within a pillar, a kept post whose subject is one word w ('how to decorate a
+    christmas tree', subject {tree}) heads the other kept posts about w ('... with ribbon', 'white ...') when there
+    are at least 3 of them with it; the pillar then links to the sub-hub and the sub-hub to its posts, instead of one
+    pillar linking to every post. The most specific word wins when a post has several. Subject words come from the
+    names, minus the words half of the pillar shares (its own subject: 'decorate')."""
+    common = topic_words(members or kept, hub)
+    subj = {r["cluster_id"]: subject_words(r, common) - MODIFIERS for r in kept}
+    words: dict[str, list[dict]] = defaultdict(list)
+    for r in kept:
+        for w in subj[r["cluster_id"]]:
+            words[w].append(r)
+    parent: dict[str, dict] = {}
+    for w, rs in sorted(words.items(), key=lambda kv: (len(kv[1]), kv[0])):
+        heads = [r for r in rs if subj[r["cluster_id"]] == {w}]
+        if not heads or len(rs) < 3:
+            continue
+        head = max(heads, key=lambda r: (winnable(r), volume(r)))
+        for r in rs:
+            if r is not head and r["cluster_id"] not in parent and head["cluster_id"] not in parent:
+                parent[r["cluster_id"]] = head
+    return parent
 
 
 def has_need(needs: set[str], spec: str) -> bool:
@@ -241,6 +412,45 @@ def has_need(needs: set[str], spec: str) -> bool:
 
 def volume(r: dict) -> int:
     return to_int(r["cluster_volume"])
+
+
+def winnable(r: dict) -> int:
+    """The volume the blog can realistically win (keyword-clustering: volume x fit of each keyword's KD against the
+    site's reach); the raw volume when clusters.csv predates the column."""
+    v = r.get("cluster_winnable")
+    return to_int(v) if v not in (None, "") else volume(r)
+
+
+def audited(r: dict) -> bool:
+    """An SEO group that keyword-clustering checked against the rules (--prior-mode audit): the topic map audits its
+    pillar and post-or-section too, instead of keeping it as the SEO set it."""
+    return (r.get("grouping_basis") or "").startswith("prior:audited")
+
+
+# Words that say how a post is written, not what it is about: 'how to decorate a christmas tree step by step' and
+# '... professionally' are the same 'tree' post; 'christmas decorating ideas' is the pillar's own subject.
+ANGLE_WORDS = frozenset({"step", "steps", "guide", "guides", "tip", "tips", "idea", "ideas", "easy", "easily", "simple",
+                         "professionally", "professional", "pro", "beginner", "beginners", "way", "ways", "best", "basic",
+                         "basics", "quick", "quickly", "perfectly", "properly", "nicely", "like"})
+SUBJECT_STOP = frozenset({"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was", "were", "do", "does",
+                          "did", "and", "or", "what", "when", "where", "why", "how", "who", "which", "with", "at",
+                          "by", "it", "its", "you", "your", "my", "i", "we", "our", "this", "that", "be", "can", "should",
+                          "make", "get", "use", "using", "up", "from", "about", "day"})
+
+
+def subject_core(r: dict) -> frozenset:
+    return core_of(r) - ANGLE_WORDS
+
+
+def subject_words(r: dict, common: set[str]) -> set[str]:
+    """Words of the cluster's name that carry its subject: no question words, filler, angle words or words that half
+    of the file shares (the topic: 'christmas')."""
+    words = set()
+    for t in re.findall(r"[a-z0-9]+", (r.get("cluster_name") or "").lower()):
+        t = t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith(("ss", "us", "is")) else t
+        if t not in SUBJECT_STOP and t not in ANGLE_WORDS and t not in common:
+            words.add(t)
+    return words
 
 
 def core_of(r: dict) -> frozenset:
@@ -312,11 +522,19 @@ def split_by_theme(groups: dict, tax: dict | None, max_size: int, min_clusters: 
     return out, backlog, standalone, split_notes
 
 
-def choose_theme_hub(rows: list[dict]) -> dict:
-    """Hub of a theme pillar: the broadest cluster (empty core: 'history of thanksgiving', 'when is thanksgiving'),
-    else the strongest one."""
-    broad = [r for r in rows if not core_of(r)]
-    return max(broad or rows, key=lambda r: (volume(r), priority_score(r)))
+def promo_facets(r: dict, own_facet: str) -> int:
+    """Facets a cluster names beyond its group's own: occasion, recipient, interest, product, craft."""
+    return sum(1 for f in ("occasion", "recipient", "interest", "product", "craft") if f != own_facet and r.get(f))
+
+
+def choose_theme_hub(rows: list[dict], own_facet: str = "") -> dict:
+    """Hub of a theme pillar: a cluster that names no narrower audience or product than the pillar ('christmas gift
+    ideas', not 'christmas gifts for mom'), then the broadest (empty core: 'history of thanksgiving', 'when is
+    thanksgiving'), then the one the site can win the most traffic with (winnable volume: KD against its reach)."""
+    fewest = min(promo_facets(r, own_facet) for r in rows)
+    pool = [r for r in rows if promo_facets(r, own_facet) == fewest]
+    broad = [r for r in pool if not core_of(r)]
+    return max(broad or pool, key=lambda r: (winnable(r), volume(r), priority_score(r)))
 
 
 # Words that say who or when, not what: they narrow a post without making it a different post
@@ -354,7 +572,7 @@ def nearest_post(r: dict, targets: list[dict], hub: dict) -> dict:
     of it, the most specific such post wins), else the post sharing most of r's core, else the pillar hub."""
     cr, best, best_score = core_of(r), hub, (0.5, 0.0, 0)
     for t in targets:
-        ct = core_of(t)
+        ct = core_of(t) - ANGLE_WORDS if audited(t) else core_of(t)
         if ct and ct <= cr:
             score = (2.0 + len(ct), 0.0, volume(t))
         elif (ct & cr) - MODIFIERS:  # sharing only 'kids' does not make 'thanksgiving for kids' a books post
@@ -425,7 +643,7 @@ def select_posts(hub: dict | None, members: list[dict], max_posts: int, min_post
         if rows and sum(volume(r) for r in rows) >= threshold / 2:  # a later, narrower sub-topic may have taken most of it
             rep_of[n] = representative(n, rows)
             kept.append(rep_of[n])
-    if not kept and hub is None and others:  # a virtual pillar still needs one real post to merge the rest into
+    if not kept and hub is None and others:  # a group with no pillar row still needs one real post to merge into
         kept = [max(others, key=lambda r: (priority_score(r), volume(r)))]
     kept_ids = {r["cluster_id"] for r in kept}
     targets = kept + ([hub] if hub else [])
@@ -559,13 +777,23 @@ def xlsx_rows(path: str) -> list[list[str]]:
     return rows
 
 
+def norm_market(raw) -> str:
+    """us, uk ('gb'...) or '' (any market: '' or 'all'), as the cluster step reads the market of a decision."""
+    s = (raw or "").strip().lower()
+    return {"gb": "uk", "united kingdom": "uk", "great britain": "uk", "united states": "us", "usa": "us",
+            "all": ""}.get(s, s)
+
+
 def read_decisions(path: str) -> list[dict]:
-    """Rows of a decisions file (CSV, or the .xlsx sheet 'Decisions' or first sheet) keyed by lowercase header."""
+    """Rows of a decisions file (CSV, or the .xlsx sheet 'Decisions' or first sheet) keyed by lowercase header. A CSV
+    uses the delimiter of its header line (',' ';' or a tab): Excel saves ';' with Vietnamese regional settings."""
     if path.lower().endswith((".xlsx", ".xlsm")):
         rows = xlsx_rows(path)
     else:
         with open(path, encoding="utf-8-sig", newline="") as fh:
-            rows = list(csv.reader(fh))
+            text = fh.read()
+        head = next((ln for ln in text.splitlines() if "decision_id" in ln.lower()), ",")
+        rows = list(csv.reader(io.StringIO(text, newline=""), delimiter=max(",;\t", key=head.count)))
     for h, row in enumerate(rows):
         header = [str(c).strip().lower() for c in row]
         if "decision_id" in header and "action" in header:
@@ -651,11 +879,13 @@ def apply_topic_decisions(decisions: list[dict], plans: list[dict], leftovers: l
         if action not in TOPIC_ACTIONS:
             continue  # another step's action: not logged here
         e = {"decision_id": d.get("decision_id", ""), "step": "topic", "action": action,
-             "market": (d.get("market") or "").strip().lower(), "keyword": d.get("keyword", ""),
+             "market": norm_market(d.get("market")), "keyword": d.get("keyword", ""),
              "target": d.get("target", ""), "value": d.get("value", ""), "author": d.get("author", ""),
              "status": "", "detail": ""}
         log.append(e)
-        if not (d.get("reason") or "").strip() or not (d.get("evidence") or "").strip():
+        if (d.get("author") or "").strip().lower() == "proposal":
+            e.update(status="invalid", detail="author 'proposal': a back-check proposal is never applied as it is")
+        elif not (d.get("reason") or "").strip() or not (d.get("evidence") or "").strip():
             e.update(status="invalid", detail="reason and evidence are required")
         elif e["market"] not in ("", "us", "uk"):
             e.update(status="invalid", detail=f"unknown market '{e['market']}'")
@@ -664,8 +894,9 @@ def apply_topic_decisions(decisions: list[dict], plans: list[dict], leftovers: l
         else:
             todo.append(e)
     by_kw: dict[tuple, list[dict]] = defaultdict(list)
-    for e in todo:
-        by_kw[(e["market"], decision_key(e["keyword"]))].append(e)
+    for e in todo:  # grouped by the cluster each one names, so a blank market and 'us' on one keyword still clash
+        r, _, _ = find(e["keyword"], e["market"])
+        by_kw[("cluster", r["cluster_id"]) if r is not None else (e["market"], decision_key(e["keyword"]))].append(e)
     for group in by_kw.values():
         acts, clash = {e["action"] for e in group}, set()
         if {"promote_pillar", "demote_pillar"} <= acts:
@@ -779,10 +1010,14 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
           max_posts: int = 0, min_post_volume: int = 300, max_sub_pillars: int = 10, target_posts: int = 0,
           min_post_share: float = 0.02, keep_volume: int = 2000, small_pillar: int = 12,
           promote_min_volume: int = 50, promote_min_share: float = 0.15,
-          decisions: list[dict] | None = None, decision_log: list[dict] | None = None):
+          decisions: list[dict] | None = None, decision_log: list[dict] | None = None,
+          seo_min_post_volume: int = 100, audit_log: list[dict] | None = None):
     live = [r for r in rows if r["blog_fit"] != "low"]
     skipped = [r for r in rows if r["blog_fit"] == "low"]
-    seo_items, seo_hub, live = seo_pillars(live)  # the SEO's own pillars first: the engine groups the rest
+    if audit_log is None:
+        audit_log = []
+    # the SEO's own pillars first (kept, or audited when keyword-clustering audited the groups): the engine groups the rest
+    seo_items, seo_hub, live = seo_pillars(live, audit_log if any(audited(r) for r in live) else None)
     real, leftovers = assign_groups(live, priority, min_clusters)
     groups, backlog, extra_standalone, split_notes = split_by_theme(real, tax, max_pillar_size, min_clusters, max_sub_pillars)
     members_of_topic: dict[tuple, list[tuple[dict, tuple]]] = defaultdict(list)
@@ -813,8 +1048,10 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         used_slugs.add(slug)
         return slug
 
-    def post_row(base: dict, r: dict, role: str, slug: str, note: str = "", merged_into: str = "") -> dict:
+    def post_row(base: dict, r: dict, role: str, slug: str, note: str = "", merged_into: str = "",
+                 parent_post: str = "") -> dict:
         return {**base, "role": role, "cluster_id": r["cluster_id"], "primary_keyword": r["cluster_name"],
+                "parent_post": parent_post, "winnable": winnable(r), "main_kd_fit": r.get("main_kd_fit", ""),
                 "planned_slug": slug, "post_type": post_type(r, False) if role != "merged" else "merged",
                 "reader_need": r["reader_need"], "cluster_volume": volume(r),
                 "priority_score": priority_score(r) if role != "merged" else 0, **facet_cols(r),
@@ -826,24 +1063,35 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         pid = f"P{n:02d}"
         pillar_ids[(market, ptype, key)] = pid
         hub = seo_hub.get((market, ptype, key))
-        if hub is not None:  # the SEO's pillar: hub and posts as the grouped file set them
+        if hub is not None:  # the SEO's pillar: kept as the file set it, or audited (posts and sections)
             name = hub["cluster_name"]
+            if audited(hub):
+                kept, merged = select_posts_audit(hub, members, seo_min_post_volume, audit_log)
+            else:
+                kept, merged = [m for m in members if m is not hub], {}
             plans.append({"pid": pid, "promoted": False, "no_pillar": False, "seo": True, "theme": "", "members": members,
-                          "chosen": hub, "kept": [m for m in members if m is not hub], "merged": {},
-                          "topic": (market, ptype, key),
+                          "chosen": hub, "kept": kept, "merged": merged, "audited": audited(hub),
+                          "topic": (market, ptype, key.split("/", 1)[0]),
                           "base": {"pillar_id": pid, "pillar_type": ptype, "pillar_key": key,
                                    "pillar_name": name[:1].upper() + name[1:], "market": market}})
             continue
         title = theme_pillar_title(ptype, key.split("/", 1)[0], theme, market, tax) if theme else pillar_title(ptype, key, market, tax)
-        chosen = choose_theme_hub(members) if theme else choose_pillar_cluster(members, ptype)
+        chosen = choose_theme_hub(members, ptype) if theme else choose_pillar_cluster(members, ptype)
         promoted = False
         broad = [r for r in members if theme or not narrower_facets(r, ptype)]
         if chosen is None and broad:  # no broad head keyword: the strongest broad cluster becomes the real pillar if strong enough
-            top = max(broad, key=lambda r: (volume(r), priority_score(r)))
+            # the fewest extra facets first ('caption ideas for family photos' names a recipient: not the hub of all
+            # the slogans), then the traffic the site can win, not the raw volume
+            fewest = min(promo_facets(r, ptype) for r in broad)
+            top = max((r for r in broad if promo_facets(r, ptype) == fewest), key=lambda r: (winnable(r), volume(r)))
             total = sum(volume(r) for r in members)
             if volume(top) >= promote_min_volume and total and volume(top) / total >= promote_min_share:
                 chosen, promoted = top, True
-        kept, merged = select_posts(chosen, members, max_posts, min_post_volume, min_post_share, keep_volume, small_pillar)
+        if chosen is not None and all(audited(m) for m in members):  # the SEO's groups, grouped here by the engine
+            kept, merged = select_posts_audit(chosen, members, seo_min_post_volume, audit_log)
+        else:
+            kept, merged = select_posts(chosen, members, max_posts, min_post_volume, min_post_share, keep_volume,
+                                        small_pillar)
         plans.append({"pid": pid, "promoted": promoted, "no_pillar": chosen is None, "theme": theme, "members": members, "chosen": chosen, "kept": kept, "merged": merged,
                       "topic": (market, ptype, key.split("/", 1)[0]),
                       "base": {"pillar_id": pid, "pillar_type": ptype, "pillar_key": key, "pillar_name": title,
@@ -865,11 +1113,11 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         base, chosen, members, theme = plan["base"], plan["chosen"], plan["members"], plan["theme"]
         pid, ptype = plan["pid"], base["pillar_type"]
         total = sum(volume(r) for r in members)
-        seasons = {r.get("season", "") for r in members if r.get("season")}
         if chosen:
             out.append({**base, "role": "pillar", "cluster_id": chosen["cluster_id"],
                         "primary_keyword": chosen["cluster_name"], "planned_slug": slug_of[chosen["cluster_id"]],
                         "post_type": "pillar-hub", "reader_need": chosen["reader_need"],
+                        "winnable": winnable(chosen), "main_kd_fit": chosen.get("main_kd_fit", ""),
                         "cluster_volume": volume(chosen), "priority_score": priority_score(chosen),
                         **facet_cols(chosen), "keywords": chosen["keywords"], "parent_hint": "",
                         "note": ("pillar set by the SEO's grouped file (Category Kind / Thuộc Pillar); write it as a hub that "
@@ -878,8 +1126,18 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
                                  "write it as a hub that covers the clusters below" if plan["promoted"] else
                                  f"pillar chosen from cluster {chosen['cluster_id']}; write it as a hub that covers the clusters below"),
                         "merged_into": ""})
+        parent = sub_hubs(plan["kept"], plan["members"], plan["chosen"])
+        heads: dict[str, int] = defaultdict(int)
+        for head in parent.values():
+            heads[head["cluster_id"]] += 1
         for r in sorted(plan["kept"], key=lambda r: -volume(r)):
-            out.append(post_row(base, r, "cluster", slug_of[r["cluster_id"]], note=NO_PILLAR_NOTE if plan["no_pillar"] else ""))
+            note = NO_PILLAR_NOTE if plan["no_pillar"] else ""
+            if heads.get(r["cluster_id"]):
+                note = (note + "; " if note else "") + (f"sub-hub: links down to the {heads[r['cluster_id']]} posts "
+                                                        "on its subject and up to the pillar")
+            up = parent.get(r["cluster_id"])
+            out.append(post_row(base, r, "cluster", slug_of[r["cluster_id"]], note=note,
+                                parent_post=slug_of[up["cluster_id"]] if up else ""))
         for r in sorted((m for m in members if m["cluster_id"] in plan["merged"]), key=lambda r: -volume(r)):
             target = plan["merged"][r["cluster_id"]]
             out.append(post_row(base, r, "merged", "", merged_into=slug_of.get(target["cluster_id"], ""),
@@ -901,10 +1159,13 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
             label = pillar_title(gkey[1], gkey[2], gkey[0], tax).replace(" Gift Ideas", "")
             gaps.setdefault(pid, []).extend((f"theme:{t}", THEME_GAPS[t].format(topic=label.lower())) for t in missing)
 
-    keys_by_market = {(m, k): pid for (m, t, k), pid in pillar_ids.items()}
-    for (market, ptype, key), pid in first_pid.items():  # a split topic points to its biggest theme pillar
-        keys_by_market.setdefault((market, key), pid)
-    hint_of_extra = {id(r): first_pid.get(gkey, "") for r, gkey in extra_standalone}
+    with_hub = {plan["pid"] for plan in plans if plan["chosen"]}  # a hint never names a group with no pillar row
+    keys_by_market = {(m, k): pid for (m, t, k), pid in pillar_ids.items() if pid in with_hub}
+    for (market, ptype, key), pid in sorted(first_pid.items(), key=lambda kv: kv[1]):
+        if pid in with_hub:  # a split topic points to its biggest theme pillar that has a hub
+            keys_by_market.setdefault((market, key), pid)
+    hint_of_extra = {id(r): pid for r, gkey in extra_standalone
+                     for pid in [first_pid.get(gkey, "")] if pid in with_hub}
     for r in sorted(leftovers + [r for r, _ in extra_standalone], key=lambda r: -volume(r)):
         hint = hint_of_extra.get(id(r), "")
         for facet in ("interest", "recipient", "occasion", "craft", "product"):
@@ -918,8 +1179,8 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
                     "role": "standalone", "cluster_id": r["cluster_id"], "primary_keyword": r["cluster_name"],
                     "planned_slug": unique_slug(r["cluster_name"]), "post_type": post_type(r, False),
                     "reader_need": r["reader_need"], "cluster_volume": volume(r),
-                    "priority_score": priority_score(r), **facet_cols(r),
-                    "keywords": r["keywords"], "parent_hint": hint,
+                    "priority_score": priority_score(r), **facet_cols(r), "winnable": winnable(r),
+                    "main_kd_fit": r.get("main_kd_fit", ""), "keywords": r["keywords"], "parent_hint": hint,
                     "note": ("no theme pillar fits this post: write it on its own and link it to the suggested pillar"
                              if id(r) in hint_of_extra else
                              "fewer than %d clusters in this group: write as a standalone post, link to the suggested pillar if there is one" % min_clusters),
@@ -947,6 +1208,9 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         o["bucket"] = "A" if pct <= 0.2 else "B" if pct <= 0.5 else "C"
     for o in out:
         o.setdefault("bucket", "")
+        o.setdefault("parent_post", "")
+        o.setdefault("winnable", "")
+        o.setdefault("main_kd_fit", "")
         o["note"] = note_of.get(o["cluster_id"], o["note"])
         o["decision_ids"] = "|".join(dec_of.get(o["cluster_id"], []))
     return out, gaps
@@ -965,7 +1229,7 @@ THEME_GAPS = {
 FIELDS = ["pillar_id", "pillar_type", "pillar_key", "pillar_name", "role", "cluster_id", "primary_keyword",
           "planned_slug", "post_type", "reader_need", "cluster_volume", "priority_score", "bucket", "season",
           "market", "occasion", "recipient", "interest", "product", "craft", "keywords", "parent_hint", "note",
-          "theme", "merged_into", "decision_ids"]
+          "theme", "merged_into", "decision_ids", "parent_post", "winnable", "main_kd_fit"]
 
 
 def write_md(path: str, out: list[dict], gaps: dict) -> None:
@@ -1044,6 +1308,9 @@ def main(argv=None) -> int:
                     help="... and it must own this share of the pillar's volume outside the hub (default 0.02 = 2%%)")
     ap.add_argument("--keep-volume", type=int, default=2000,
                     help="a sub-topic owning at least this volume is always a post, whatever its share (default 2000)")
+    ap.add_argument("--seo-min-post-volume", type=int, default=100,
+                    help="in a pillar of the SEO's audited groups (keyword-clustering --prior-mode audit), a group with "
+                         "less volume than this becomes a section of the closest post (default 100)")
     ap.add_argument("--max-sub-pillars", type=int, default=10, help="maximum theme pillars per split topic (default 10)")
     ap.add_argument("--target-posts", type=int, default=0,
                     help="cap the plan size: in a pillar that is too big, a cluster must also be among the N largest "
@@ -1063,11 +1330,24 @@ def main(argv=None) -> int:
     priority = [p.strip() for p in args.priority.split(",") if p.strip()]
     decisions = read_decisions(args.decisions) if args.decisions else None
     log: list[dict] = []
+    audit_log: list[dict] = []
     out, gaps = build(rows, priority, args.min_clusters, tax, args.max_pillar_size, args.max_posts,
                       args.min_post_volume, args.max_sub_pillars, args.target_posts, args.min_post_share,
                       args.keep_volume, args.keep_all_up_to, args.promote_min_volume, args.promote_min_share,
-                      decisions, log)
+                      decisions, log, args.seo_min_post_volume, audit_log)
     os.makedirs(args.out, exist_ok=True)
+    audit_path = os.path.join(args.out, "seo-audit-topic.csv")
+    if any(audited(r) for r in rows) or os.path.exists(audit_path):  # never leave a stale audit behind
+        with open(audit_path, "w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=AUDIT_FIELDS)
+            w.writeheader()
+            w.writerows(audit_log)
+        if audit_log:
+            done = defaultdict(int)
+            for a in audit_log:
+                done[a["check"]] += 1
+            print("SEO audit (topic step): " + ", ".join(f"{k} {v}" for k, v in sorted(done.items()))
+                  + " (seo-audit-topic.csv)")
     if decisions is not None:
         with open(os.path.join(args.out, "decisions-log-topic.csv"), "w", encoding="utf-8", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=LOG_FIELDS)

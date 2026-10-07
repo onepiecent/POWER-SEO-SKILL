@@ -16,19 +16,23 @@ A web search is **not** a Google SERP: never record overlap counts from it. A de
 
 Merge rule **[Google]**: one post per SERP-and-intent pair. Google's site-diversity system generally shows no more than two results per site, and the doorway and scaled-content-abuse policies forbid near-duplicate pages per variant. Keeping two close variants apart needs SERP evidence that they differ and a stated angle for each. Pillar/cluster is a **[Convention]**, not a Google concept.
 
+## The SEO audit (`--prior`, `--prior-mode audit`, the default)
+
+Before the back-check, a grouped input is audited against the skill's own rules (`kw_audit.py`, then `topic_map.py`) and **regrouped where a rule fails, on positive evidence only**; every change is a row of `seo-audit.csv` / `seo-audit-topic.csv` (sheet SEO Audit of the final plan). The rules, strongest evidence first: the same query in two groups (same normalised words, or SERP overlap of the mains) is one post; a keyword listed in several groups stays where it is the main, else where its words fit best; a pure shopping keyword leaves a blog group; a better main keyword (a year-free form, 2x the volume, or 1.25x the winnable volume while the SEO's main is above the site's KD reach; same subject words in the same order, never an inverted phrasing); a post that shares no subject word with its pillar but does with another moves there; a group at least as broad as the SEO's pillar that wins 1.5x its traffic becomes the hub; two groups that ask the same thing once angle words are set aside are one post; a group under `--seo-min-post-volume` (100) becomes a section of the closest post. A pair the words only suggest (`possible_duplicate`) is **not applied**: it goes to the SEO for a SERP check. Word similarity alone never splits an SEO group. `--prior-mode keep` skips the audit and keeps every group as it is. All thresholds are **[Convention]**.
+
 ## The back-check (`backcheck.csv`, every run)
 
-`cluster_keywords.py` back-checks the groups in every run: the SEO's groups when the input was grouped (`--prior`), the engine's own clusters otherwise. Every issue cites the real numbers from the data and proposes one decision; **nothing proposed is applied**. Thresholds: SERP overlap = `--serp-overlap`, word overlap = `--sim`; the other numbers are **[Convention]** and printed in `backcheck-report.md`.
+`cluster_keywords.py` back-checks the groups in every run: the clusters as planned (one group per cluster, named after its SEO group when it has one), so a keyword the audit or a decision moved is checked where it is now. Every issue cites the real numbers from the data and proposes one decision; **nothing proposed is applied**. Thresholds: SERP overlap = `--serp-overlap`, word overlap = `--sim`; the other numbers are **[Convention]** and printed in `backcheck-report.md`.
 
 | check | detects | proposed action |
 |---|---|---|
 | `duplicate_across_groups` | the same keyword in two or more groups (two posts would target it) | `move_keyword` |
 | `secondary_is_other_main` | a secondary keyword of a group is, or answers the same query as, another group's main | `merge` |
 | `same_question_groups` | two group mains answered by the same results (SERP overlap, same Parent Topic) | `merge` |
-| `weak_member` | a member fits another group's main better than its own main | `move_keyword` |
+| `weak_member` | a member fits another group's main better than its own main: by SERP overlap (high, `move_keyword`), or, for an SEO group, by words only (low, no proposal: check both SERPs; never a keyword bigger than the target group, never a head term moved under a longer phrase that contains it; the engine's own clusters are not re-judged on words) | `move_keyword` (SERP only) |
 | `mixed_intent` | the tool's intent labels split a group between readers who research and readers who buy (the smaller side ≥ 20% of the volume) | `split` |
-| `ungrouped_high_volume` | export keywords in no SEO group form a cluster as big as an SEO group's main (default: stays a new post) | none (default applied) |
-| `main_not_best` | a member has at least 2× the main keyword's volume | `rename_main` |
+| `ungrouped_high_volume` | export keywords in no SEO group form a cluster as big as the median SEO group main of the market (default: stays a new post) | none (default applied) |
+| `main_not_best` | a member has at least 2× the main keyword's volume | `rename_main` (none when the engine chose the main on purpose: a more natural, evergreen or easier phrasing) |
 | `no_data` | no keyword of the group has search volume in the exports | `research_seed` |
 | `need_conflict` | the words say shop, the tool or the SERP says the reader researches (default: stays in the blog) | `set_need` |
 
@@ -58,6 +62,7 @@ A step ignores, and does not log, actions meant for another step.
 - A **claude**-authored `merge`, `move_keyword`, `keep_apart` or `split` contradicted by the data is `rejected_by_data` and not applied. Contradicted means: both sides have SERP URLs and the overlap is below `--serp-overlap` (for `merge`/`move_keyword`), or at or above it (for `keep_apart`/`split`), or the Parent Topics differ (for `merge`/`move_keyword`). Do not retry it: tell the user and ask the SEO to check the live SERP.
 - A **human**-authored one (any other `author`) is `applied_with_warning`: the SEO may have checked the live SERP. The warning stays in the log.
 - A keyword not found is `stale`; `detail` names the closest current keyword by shared words, so the decision can be re-keyed.
+- A row whose `author` is `proposal` (copied as it is from `proposed-decisions.csv`) is `invalid` in every step: a proposal is never applied until someone writes their own reason, evidence and name.
 - Two decisions with opposite effects on the same pair (for example `merge A B` and `keep_apart A B`) are both `conflict`; neither is applied.
 - An empty `reason` or `evidence` makes a decision `invalid`.
 

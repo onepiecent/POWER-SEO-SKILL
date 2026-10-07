@@ -36,9 +36,9 @@ ALIASES = {
                "monthly volume", "sv", "us volume", "uk volume"],
     "impressions": ["impressions"],
     "clicks": ["clicks"],
-    # Semrush Personal Keyword Difficulty is preferred when both are exported
-    "kd": ["personal keyword difficulty", "kd", "kd %", "kd%", "keyword difficulty", "keyword difficulty index",
-           "difficulty", "seo difficulty"],
+    "kd": ["kd", "kd %", "kd%", "keyword difficulty", "keyword difficulty index", "difficulty", "seo difficulty"],
+    # Semrush Personal Keyword Difficulty (for the site's own domain) is used row by row when it has a value
+    "pkd": ["personal keyword difficulty", "pkd", "pkd %", "pkd%"],
     "cpc": ["cpc", "cost per click"],
     "market": ["market", "country", "location", "geo", "country code", "database"],
     "serp": ["serp_urls", "serp urls", "top_urls", "top urls", "serp", "top 10 urls", "serp results"],
@@ -49,7 +49,7 @@ ALIASES = {
     "serp_features": ["serp features", "serp features by keyword"],
     "trend": ["trend", "trends", "sv trend"],  # the raw header is kept: Ahrefs puts the month range in brackets
     "traffic_potential": ["traffic potential"],
-    "ranking_url": ["url", "current url"],
+    "ranking_url": ["url", "current url", "page", "landing page"],  # Search Console Query + Page
     "competitive_density": ["competitive density"],
     "results": ["number of results"],
     "click_potential": ["click potential"],
@@ -64,9 +64,9 @@ ALIASES = {
     # columns of a file that was already grouped ('topic' is handled in _colmap: a pillar beside 'page', else a group)
     "group": ["cluster", "cluster name", "group", "keyword group", "nhóm", "cụm", "nhóm từ khóa", "nhóm từ khoá",
               "chủ đề"],
-    "main": ["main keyword", "primary keyword", "từ khóa chính", "từ khoá chính", "page"],
+    "main": ["main keyword", "primary keyword", "từ khóa chính", "từ khoá chính"],
     "secondary": ["secondary keyword", "secondary keywords", "từ khóa phụ", "từ khoá phụ"],
-    "role": ["page type", "category kind"],
+    "role": ["page type", "category kind", "kind", "post kind", "page kind", "pillar/cluster", "loại bài", "loại"],
     "pillar": ["pillar", "thuộc pillar"],
     "stt": ["stt"],
     "status": ["trạng thái", "status"],

@@ -90,9 +90,11 @@ def title_main(title: str) -> str:
 
 def anchor_from_title(title: str) -> str:
     """'Top 21 Thanksgiving T-Shirts for Family to Enhance Your Holiday Spirit' -> 'thanksgiving t-shirts for family'."""
-    t = LIST_START_RX.sub("", title_main(title)).strip()
-    t = re.split(r"\s+(?:to|that|showing|with|from|you|your|for a|for an|for the|for your)\s+", t, maxsplit=1,
+    full = LIST_START_RX.sub("", title_main(title)).strip()
+    t = re.split(r"\s+(?:to|that|showing|with|from|you|your|for a|for an|for the|for your)\s+", full, maxsplit=1,
                  flags=re.I)[0]
+    if len(t.split()) < 2:  # '50+ Quotes To Write Into Gift Card For Thanksgiving': 'quotes' alone describes nothing
+        t = full
     return " ".join(t.split()[:8]).lower()
 
 

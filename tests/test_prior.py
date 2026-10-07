@@ -110,7 +110,7 @@ class Layouts(PriorBase):
         c2 = next(c for c in cls if c["prior_group"] == "2")
         self.assertEqual((c2["cluster_name"], c2["prior_role"], c2["prior_pillar"], c2["grouping_basis"],
                           c2["seed_basis"]),
-                         ("christmas gifts for mom", "Cluster", "christmas gift ideas", "prior:seo", "seo main"))
+                         ("christmas gifts for mom", "Cluster", "christmas gift ideas", "prior:audited", "seo main"))
         self.assertEqual(kws["xmas gift ideas"]["prior_role"], "also covers")
         self.assertEqual(kws["xmas gift ideas"]["volume"], "880")
 
@@ -124,7 +124,8 @@ class PriorClustering(PriorBase):
                "one of a kind christmas presents,\n")
 
     def test_seo_groups_are_kept_not_regrouped(self):
-        """The verified failure: the engine regrouped the SEO's two groups (and merged 'thursday' into one)."""
+        """The verified failure: the engine regrouped the SEO's two groups (and merged 'thursday' into one). The audit
+        (the default) changes a group only on positive evidence; word similarity alone never splits one."""
         grouped = self.path("grouped.csv", self.GROUPED)
         export = self.path("export.csv", "Keyword,Volume,Keyword Difficulty\n"
                                          "christmas gift sets,1900,30\n"
@@ -140,11 +141,14 @@ class PriorClustering(PriorBase):
         self.assertEqual(m[groups["Gift sets"]["cluster_id"]], ["christmas gift box ideas", "christmas gift sets"])
         self.assertEqual(m[groups["Unique gifts"]["cluster_id"]],
                          ["different christmas gifts", "one of a kind christmas presents", "unique christmas gifts"])
-        self.assertEqual({c["grouping_basis"] for c in groups.values()}, {"prior:seo"})
+        self.assertEqual({c["grouping_basis"] for c in groups.values()}, {"prior:audited"})
         thursday = kws["is christmas on a thursday"]  # the supplement: an export keyword in no group
         self.assertEqual(thursday["prior_group"], "")
         self.assertNotIn(thursday["cluster_id"], {c["cluster_id"] for c in groups.values()})
         self.assertEqual(len(cls), 3)
+        self.assertEqual(kws["christmas gift sets"]["joined_by"], "prior:audited")
+        kws, cls = self.run_ck(export + "::us", "--prior", grouped, "--prior-mode", "keep")
+        self.assertEqual({c["grouping_basis"] for c in cls if c["prior_group"]}, {"prior:seo"})
         self.assertEqual(kws["christmas gift sets"]["joined_by"], "prior:seo")
 
     def test_export_backfills_volume_kd_intent(self):

@@ -112,20 +112,24 @@ def _load(kw_rows, kw_fields, serp_urls) -> list[Kw]:
 def _groups(kws: list[Kw], cl_by_id: dict) -> list[Group]:
     by: dict[tuple, Group] = {}
     cids: dict[tuple, Counter] = defaultdict(Counter)
+    # one group per cluster (the post as planned): keywords an audit or a decision moved or merged belong to the
+    # cluster they are in now, whatever SEO group their row came from; two files that both use STT 1 stay apart
     for k in kws:
-        cl_prior = str(cl_by_id.get(k.cid, {}).get("prior_group") or "")
-        name = k.prior_group or cl_prior or k.cid
-        g = by.get((k.market, name))
+        cl = cl_by_id.get(k.cid, {})
+        cl_prior = str(cl.get("prior_group") or "")
+        name = cl_prior or k.prior_group or k.cid
+        g = by.get((k.market, k.cid))
         if g is None:
-            g = by[(k.market, name)] = Group()
-            g.market, g.name, g.members, g.prior = k.market, name, [], bool(k.prior_group or cl_prior)
+            g = by[(k.market, k.cid)] = Group()
+            g.market, g.name, g.members, g.prior = k.market, name, [], bool(cl_prior or k.prior_group)
         g.members.append(k)
-        cids[(k.market, name)][k.cid] += 1
+        cids[(k.market, k.cid)][k.cid] += 1
     for gk, g in by.items():
-        mains = [k.prior_main for k in g.members if k.prior_main]
         cid = cids[gk].most_common(1)[0][0]
         cl = cl_by_id.get(cid, {})
-        g.main = mains[0] if mains else str(cl.get("cluster_name") or max(g.members, key=lambda k: k.volume).keyword)
+        mains = [k.prior_main for k in g.members if k.prior_main and k.prior_group == g.name]
+        g.main = str(cl.get("cluster_name") or (mains[0] if mains else "") or
+                     max(g.members, key=lambda k: k.volume).keyword)
         g.basis = "" if g.prior else str(cl.get("seed_basis") or "")
         g.key = decision_key(g.main)
         g.row = next((k for k in g.members if k.key == g.key), None)
@@ -312,17 +316,20 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
                           f"SERP overlap of '{k.keyword}' ({k.volume:,} searches/month) with its own main '{g.main}' "
                           f"{own}/{len(k.urls)}, with '{h.main}' {n}/{len(k.urls)} (threshold {serp_t})",
                           "move_keyword", k.keyword, h.main)
-            elif not dup and own is None and not (k.parent and decision_key(k.parent) in {g.key, g.parent}):
+            elif not dup and own is None and g.prior and not (k.parent and decision_key(k.parent) in {g.key, g.parent}):
+                # words only (no SERP): an SEO group's keyword (the engine's own clusters already follow its word
+                # rules); never a keyword bigger than the whole target group, never a head term under a longer
+                # phrase that contains it ('thanksgiving date' -> 'thanksgiving date rule'), and never a proposal
                 own_j = _jaccard(k.toks, g.toks)
                 if own_j < LEX_FLOOR:
-                    j, s = lex_best(k.toks, g.market, i, lambda x: _same_post_kind(k.facets, groups[x].facets))
+                    j, s = lex_best(k.toks, g.market, i, lambda x: _same_post_kind(k.facets, groups[x].facets)
+                                    and groups[x].volume >= k.volume and not k.toks < groups[x].toks)
                     if j is not None:
                         h = groups[j]
-                        issue("weak_member", "medium", g, k.keyword, k.volume, h, "lexical",
+                        issue("weak_member", "low", g, k.keyword, k.volume, h, "lexical",
                               f"Word overlap of '{k.keyword}' ({k.volume:,} searches/month) with its own main "
                               f"'{g.main}' {own_j:.2f} (below {LEX_FLOOR}), with '{h.main}' {s:.2f} (threshold "
-                              f"{sim_t}); no SERP URLs to compare, not verified by SERP", "move_keyword", k.keyword,
-                              h.main)
+                              f"{sim_t}); words only, not verified by SERP: check both SERPs before moving it", "")
                     elif not _same_post_kind(k.facets, g.facets):  # about another recipient, product...
                         diff = [f"{f} '{a or '-'}' vs '{b or '-'}'" for f, a, b in zip(FACETS, k.facets, g.facets)
                                 if a != b]
@@ -389,7 +396,7 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
                   (f"{best.volume / g.mvol:.1f}x" if g.mvol else "more than") +
                   f" the main '{g.main}' ({main_txt}; threshold {MAIN_RATIO}x)" +
                   (f"; the engine chose the main on purpose: {g.basis}" if chosen else ""),
-                  "rename_main", best.keyword)
+                  "" if chosen else "rename_main", best.keyword if not chosen else "")
         # no_data: no member has volume
         if g.volume == 0:
             issue("no_data", "medium" if g.prior else "low", g, g.main, 0, None, "data_missing",
@@ -427,20 +434,24 @@ def _check(kw_rows, cl_rows, serp_urls=None, serp_t: int = 4, sim_t: float = 0.6
                   f"Mains '{a.main}' ({a.mvol:,} searches/month, group {a.volume:,}) and '{b.main}' ({b.mvol:,}, group "
                   f"{b.volume:,}) {why}", "merge", a.main, b.main)
 
-    # ungrouped_high_volume (prior mode only): a new cluster as big as the smallest SEO group main of its market
+    # ungrouped_high_volume (prior mode only): a new cluster as big as the median SEO group main of its market (the
+    # smallest one flagged every engine cluster of a big export)
     seo = [i for i, g in enumerate(groups) if g.prior]
     if seo:
         floor: dict[str, int] = {}
+        by_market: dict[str, list[int]] = defaultdict(list)
         for i in seo:
-            g = groups[i]
-            if g.mvol > 0:
-                floor[g.market] = min(floor.get(g.market, g.mvol), g.mvol)
+            if groups[i].mvol > 0:
+                by_market[groups[i].market].append(groups[i].mvol)
+        for m, vols in by_market.items():
+            vols.sort()
+            floor[m] = vols[len(vols) // 2]
         prior_set = set(seo)
         for i, g in enumerate(groups):
             thr = floor.get(g.market)
             if g.prior or thr is None or g.volume < thr:
                 continue
-            ev = (f"'{g.main}' ({len(g.members)} kw, {g.volume:,} searches/month) is in no SEO group; the smallest SEO "
+            ev = (f"'{g.main}' ({len(g.members)} kw, {g.volume:,} searches/month) is in no SEO group; the median SEO "
                   f"group main in {g.market.upper() or 'this market'} has {thr:,}")
             if g.fit == "low":
                 tool = f"tool intent {'/'.join(sorted(g.row.intents))}" if g.row and g.row.intents else "no tool intent"

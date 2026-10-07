@@ -350,7 +350,9 @@ class DiverseAnchors(unittest.TestCase):
                     "keywords": "|".join([kw] + kws), "post_type": "how-to", "parent_hint": "", "merged_into": "",
                     "product": "mug"}
         self.rows = [p("how-to-make-custom-mugs", "how to make custom mugs",
-                       ["custom mug design ideas", "make your own mug at home", "personalised mug tips", "diy photo mugs"], 900)]
+                       ["how to make a custom mug", "make custom mugs at home", "how to make your own custom mugs",
+                        "how to make custom coffee mugs", "custom mugs how to make", "how to make 2 custom mugs",
+                        "diy photo mug ideas"], 900)]
         self.rows += [p(f"mug-post-{i}", f"mug topic {i}", [f"mug topic {i} extra"], 100) for i in range(6)]
 
     def test_anchors_vary_and_the_slug_follows_the_main_keyword(self):
@@ -362,6 +364,8 @@ class DiverseAnchors(unittest.TestCase):
         self.assertEqual(len(set(anchors)), 5)  # all 5 candidate texts are used before any is repeated
         self.assertLessEqual(sum(a == "how to make custom mugs" for a in anchors), 2)  # not mostly the main keyword
         self.assertTrue(set(anchors) - {"how to make custom mugs"} <= set(self.rows[0]["keywords"].split("|")))
+        # never an anchor that describes another page: inverted, another number, another subject
+        self.assertFalse(set(anchors) & {"custom mugs how to make", "how to make 2 custom mugs", "diy photo mug ideas"})
         self.assertTrue(all(l["target_main_keyword"] == "how to make custom mugs" for l in into))
         self.assertEqual(self.rows[0]["planned_slug"], tm.slugify(self.rows[0]["primary_keyword"]))
 

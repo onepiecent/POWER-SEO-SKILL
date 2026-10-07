@@ -146,8 +146,8 @@ class ExportStep(DecisionsBase):
             "D-8,set_titel,us,STT:2,,x,a,b,,claude,",
         ], "--previous", prev)
         self.assertEqual(plan["mother's day gift ideas"]["Title SEO"], "Our Team Title")
-        self.assertEqual(log["D-1"]["status"], "already_true")
-        self.assertIn("skipped: team value present", log["D-1"]["detail"])
+        self.assertEqual(log["D-1"]["status"], "team_value_kept")
+        self.assertIn("skipped: the team's value wins", log["D-1"]["detail"])
         self.assertEqual(plan["when is mother's day"]["Outline"], "H2 the date\nH2 why it moves")
         self.assertEqual((log["D-2"]["status"], log["D-3"]["status"]), ("applied", "applied"))
         self.assertEqual((log["D-4"]["status"], log["D-5"]["status"]), ("conflict", "conflict"))

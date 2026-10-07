@@ -16,7 +16,6 @@ import re
 import unicodedata
 from collections import Counter
 
-import table_io
 
 REVIEW_COLUMNS = ["STT", "Market", "Main Keyword", "Post Type", "Reader Need", "Intent (tool)", "Need vs Intent",
                   "SERP Features (main)", "Grouping Basis", "SEO Group", "Main Volume", "Owned Volume", "Keywords",
@@ -65,13 +64,10 @@ def read_rows(path: str) -> list[dict]:
 
 
 def read_decisions(path: str) -> list[dict]:
-    """The decisions file (contract C1): a CSV, or an .xlsx whose sheet Decisions (else the first sheet) has the headers."""
-    if path.lower().endswith((".xlsx", ".xlsm")):
-        try:
-            return table_io.read_table(path, {"decision_id"}, sheet="Decisions")
-        except SystemExit:
-            pass
-    return table_io.read_table(path, {"decision_id"})
+    """The decisions file (contract C1), read like the export step reads it (plan_decisions.read_decisions): the
+    delimiter of the header line, lowercase keys."""
+    import plan_decisions
+    return plan_decisions.read_decisions(path)
 
 
 def same_market(a: str, b: str) -> bool:
@@ -215,12 +211,17 @@ def review_rows(plan, rows: list[dict], signature, light: set[str], issues: list
     return out
 
 
-def not_planned_rows(plan, topic: list[dict], excluded: list[dict], signature, max_excluded: int = 300) -> list[list]:
-    """Backlog, skip and merged-away clusters of the topic map, then the biggest excluded keywords; each with where
-    it went, the reason and the planned post sharing the most non-topic words with it (the shared words shown)."""
+def not_planned_rows(plan, topic: list[dict], excluded: list[dict], signature, max_excluded: int = 300,
+                     light: set[str] | None = None) -> list[list]:
+    """What the plan does not cover: backlog and skip clusters of the topic map, then the biggest keywords the
+    filters excluded; each with the reason and the planned post sharing the most subject words with it (the shared
+    words shown; question and date words such as 'day' never count). Clusters merged into a post are planned (as
+    sections: sheet Keyword Map), and keywords outside the run's scope (--only, --min-volume, another market) are one
+    summary row, not a list: neither is a gap to review."""
     mains = {plan.stt[p["planned_slug"]]: p for p in plan.posts}
     words = Counter(w for p in plan.posts for w in signature(p["primary_keyword"]))
     topic_words = {w for w, c in words.items() if len(plan.posts) >= 3 and c >= 0.5 * len(plan.posts)}
+    topic_words |= set(light or ())
     post_words = {n: (set(signature(p["primary_keyword"])) | {w for k in p.get("keywords", "").split("|")[:15]
                                                               for w in signature(k)}) - topic_words
                   for n, p in mains.items()}
@@ -235,7 +236,7 @@ def not_planned_rows(plan, topic: list[dict], excluded: list[dict], signature, m
         return f"{n} ({mains[n]['primary_keyword']}; shared: {', '.join(sorted(mine & post_words[n]))})"
 
     out = []
-    for r in sorted((r for r in topic if r.get("role") in ("backlog", "skip", "merged")),
+    for r in sorted((r for r in topic if r.get("role") in ("backlog", "skip")),
                     key=lambda r: -to_int(r.get("cluster_volume"), 0)):
         kws = [k for k in (r.get("keywords") or "").split("|") if k]
         evidence = (f"cluster {r.get('cluster_id', '')}, reader need {r.get('reader_need', '') or '-'}, "
@@ -250,7 +251,14 @@ def not_planned_rows(plan, topic: list[dict], excluded: list[dict], signature, m
             where, near = WHERE[r["role"]], nearest(r.get("primary_keyword", ""), r.get("market", ""))
         out.append([r.get("market", ""), r.get("primary_keyword", ""), to_int(r.get("cluster_volume"), ""), where,
                     r.get("note", ""), near, evidence])
-    for e in sorted(excluded, key=lambda e: -to_int(e.get("volume"), 0))[:max_excluded]:
+    scope = [e for e in excluded if (e.get("reason") or "").startswith(("filter:", "market:"))]
+    if scope:
+        reasons = Counter(e.get("reason", "") for e in scope)
+        out.append(["", f"{len(scope):,} keywords outside this run's scope", sum(to_int(e.get("volume"), 0) for e in scope),
+                    "excluded before clustering (excluded.csv)", ", ".join(f"{k} {v:,}" for k, v in reasons.most_common(4)),
+                    "", "the scope of the run (--only, --min-volume, --include/--exclude, market), not a gap"])
+    noise = [e for e in excluded if not (e.get("reason") or "").startswith(("filter:", "market:"))]
+    for e in sorted(noise, key=lambda e: -to_int(e.get("volume"), 0))[:max_excluded]:
         out.append([e.get("market", ""), e.get("keyword", ""), to_int(e.get("volume"), ""),
                     "excluded before clustering (excluded.csv)", e.get("reason", ""),
                     nearest(e.get("keyword", ""), e.get("market", "")),

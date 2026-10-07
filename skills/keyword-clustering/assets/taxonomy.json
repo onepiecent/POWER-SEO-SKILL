@@ -1037,7 +1037,12 @@
     "trainers": "sneakers",
     "trousers": "pants",
     "humour": "humor",
-    "licence": "license"
+    "licence": "license",
+    "create": "make",
+    "creating": "making",
+    "creates": "makes",
+    "ft": "foot",
+    "feet": "foot"
   },
   "phrase_variants": {
     "t shirt": "tshirt",

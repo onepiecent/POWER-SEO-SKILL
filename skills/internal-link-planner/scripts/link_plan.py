@@ -13,6 +13,20 @@ Audit mode:
 Scope: links between blog posts only. Links to shop pages are NOT in scope (the content team handles them
 through product-slot). The rules rest on Google guidance (crawlable links, descriptive anchors) and industry
 convention; figures such as 3-5 links per 1,000 words or a ~50 inbound-link threshold are heuristics from correlational research (Zyppy).
+
+How the plan decides (every link has a type, a placement and a reason in link-plan.csv):
+  * up      every post links to its pillar (to_pillar), and a post under a sub-hub also to that sub-hub
+            (to_parent): authority flows to the pages that target the broad queries.
+  * down    a pillar links to its sub-hubs and to its most valuable direct posts, at most --pillar-links (default 12)
+            in the body; a sub-hub links to its own posts (from_parent). A pillar never lists every post: the posts
+            under a sub-hub are reached through it (topic-map.csv parent_post).
+  * across  up to --max-contextual (default 2) body links to the posts that talk about the same thing (cosine of
+            their keyword words >= 0.2, shared words named in the reason). A target the site still has to fight for
+            (main KD above its reach: 'stretch' or 'hard') may receive more of these links than an easy one, so the
+            links go where they help rank. Posts of another topic are linked only through their pillar
+            (cross_pillar, when a facet such as the recipient points to it).
+  * related up to --max-related (default 3) posts of the same sub-hub or pillar for the 'Related reading' block,
+            the most similar first, never a post already linked in the body.
 """
 from __future__ import annotations
 
@@ -30,6 +44,8 @@ STOPWORDS = {"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was"
              "what", "when", "where", "why", "how", "who", "which", "with", "at", "by", "it", "its", "you", "we", "your",
              "our", "my", "day", "this", "that", "be", "can", "best", "ideas", "idea", "happy"}
 CONTEXTUAL_MIN = 0.2  # cosine similarity of two posts' keyword words for a contextual body link
+# contextual links a post may receive by how hard its main keyword is for the site (topic-map main_kd_fit)
+INBOUND_CONTEXTUAL = {"easy": 2, "unknown": 3, "stretch": 4, "hard": 4, "": 3}
 FACETS = ("occasion", "recipient", "interest", "product", "craft")
 INBOUND_HEURISTIC_MAX = 50
 OUTBOUND_REVIEW_MAX = 15
@@ -67,19 +83,43 @@ YEAR_RX = re.compile(r"\b(19|20)\d\d\b")
 QUESTION_START_RX = re.compile(r"^(what|when|where|why|how|who|which|is|are|do|does|did|can|should|will)\b")
 
 
+NUMBER_RX = re.compile(r"\d+")
+ANCHOR_SHARE = 0.75  # an anchor keeps >= 75% of the main keyword's words [Convention]
+QUESTION_ANY_RX = re.compile(r"\b(what|when|where|why|how|who|which)\b")
+
+
+def describes(anchor: str, main: str) -> bool:
+    """The anchor describes the target page: it names no number the main keyword does not ('10ft christmas tree' is
+    not the '9 foot christmas tree' post), and it keeps most of the main keyword's words ('how to attach christmas
+    decor to roof' is a section of 'how to decorate christmas outside', not a description of it)."""
+    if set(NUMBER_RX.findall(anchor)) - set(NUMBER_RX.findall(main)):
+        return False
+    low = anchor.lower()
+    if QUESTION_ANY_RX.search(low) and not QUESTION_START_RX.match(low):
+        return False  # an inverted tool phrasing: 'christmas how to decorate', 'secret santa how to reveal'
+
+    a, m = word_counts([anchor]), word_counts([main])
+    return not m or len(set(a) & set(m)) >= ANCHOR_SHARE * len(m)
+
+
 def anchor_candidates(row: dict) -> list[str]:
     """Descriptive anchors from the target's own keywords. No year (the post is refreshed every year, a year in the
-    anchor goes stale) and 'our guide to ...' only for a noun phrase, not for a question."""
+    anchor goes stale), only keywords that describe the page (describes()) and 'our guide to ...' only for a noun
+    phrase, not for a question."""
     main = clean_anchor(row["primary_keyword"])
     cands: list[str] = []
-    for k in [main] + [clean_anchor(k) for k in row["keywords"].split("|") if k][:6]:
-        if 2 <= len(k.split()) <= 8 and not YEAR_RX.search(k) and k.lower() not in {c.lower() for c in cands}:
+    for k in [main] + [clean_anchor(k) for k in row["keywords"].split("|") if k][:10]:
+        if 2 <= len(k.split()) <= 8 and not YEAR_RX.search(k) and k.lower() not in {c.lower() for c in cands} \
+                and (k == main or describes(k, main)):
             cands.append(k)
     if row["post_type"] == "pillar-hub" and not QUESTION_START_RX.match(main.lower()):
-        desc = f"our guide to {main}"
+        desc = "our guide to " + " ".join(YEAR_RX.sub(" ", main).split())
         if len(desc.split()) <= 8 and desc not in cands:
             cands.append(desc)
-    return cands or [main]
+    if not cands:  # a long or dated main keyword: without the year (and a trailing 'this year'), never cut mid-phrase
+        plain = re.sub(r"\s+(this|next|last) year$", "", " ".join(YEAR_RX.sub(" ", main).split()))
+        cands = [plain or main]
+    return cands
 
 
 def word_counts(texts: list[str]) -> dict[str, int]:
@@ -99,10 +139,11 @@ def cosine(a: dict[str, int], b: dict[str, int]) -> float:
 
 class Planner:
     def __init__(self, rows: list[dict], published: set[str] | None, max_siblings: int, max_cross: int,
-                 max_contextual: int = 2):
+                 max_contextual: int = 2, pillar_links: int = 12, max_related: int = 3):
         self.posts = {r["planned_slug"]: r for r in rows if r["role"] != "skip" and r["planned_slug"]}
         self.published = published
         self.max_siblings, self.max_cross, self.max_contextual = max_siblings, max_cross, max_contextual
+        self.pillar_links, self.max_related = pillar_links, max_related
         # the words of each post: its keywords and those of the clusters merged into it, minus the topic word
         # that every post shares ('thanksgiving'), so 'first' or 'native' decide which posts are related
         texts: dict[str, list[str]] = defaultdict(list)
@@ -119,11 +160,16 @@ class Planner:
         self.words = {s: {t: v for t, v in w.items() if t not in common} for s, w in self.words.items()}
         self.links: dict[tuple[str, str], dict] = {}
         self.unresolved: list[tuple[str, str]] = []  # (slug, reason) posts with no natural place to link
-        self.anchor_owner: dict[str, str] = {}
+        self.later: list[tuple[str, str]] = []  # (slug, note) posts the pillar does not link to in its body
+        self.ctx_in: dict[str, int] = defaultdict(int)  # contextual links received
+        self.anchor_owner: dict[tuple, str] = {}
         self.anchor_use: dict[str, int] = defaultdict(int)
         self.pillar_slug = {r["pillar_id"]: r["planned_slug"] for r in self.posts.values() if r["role"] == "pillar"}
         self.pillar_by_key = {(r["market"], r["pillar_key"]): r["pillar_id"]
                               for r in self.posts.values() if r["role"] == "pillar"}
+        # a theme or SEO pillar ('christmas/decor', 'christmas/seo-...') is also found by its topic: the biggest one
+        for r in sorted((r for r in self.posts.values() if r["role"] == "pillar"), key=lambda r: r["pillar_id"]):
+            self.pillar_by_key.setdefault((r["market"], self.topic(r)), r["pillar_id"])
 
     # -- helpers
     def shared(self, a: dict, b: dict) -> int:
@@ -148,10 +194,11 @@ class Planner:
             self.anchor_use[f"{slug}|{cands[i]}"],
             (i != 0) if want_main else (i == 0),  # main first only when it is owed, else secondary keywords first
             -overlap(cands[i]), i))
-        for i in order:
-            owner = self.anchor_owner.get(cands[i].lower())
+        market = target.get("market", "")
+        for i in order:  # one text never points at two targets of the same market
+            owner = self.anchor_owner.get((market, cands[i].lower()))
             if owner in (None, slug):
-                self.anchor_owner[cands[i].lower()] = slug
+                self.anchor_owner[(market, cands[i].lower())] = slug
                 self.anchor_use[f"{slug}|{cands[i]}"] += 1
                 alts = [c for j, c in enumerate(cands) if j != i][:3]
                 return cands[i], " | ".join(alts)
@@ -171,6 +218,8 @@ class Planner:
         if src == dst or src not in self.posts or dst not in self.posts or (src, dst) in self.links:
             return
         anchor, alts = self.pick_anchor(self.posts[dst], self.posts[src])
+        if ltype == "contextual":
+            self.ctx_in[dst] += 1
         self.links[(src, dst)] = {
             "source_slug": src, "source_keyword": self.posts[src]["primary_keyword"], "target_slug": dst,
             "target_main_keyword": self.posts[dst]["primary_keyword"],
@@ -191,6 +240,16 @@ class Planner:
         return cands
 
     # -- build
+    def need(self, slug: str) -> int:
+        """Contextual links a post may still receive: more when its main keyword is above the site's reach."""
+        return INBOUND_CONTEXTUAL.get(self.posts[slug].get("main_kd_fit", ""), 3) - self.ctx_in[slug]
+
+    def value(self, p: dict) -> int:
+        return to_int(p.get("priority_score")) or to_int(p.get("cluster_volume"))
+
+    def section_of(self, target: dict) -> str:
+        return f"the section on '{target['primary_keyword']}' (one H2 or paragraph)"
+
     def build(self) -> None:
         by_pillar: dict[str, list[dict]] = defaultdict(list)
         for p in self.posts.values():
@@ -199,27 +258,52 @@ class Planner:
         for pid, members in by_pillar.items():
             pillar = self.pillar_slug.get(pid)  # None: the group has no real pillar yet, its posts link to each other
             clusters = [m for m in members if m["role"] == "cluster"]
+            children: dict[str, list[dict]] = defaultdict(list)
             for c in clusters:
-                if not pillar:
-                    break
-                self.add(c["planned_slug"], pillar, "to_pillar", "intro or first H2 (first half of the post)", 1,
-                         "cluster links up to its pillar")
-                self.add(pillar, c["planned_slug"], "from_pillar", "section that covers this angle", 1,
-                         "pillar links down to every cluster")
+                if c.get("parent_post") in self.posts:
+                    children[c["parent_post"]].append(c)
             for c in clusters:
-                sibs = sorted((s for s in clusters if s is not c),
-                              key=lambda s: (-self.shared(c, s), -to_int(s["cluster_volume"])))
-                for s in sibs[: self.max_siblings]:
-                    self.add(c["planned_slug"], s["planned_slug"], "sibling", "body, where the angle is relevant", 2,
-                             f"related angle in the same pillar (shared facets: {self.shared(c, s)})")
+                parent = c.get("parent_post") if c.get("parent_post") in self.posts else ""
+                if pillar:
+                    self.add(c["planned_slug"], pillar, "to_pillar", "intro: name the broader topic and link to the pillar", 1,
+                             "every post links up to its pillar: the pillar targets the broad query and gathers the "
+                             "cluster's authority")
+                if parent:
+                    self.add(c["planned_slug"], parent, "to_parent", "first H2: link to the guide this post narrows down", 1,
+                             f"this post narrows down '{self.posts[parent]['primary_keyword']}' (its sub-hub)")
+            for head, kids in children.items():
+                for k in sorted(kids, key=lambda k: -self.value(k))[: self.pillar_links]:
+                    self.add(head, k["planned_slug"], "from_parent", self.section_of(k), 1,
+                             f"sub-hub links down to the posts on its subject ({len(kids)} posts)")
+            if pillar:
+                direct = [c for c in clusters if c.get("parent_post") not in self.posts]
+                heads = [c for c in direct if c["planned_slug"] in children]
+                rest = sorted((c for c in direct if c["planned_slug"] not in children), key=lambda c: -self.value(c))
+                budget = max(0, self.pillar_links - len(heads))
+                for c in heads:
+                    self.add(pillar, c["planned_slug"], "from_pillar", self.section_of(c), 1,
+                             f"pillar links down to its sub-hub '{c['primary_keyword']}' ({len(children[c['planned_slug']])} "
+                             "posts below it)")
+                for i, c in enumerate(rest):
+                    if i < budget:
+                        self.add(pillar, c["planned_slug"], "from_pillar", self.section_of(c), 1,
+                                 "pillar links down to one of its most valuable posts")
+                    else:
+                        self.later.append((c["planned_slug"], f"not linked from the pillar (budget of {self.pillar_links} "
+                                                              "body links): it gets contextual links instead"))
         self._contextual()
-        for p in self.posts.values():
+        for p in sorted(self.posts.values(), key=lambda p: -self.value(p)):
             if p["role"] == "standalone" and p["parent_hint"] in self.pillar_slug:
                 pillar = self.pillar_slug[p["parent_hint"]]
                 self.add(p["planned_slug"], pillar, "to_pillar", "intro or first H2 (first half of the post)", 1,
                          "standalone post links to the suggested pillar")
-                self.add(pillar, p["planned_slug"], "from_pillar", "related-guides section", 2,
-                         "pillar links to a related standalone guide")
+                down = sum(1 for (s, _), l in self.links.items() if s == pillar and l["link_type"] == "from_pillar")
+                if down < self.pillar_links:  # the pillar's body budget holds its standalone guides too
+                    self.add(pillar, p["planned_slug"], "from_pillar", "related-guides section", 2,
+                             "pillar links to a related standalone guide")
+                else:
+                    self.later.append((p["planned_slug"], f"standalone guide not linked from the pillar (budget of "
+                                                          f"{self.pillar_links} body links)"))
         for p in self.posts.values():
             if p["role"] == "skip":
                 continue
@@ -228,13 +312,32 @@ class Planner:
                 if done >= self.max_cross or not p.get(f):
                     continue
                 pid = self.pillar_by_key.get((p["market"], p[f]))
-                if pid and pid != p["pillar_id"]:
+                if pid and pid != p["pillar_id"] and self.topic(self.posts[self.pillar_slug[pid]]) != self.topic(p):
                     before = len(self.links)
                     self.add(p["planned_slug"], self.pillar_slug[pid], "cross_pillar", "body or related reading", 3,
                              f"shares facet '{f}={p[f]}' with another pillar")
                     done += len(self.links) - before
         self._fix_orphans_and_dead_ends()
+        self._related_reading()
         self._backlink_queue()
+
+    def _related_reading(self) -> None:
+        """'Related reading' block (the Related Post column): the most similar posts of the same sub-hub, then of the
+        same pillar, that the post does not already link to in its body."""
+        for slug, p in self.posts.items():
+            if p["role"] not in ("cluster", "standalone") or not p["pillar_id"]:
+                continue
+            mine = self.words.get(slug, {})
+            sibs = [q for q in self.posts.values() if q["pillar_id"] == p["pillar_id"] and q["role"] == "cluster"
+                    and q["planned_slug"] != slug and (slug, q["planned_slug"]) not in self.links]
+            ranked = sorted(sibs, key=lambda q: (q.get("parent_post", "") != p.get("parent_post", "") or not p.get("parent_post"),
+                                                 -cosine(mine, self.words.get(q["planned_slug"], {})), -self.value(q)))
+            for q in ranked[: self.max_related]:
+                sim = cosine(mine, self.words.get(q["planned_slug"], {}))
+                same_hub = p.get("parent_post") and q.get("parent_post") == p.get("parent_post")
+                self.add(slug, q["planned_slug"], "related_reading", "end of post: 'Related reading'", 3,
+                         ("another post under the same sub-hub" if same_hub else "another post of the same pillar")
+                         + (f" (similarity {sim:.2f})" if sim else ""))
 
     def topic(self, p: dict) -> str:
         return (p.get("pillar_key") or "").split("/", 1)[0]
@@ -242,25 +345,37 @@ class Planner:
     def _contextual(self) -> None:
         """Body links between posts that talk about the same thing, in any theme pillar of the topic: 'facts about the
         first thanksgiving' -> 'when was the first thanksgiving'. Up to max_contextual per post, never to its own
-        pillar (already linked) and never between unrelated posts (cosine of their keyword words >= CONTEXTUAL_MIN)."""
-        for slug, p in self.posts.items():
+        pillar or sub-hub (already linked), never between unrelated posts (cosine of their keyword words >=
+        CONTEXTUAL_MIN), and a target receives at most INBOUND_CONTEXTUAL of them by how hard its keyword is for the
+        site: links go where they help a post rank. Posts in volume order, so the strongest choose first."""
+        order = sorted(self.posts.items(), key=lambda kv: -self.value(kv[1]))
+        for slug, p in order:
             if p["role"] not in ("cluster", "standalone"):
                 continue
             mine = self.words.get(slug, {})
-            own_pillar = self.pillar_slug.get(p["pillar_id"])
+            own = {self.pillar_slug.get(p["pillar_id"]), p.get("parent_post")}
             scored = []
             for other, q in self.posts.items():
-                if other in (slug, own_pillar) or q["market"] != p["market"] or (slug, other) in self.links:
+                if other in own or other == slug or q["market"] != p["market"] or (slug, other) in self.links:
                     continue
-                if self.topic(q) != self.topic(p):
+                if self.topic(q) != self.topic(p) or q["role"] == "pillar":
                     continue
                 score = cosine(mine, self.words.get(other, {}))
                 if score >= CONTEXTUAL_MIN:
                     scored.append((score, other))
-            for score, other in sorted(scored, reverse=True)[: self.max_contextual]:
-                shared = sorted(set(mine) & set(self.words.get(other, {})), key=lambda t: -mine[t])[:3]
-                self.add(slug, other, "contextual", "body, where this angle comes up", 2,
-                         f"related angle (shared words: {', '.join(shared)}; similarity {score:.2f})")
+            done = 0
+            for score, other in sorted(scored, reverse=True):
+                if done >= self.max_contextual:
+                    break
+                if self.need(other) <= 0:
+                    continue
+                shared = sorted(set(mine) & set(self.words.get(other, {})), key=lambda t: (-mine[t], t))[:3]
+                fit = self.posts[other].get("main_kd_fit", "")
+                self.add(slug, other, "contextual", f"the paragraph that mentions {', '.join(shared)}", 2,
+                         f"related angle (shared words: {', '.join(shared)}; similarity {score:.2f})"
+                         + (f"; the target's keyword is '{fit}' for the site, internal links help it rank"
+                            if fit in ("stretch", "hard") else ""))
+                done += 1
 
     def _fix_orphans_and_dead_ends(self) -> None:
         for slug, p in self.posts.items():
@@ -310,7 +425,8 @@ def run_plan(args) -> int:
     published = None
     if args.published:
         published = {slug_of(r.get("slug") or r.get("url") or next(iter(r.values()), "")) for r in read_csv(args.published)}
-    pl = Planner(rows, published, args.max_siblings, args.max_cross, args.max_contextual)
+    pl = Planner(rows, published, args.max_siblings, args.max_cross, args.max_contextual, args.pillar_links,
+                 args.max_related)
     pl.build()
     links = sorted(pl.links.values(), key=lambda l: (l["priority"], l["source_slug"], l["target_slug"]))
     os.makedirs(args.out, exist_ok=True)
@@ -333,6 +449,11 @@ def run_plan(args) -> int:
              f"- Anchors that are the exact main keyword of the target: {sum(1 for l in links if l['anchor'].lower() == l['target_main_keyword'].lower())} of {len(links)} (the URL slug always follows the main keyword, the anchor may be a secondary keyword)",
              f"- Posts with no inbound link: {sum(1 for s in pl.posts if pl.inbound(s) == 0)}",
              f"- Posts with no outbound link: {sum(1 for s in pl.posts if pl.outbound(s) == 0)}", ""]
+    if pl.later:
+        lines += ["## Not linked from the pillar body", "",
+                  f"The pillar links to its sub-hubs and its {pl.pillar_links} most valuable posts; these reach readers "
+                  "through contextual links and the related-reading block:", ""]
+        lines += [f"- `{s}`: {why}" for s, why in pl.later] + [""]
     if pl.unresolved:
         lines += ["## Not resolvable with natural links (content gap)", "",
                   "Links are not forced between unrelated posts. Add a post on the same topic or let the editor decide:", ""]
@@ -368,6 +489,7 @@ def run_audit(args) -> int:
     nodes = {s for s, _, _ in links} | {t for _, t, _ in links}
     pillars: dict[str, str] = {}
     members: dict[str, list[str]] = defaultdict(list)
+    parent_of: dict[str, str] = {}
     if args.topic_map:
         for r in read_csv(args.topic_map):
             if r["role"] == "skip" or not r["planned_slug"]:
@@ -377,6 +499,8 @@ def run_audit(args) -> int:
                 pillars[r["pillar_id"]] = r["planned_slug"]
             elif r["role"] == "cluster":
                 members[r["pillar_id"]].append(r["planned_slug"])
+                if r.get("parent_post"):
+                    parent_of[r["planned_slug"]] = r["parent_post"]
 
     inbound, outbound, anchor_targets, pair_count = defaultdict(int), defaultdict(int), defaultdict(set), defaultdict(int)
     for s, t, a in links:
@@ -412,8 +536,13 @@ def run_audit(args) -> int:
         for c in members[pid]:
             if (c, pslug) not in present:
                 issues.append(("high", "cluster_missing_pillar_link", c, f"does not link up to pillar {pslug}"))
-            if (pslug, c) not in present:
-                issues.append(("high", "pillar_missing_cluster_link", pslug, f"does not link down to cluster {c}"))
+            parent = parent_of.get(c)
+            if (pslug, c) not in present and (not parent or (parent, c) not in present):
+                # a post under a sub-hub is reached through it; a pillar need not list every post in its body
+                where = f"neither pillar {pslug} nor its sub-hub {parent}" if parent else f"pillar {pslug}"
+                sev = "high" if inbound[c] == 0 else "low"
+                issues.append((sev, "pillar_missing_cluster_link", c, f"no link down from {where}"
+                               + ("" if sev == "high" else f" ({inbound[c]} other inbound link(s))")))
     order = {"high": 0, "medium": 1, "low": 2}
     issues.sort(key=lambda i: (order[i[0]], i[1]))
     os.makedirs(args.out, exist_ok=True)
@@ -437,10 +566,15 @@ def main(argv=None) -> int:
     p = sub.add_parser("plan", help="plan links from topic-map.csv")
     p.add_argument("topic_map")
     p.add_argument("--published", help="CSV of published posts (slug or url column)")
-    p.add_argument("--max-siblings", type=int, default=3)
+    p.add_argument("--max-siblings", type=int, default=3, help="kept for compatibility: see --max-related")
     p.add_argument("--max-cross", type=int, default=1)
     p.add_argument("--max-contextual", type=int, default=2,
                    help="body links per post to the most related posts of the same topic (default 2)")
+    p.add_argument("--pillar-links", type=int, default=12,
+                   help="body links from a pillar down to its sub-hubs and most valuable posts (default 12); the "
+                        "posts under a sub-hub are linked from the sub-hub")
+    p.add_argument("--max-related", type=int, default=3,
+                   help="posts of the same sub-hub or pillar in the 'Related reading' block (default 3)")
     p.add_argument("--out", default="outputs")
     p.set_defaults(fn=run_plan)
     a = sub.add_parser("audit", help="audit an existing link file")
