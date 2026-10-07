@@ -3,6 +3,10 @@
 
     run_plan.py export.xlsx --market us --only occasion=thanksgiving --out outputs \\
         [--published published-posts.xlsx] [--previous outputs/final-plan.xlsx] [--today 2026-10-06]
+    run_plan.py [export.csv] --prior seo-grouped.xlsx::us --decisions decisions.csv --out outputs
+
+--prior goes to step 1; --decisions to steps 1, 2 and 5 (each logs decisions-log-<step>.csv). Step 5 also gets
+backcheck.csv, excluded.csv and this run's decision logs when they exist; the last line counts the decisions.
 
 Steps (each skill's own script, run as a separate process so every skill stays self-contained):
   1. keyword-clustering   cluster_keywords.py  -> clusters.csv, keyword-map.csv, cluster-report.md
@@ -18,10 +22,13 @@ handing the plan over. Options that are not listed here go through --cluster-arg
 from __future__ import annotations
 
 import argparse
+import csv
+import glob
 import os
 import shlex
 import subprocess
 import sys
+from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKILL_ROOTS = [os.path.join(HERE, "..", ".."), "/mnt/skills/user", "/mnt/skills/public", "/mnt/skills",
@@ -51,9 +58,45 @@ def run(step: str, cmd: list[str]) -> None:
             print("   ! " + line)
 
 
+def this_run_logs(o, before: dict[str, float]) -> list[str]:
+    """decisions-log-*.csv files written (or rewritten) since the run started."""
+    return [p for p in sorted(glob.glob(o("decisions-log-*.csv"))) if before.get(p) != os.path.getmtime(p)]
+
+
+def decisions_summary(o, before: dict[str, float]) -> str:
+    """One line from this run's back-check and decision logs; empty when there are none."""
+    parts = []
+    if os.path.exists(o("backcheck.csv")):
+        with open(o("backcheck.csv"), encoding="utf-8-sig", newline="") as fh:
+            issues = list(csv.DictReader(fh))
+        sev = Counter(r.get("severity", "") for r in issues)
+        proposals = 0
+        if os.path.exists(o("proposed-decisions.csv")):
+            with open(o("proposed-decisions.csv"), encoding="utf-8-sig", newline="") as fh:
+                proposals = sum(1 for _ in csv.DictReader(fh))
+        parts.append(f"Back-check: {len(issues)} issues (high {sev['high']}, medium {sev['medium']}), "
+                     f"{proposals} proposals in proposed-decisions.csv")
+    status: Counter = Counter()
+    logs = this_run_logs(o, before)
+    for p in logs:
+        with open(p, encoding="utf-8-sig", newline="") as fh:
+            status.update(r.get("status", "") for r in csv.DictReader(fh))
+    if logs:
+        parts.append(f"decisions: {status['applied'] + status['applied_with_warning']} applied "
+                     f"({status['applied_with_warning']} with a warning), {status['already_true']} already true, "
+                     f"{status['stale']} stale, {status['rejected_by_data']} rejected by data, "
+                     f"{status['invalid']} invalid, {status['conflict']} conflict (" + ", ".join(os.path.basename(p) for p in logs) + ")")
+    return "; ".join(parts)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("files", nargs="+", help="keyword export(s), CSV or .xlsx; file.csv::uk assigns a market")
+    ap.add_argument("files", nargs="*", help="keyword export(s), CSV or .xlsx; file.csv::uk assigns a market "
+                                             "(optional with --prior)")
+    ap.add_argument("--prior", action="append", help="a file the SEO already grouped, FILE[::market] (repeatable): "
+                                                     "back-checked and supplemented by the exports")
+    ap.add_argument("--decisions", help="decisions file (CSV, or .xlsx sheet Decisions) applied by the cluster, topic "
+                                        "and export steps; each step logs them in decisions-log-<step>.csv")
     ap.add_argument("--out", default="outputs", help="output folder (default outputs)")
     ap.add_argument("--market", help="default market for files without a country column (us|uk)")
     ap.add_argument("--only", action="append", help="keep one topic, e.g. occasion=thanksgiving (repeatable)")
@@ -71,11 +114,17 @@ def main(argv=None) -> int:
     ap.add_argument("--export-args", default="", help="extra options for export_plan.py, e.g. \"--max-secondary 8\"")
     ap.add_argument("--skills-dir", help="folder that contains the skill folders, when they are not next to this one")
     args = ap.parse_args(argv)
+    if not args.files and not args.prior:
+        ap.error("give at least one keyword export or --prior FILE")
 
     py, out = sys.executable, os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
     o = lambda name: os.path.join(out, name)  # noqa: E731
+    decisions = ["--decisions", os.path.abspath(args.decisions)] if args.decisions else []
+    logs_before = {p: os.path.getmtime(p) for p in glob.glob(o("decisions-log-*.csv"))}
     cluster = [py, find_script("keyword-clustering", "cluster_keywords.py", args.skills_dir), *args.files, "--out", out]
+    for p in args.prior or []:
+        cluster += ["--prior", p]
     if args.market:
         cluster += ["--market", args.market]
     for flag, values in (("--only", args.only), ("--include", args.include), ("--exclude", args.exclude)):
@@ -83,9 +132,9 @@ def main(argv=None) -> int:
             cluster += [flag, v]
     if args.min_volume is not None:
         cluster += ["--min-volume", str(args.min_volume)]
-    run("1/5 keyword-clustering", cluster + shlex.split(args.cluster_args))
+    run("1/5 keyword-clustering", cluster + decisions + shlex.split(args.cluster_args))
     run("2/5 topic-map", [py, find_script("topic-map", "topic_map.py", args.skills_dir), o("clusters.csv"), "--out", out]
-        + shlex.split(args.topic_args))
+        + decisions + shlex.split(args.topic_args))
     calendar = [py, find_script("editorial-calendar", "occasion_calendar.py", args.skills_dir),
                 "--topic-map", o("topic-map.csv"), "--out", out]
     run("3/5 editorial-calendar", calendar + (["--today", args.today] if args.today else []))
@@ -99,7 +148,15 @@ def main(argv=None) -> int:
                         ("--year", args.year), ("--url-pattern", args.url_pattern)):
         if value:
             export += [flag, str(value)]
-    run("5/5 final plan", export + shlex.split(args.export_args))
+    for flag, name in (("--backcheck", "backcheck.csv"), ("--excluded", "excluded.csv")):
+        if os.path.exists(o(name)):
+            export += [flag, o(name)]
+    for log in this_run_logs(o, logs_before):  # the cluster and topic logs (an earlier run's are left out)
+        export += ["--decision-log", log]
+    run("5/5 final plan", export + decisions + shlex.split(args.export_args))
+    summary = decisions_summary(o, logs_before)
+    if summary:
+        print("\n" + summary)
     print(f"\nDone. Read {o('cluster-report.md')} first (input, filters, spelling fixes), then the QA sheet of {plan}.")
     print(f"Final plan: {plan} (+ .csv). Other files in {out}.")
     return 0
