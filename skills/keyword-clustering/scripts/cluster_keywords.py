@@ -45,6 +45,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kw_evidence import (INFO_FEATURES, is_kp_bucketed, kp_bucket_range, kp_bucket_value, parse_intent,  # noqa: E402
                          parse_serp_features, parse_trend, peak_month, trend_header_range, vendor, ym_add)
 from kw_ingest import ALIASES, norm_market, parse_number, read_tables  # noqa: E402
+from kw_prior import PriorTag, read_prior  # noqa: E402
 from kw_text import (FACET_ORDER, IMPLIED_RECIPIENT, Categories, Fluency, NoiseRules, Respeller,  # noqa: E402
                      Taxonomy, normalize_text, weighted_jaccard)
 
@@ -167,6 +168,63 @@ def load_files(args, overrides: dict, default_market: str, warnings: list) -> li
             info["src"], info["market_source"] = src, msrc
             loaded.append((src, info, market, list(table)))
     return loaded
+
+
+PRIOR_TOOL = "grouped"  # volume_sources label of a number taken from the SEO's grouped file
+
+
+def load_priors(args, pool: list[KW], default_market: str, warnings: list, excluded: list, reasons: Counter) -> list[KW]:
+    """One KW per keyword row of the SEO's grouped files (--prior FILE[::market]), tagged with its group (KW.prior).
+    join_sources() then merges each with the export rows of the same keyword, which fill in volume, KD, intent, SERP
+    features and trend (back-fill). A keyword in no export keeps the grouped file's own volume, else 0 (estimated)."""
+    out: list[KW] = []
+    export_markets = {k.market for k in pool}
+    for spec in args.prior or []:
+        path, sep, mk = spec.rpartition("::")
+        if not sep:
+            path, mk = spec, ""
+        records, info = read_prior(path)
+        src = os.path.basename(path) + " (grouped)"
+        market, msrc = file_market(info, mk, default_market)
+        if not market and len(export_markets) == 1:
+            market, msrc = next(iter(export_markets)), "the only market of the exports"
+        elif not market and len(export_markets) > 1:
+            warnings.append(f"{src}: no market for the grouped keywords and the exports have several "
+                            f"({', '.join(sorted(export_markets))}); add ::us or ::uk to the --prior path.")
+        warnings.append(f"{src}: read as the SEO's groups (layout '{info['layout']}'"
+                        + (f", sheets {', '.join(info['sheets'])}" if info["sheets"] else "")
+                        + f"): {info['groups']:,} groups, {len(records):,} keyword rows, market {market or 'all'} "
+                        f"({msrc}). The groups are kept as they are; the engine never regroups or renames them.")
+        empty_intent = parse_intent("", {})
+        for rec in records:
+            raw_kw = rec["keyword"]
+            norm0 = normalize_text(raw_kw)
+            if not norm0:
+                continue
+            vol, est = parse_number(rec["prior_volume"], integer=True, range_mode=args.range_mode)
+            k = KW()
+            k.keyword, k.norm, k.src = raw_kw, norm0, src
+            k.volume, k.vol_est, k.vol_range = (int(vol) if vol is not None else 0), est or vol is None, ""
+            k.vclass = -1 if vol is None else 1  # the grouped file's own number loses to any export volume
+            k.sources = ((PRIOR_TOOL, None if vol is None else int(vol), est),)
+            k.kd = parse_number(rec["prior_kd"])[0]
+            k.kd_src = PRIOR_TOOL if k.kd is not None else ""
+            k.cpc, k.urls, k.parent, k.intent_src = None, frozenset(), "", ""
+            k.intents, k.branded, k.local = empty_intent
+            k.serp_feats = parse_serp_features("")
+            k.trend, k.trend_scale, k.trend_end, k.monthly = (), "", "", None
+            k.tp, k.rank_url, k.position = None, "", None
+            k.market = (norm_market(rec["market"]) if rec["market"] else market) or "all"
+            k.prior = (PriorTag(rec["group_key"], rec["group"], rec["main"], rec["group_role"], rec["role"],
+                                rec["pillar"], rec["is_main"]),)
+            k.joined, k.need_src, k.decision_ids = "", "", ()
+            if k.market not in SCOPE_MARKETS:
+                reason = f"market:{k.market}"
+                reasons[reason] += 1
+                excluded.append((raw_kw, k.volume, reason, src))
+                continue
+            out.append(k)
+    return out
 
 
 def read_trend(k: KW, rec: dict, months: list[str], trend_header: str, header_range) -> None:
@@ -309,7 +367,8 @@ def ingest(args, tax: Taxonomy, noise, cats):
         grouped = [cols[c] for c in GROUP_COLUMNS if c in cols]
         if grouped:
             warnings.append(f"{src}: grouping columns ({', '.join(grouped)}) are not used yet; the keywords were "
-                            "clustered as a raw export and the existing grouping was ignored.")
+                            "clustered as a raw export and the existing grouping was ignored. Pass the file with "
+                            "--prior to keep the SEO's groups.")
         months = sorted(ym for _, ym in info["monthly_columns"])
         bucketed = False
         if tool == "gkp" and vsrc == "volume":
@@ -365,7 +424,22 @@ def ingest(args, tax: Taxonomy, noise, cats):
         records.clear()
         if info["rows"] == 0:
             warnings.append(f"{src}: no data rows could be read.")
+    priors = load_priors(args, pool, default_market, warnings, excluded, reasons)
+    total_rows += len(priors)
+    pool.extend(priors)  # after the exports: on a tie the export's own row wins the join
     rows, n_joined = join_sources(pool)
+    if priors:
+        alone = [k for k in rows if k.prior and all(t == PRIOR_TOOL for t, _, _ in k.sources)]
+        if alone and args.files:
+            warnings.append(f"{len(alone):,} keywords of the SEO's groups are in no export: they keep the grouped "
+                            "file's volume, or volume 0 with volume_estimated=1 when it has none (e.g. "
+                            + ", ".join(f"'{k.keyword}'" for k in alone[:5]) + ").")
+        twice = [k for k in rows if len({t.group_key for t in k.prior}) > 1]
+        if twice:
+            warnings.append(f"{len(twice):,} keywords are in several SEO groups; each stays in the first one (e.g. "
+                            + ", ".join(f"'{k.keyword}' in {' / '.join(dict.fromkeys(t.group for t in k.prior))}"
+                                        for k in twice[:5]) + ").")
+    prior_hits: list[tuple] = []  # filters and noise rules never drop the SEO's keywords; they are reported instead
     # Pass 2: spelling, filters, facets and reader need on each distinct keyword.
     respelled = 0
     fixes: dict[tuple, list] = {}
@@ -401,6 +475,9 @@ def ingest(args, tax: Taxonomy, noise, cats):
                 if rx.search(norm) or rx.search(low):
                     reason = f"filter:exclude:{pat}"
                     break
+        if reason and k.prior:  # the grouped file decides: kept, and reported
+            prior_hits.append((k.keyword, k.market, volume, reason, k.prior[0].group))
+            reason = None
         if reason:
             reasons[reason] += 1
             excluded.append((k.keyword, volume, reason, k.src))
@@ -425,19 +502,23 @@ def ingest(args, tax: Taxonomy, noise, cats):
         k.ngroup = "list" if need in LIST_NEEDS else need
         k.terms = tax.market_terms(norm)
         k.category, k.variants, k.var_vols, k.var_vol = category, [], [], 0
-        if only and not _passes_only(k, only):
-            reasons["filter:only"] += 1
-            excluded.append((k.keyword, volume, "filter:only", k.src))
-            continue
-        if args.drop_shop and need == "shop":
-            reasons["filter:drop_shop"] += 1
-            excluded.append((k.keyword, volume, "filter:drop_shop", k.src))
+        late = ("filter:only" if only and not _passes_only(k, only)
+                else "filter:drop_shop" if args.drop_shop and need == "shop" else None)
+        if late and k.prior:
+            prior_hits.append((k.keyword, k.market, volume, late, k.prior[0].group))
+        elif late:
+            reasons[late] += 1
+            excluded.append((k.keyword, volume, late, k.src))
             continue
         kept.append(k)
     respell = {"typos": respeller.typos, "joins": respeller.joins, "splits": respeller.splits,
                "completions": respeller.completions, "keywords_changed": respelled,
                "fixes": spelling_rows(respeller, fixes, rows)}
-    stats = {"joined": n_joined, "need_conflicts": need_conflicts}
+    stats = {"joined": n_joined, "need_conflicts": need_conflicts, "prior_filter_hits": prior_hits}
+    if prior_hits:
+        warnings.append(f"{len(prior_hits):,} keywords of the SEO's groups match a filter or noise rule and were kept "
+                        "(the grouped file decides; drop them with a decision): "
+                        + ", ".join(f"'{kw}' ({why}, group {g})" for kw, _, _, why, g in prior_hits[:5]) + ".")
     return kept, excluded, reasons, infos, warnings, total_rows, respell, stats
 
 
@@ -468,15 +549,26 @@ def dedupe(rows: list[KW]) -> tuple[list[KW], int]:
     """Merge same-meaning variants (mom/mum, word order, added year, fixed typo) within a market; the kept keyword
     lists the others (and their volumes) as variants."""
     best: dict[tuple, KW] = {}
+    pinned_at: dict[tuple, tuple] = {}  # (market, tokens) -> key of the first SEO keyword with those tokens
     merged = 0
-    for r in rows:
+    for r in sorted(rows, key=lambda r: not r.prior):  # stable: the SEO's keywords first, then the export's
         key = (r.market, tuple(sorted(r.tokens)))
+        if r.prior:  # a keyword of an SEO group merges only with its own group's variants and with export rows
+            pinned_at.setdefault(key, key + (r.prior[0].group_key,))
+            key = key + (r.prior[0].group_key,)
+        else:
+            key = pinned_at.get(key, key)
         cur = best.get(key)
         if cur is None:
             best[key] = r
             continue
         merged += 1
-        keep, drop = (r, cur) if prefer(r, cur) else (cur, r)
+        if cur.prior and (not r.prior or cur.prior[0].is_main):  # the SEO's keyword (and its main) keeps the name
+            keep, drop = cur, r
+        elif r.prior and r.prior[0].is_main:
+            keep, drop = r, cur
+        else:
+            keep, drop = (r, cur) if prefer(r, cur) else (cur, r)
         keep.variants = cur.variants + r.variants + [drop.keyword]
         keep.var_vols = cur.var_vols + r.var_vols + [drop.volume]
         keep.var_vol = cur.var_vol + r.var_vol + drop.volume
@@ -644,6 +736,26 @@ def consolidate(clusters: list[list[KW]]) -> tuple[list[list[KW]], list[int]]:
 
 
 
+def prior_clusters(rows: list[KW], warnings: list) -> list[list[KW]]:
+    """One fixed cluster per SEO group and market (a group with US and UK keywords is split: one post never serves both
+    markets). The seed is the SEO's main keyword, else the group's biggest keyword; the engine never regroups or
+    renames these clusters."""
+    groups: dict[tuple, list[KW]] = {}
+    for r in rows:
+        r.joined = "prior:seo"
+        groups.setdefault((r.prior[0].group_key, r.market), []).append(r)
+    markets: dict[tuple, list[str]] = defaultdict(list)
+    for gk, mk in groups:
+        markets[gk].append(mk)
+    for gk, mks in markets.items():
+        if len(mks) > 1:
+            warnings.append(f"SEO group '{gk[1]}' ({gk[0]}) has keywords of several markets ({', '.join(sorted(mks))}): "
+                            "split into one post per market.")
+    for cl in groups.values():
+        cl.sort(key=lambda r: (not r.prior[0].is_main, -(r.volume + r.var_vol), r.keyword))
+    return list(groups.values())
+
+
 QUESTION_LAST_RX = re.compile(r"\b(why|how|what|when|where|who|which)\s*$")
 NATURAL_BAND = 0.8     # a more natural phrasing may name the post when it has >= 80% of the chosen keyword's volume
 NATURAL_MARGIN = 0.3   # ... and is clearly more natural (Fluency score, mean log probability per word pair)
@@ -712,7 +824,10 @@ def basis_kind(joined: str) -> str:
 
 
 def grouping_basis(cl: list[KW]) -> str:
-    """What the cluster's grouping rests on: single, serp, parent_topic, lexical (not verified by SERP) or mixed."""
+    """What the cluster's grouping rests on: single, serp, parent_topic, lexical (not verified by SERP) or mixed; an SEO
+    group is 'prior:seo' (kept as it is) or 'prior:seo+added' (export keywords joined it)."""
+    if cl[0].prior:
+        return "prior:seo+added" if any(not r.prior for r in cl) else "prior:seo"
     if len(cl) == 1:
         return "single"
     kinds = {basis_kind(r.joined) for r in cl if r.joined != "seed"}
@@ -736,6 +851,8 @@ def serp_verified_share(cl: list[KW]) -> str:
 def seed_basis(cl: list[KW], fluency: Fluency | None) -> str:
     """Why evergreen_seed named the cluster after cl[0] instead of its biggest keyword."""
     seed, top = cl[0], max(cl, key=lambda r: r.volume)
+    if seed.prior and seed.prior[0].is_main:
+        return "seo main"
     if seed.volume >= top.volume:
         return "max_volume"
     if YEAR_KW_RX.search(top.keyword) and not YEAR_KW_RX.search(seed.keyword):
@@ -789,7 +906,9 @@ def build_rows(clusters: list[list[KW]], tax: Taxonomy, fluency: Fluency | None 
         ids[id(cl)] = cid
         kds = [r.kd for r in cl if r.kd is not None]
         terms = {r.terms for r in cl} - {"none"}
-        for r in cl:  # a list per keyword (KW_FIELDS order), not a dict: keeps a large file's memory down
+        gtag = seed.prior[0] if seed.prior else None
+        for r in cl:
+            tag = r.prior[0] if r.prior else None  # a list per keyword (KW_FIELDS order), not a dict: keeps a large file's memory down
             row = {"cluster_id": cid, "market": r.market, "keyword": r.keyword, "volume": r.volume,
                    "volume_estimated": int(r.vol_est), "kd": "" if r.kd is None else int(r.kd),
                    "cpc": "" if r.cpc is None else r.cpc, "is_seed": int(r is seed), "reader_need": r.need,
@@ -799,8 +918,9 @@ def build_rows(clusters: list[list[KW]], tax: Taxonomy, fluency: Fluency | None 
                    "intent_source": r.intent_src, "variants": "|".join(r.variants), "source_file": r.src,
                    "spelling_fixed": int(r.fixed), "variant_volumes": "|".join(str(v) for v in r.var_vols),
                    "normalized_keyword": " ".join(sorted(r.tokens)), "joined_by": r.joined,
-                   "need_source": r.need_src, "prior_group": "", "prior_main": "", "prior_role": "",
-                   "prior_pillar": "", "intents": "|".join(sorted(r.intents)),
+                   "need_source": r.need_src, "prior_group": tag.group if tag else "",
+                   "prior_main": (tag.main or seed.keyword) if tag else "", "prior_role": tag.role if tag else "",
+                   "prior_pillar": tag.pillar if tag else "", "intents": "|".join(sorted(r.intents)),
                    "intent_branded": fmt_flag(r.branded), "intent_local": fmt_flag(r.local),
                    "serp_features": "|".join(sorted(r.serp_feats)), "traffic_potential": fmt_num(r.tp),
                    "ranking_url": r.rank_url, "position": fmt_num(r.position), "trend": fmt_trend(r),
@@ -822,7 +942,8 @@ def build_rows(clusters: list[list[KW]], tax: Taxonomy, fluency: Fluency | None 
                         "parent_topic": seed.parent, "keywords": "|".join(r.keyword for r in cl[:15]),
                         "name_fluency": f"{fluency.score(seed.keyword):.2f}" if fluency else "",
                         "grouping_basis": grouping_basis(cl), "serp_verified_share": serp_verified_share(cl),
-                        "seed_basis": seed_basis(cl, fluency), "prior_group": "", "prior_pillar": "", "prior_role": "",
+                        "seed_basis": seed_basis(cl, fluency), "prior_group": gtag.group if gtag else "",
+                        "prior_pillar": gtag.pillar if gtag else "", "prior_role": gtag.group_role if gtag else "",
                         "intents_mix": intents_mix(cl), "serp_features_main": "|".join(sorted(seed.serp_feats)),
                         "traffic_potential_main": fmt_num(seed.tp), "cluster_volume_dedup": volume_dedup(cl),
                         "peak_month": "", "ramp_month": "", "peak_ratio": "", "seasonality_source": "",
@@ -1092,6 +1213,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("files", nargs="*", help="CSV or .xlsx export files; append ::us or ::uk to assign a market to a file")
     ap.add_argument("--request", help="JSON file with the options below (key = option name, use _ instead of -)")
+    ap.add_argument("--prior", action="append", metavar="FILE[::market]",
+                    help="a file the SEO already grouped (keyword + group columns; main + secondary keyword columns; or "
+                         "the team's final plan with its Keyword Map sheet). Its groups are kept as they are, the "
+                         "exports fill in volume/KD/intent, and export keywords in no group are clustered as extra posts")
     ap.add_argument("--out", default="outputs")
     ap.add_argument("--market", help="default market for files without a country column (us|uk)")
     ap.add_argument("--map", action="append", metavar="COLUMN=NAME", help="map a column, e.g. keyword='Top queries' volume=Impressions")
@@ -1139,9 +1264,10 @@ def parse_args(argv: list[str]):
             raise SystemExit(f"--request has invalid keys: {', '.join(bad)}. Valid: {', '.join(sorted(valid - {'help'}))}")
         ap.set_defaults(**cfg)
     args = ap.parse_args(argv)
-    if not args.files:
-        ap.error("at least one CSV file is required (or a 'files' key in --request)")
-    args.files = [args.files] if isinstance(args.files, str) else args.files
+    args.prior = [args.prior] if isinstance(args.prior, str) else (args.prior or [])
+    if not args.files and not args.prior:
+        ap.error("at least one CSV file is required (or a 'files' key in --request), or --prior FILE")
+    args.files = [args.files] if isinstance(args.files, str) else (args.files or [])
     return args
 
 
@@ -1166,7 +1292,9 @@ def main(argv=None) -> int:
         raise SystemExit("No keywords left after filtering. Reasons: " + ", ".join(f"{r}={n}" for r, n in reasons.most_common(5)))
     n_kept = len(kept)
     rows, merged = dedupe(kept)
-    cl = Clusterer(rows, tax.weak, sim_t, serp_t, args.trust_parent_topic)
+    pinned = [r for r in rows if r.prior]  # the SEO's groups (--prior): fixed clusters, never regrouped
+    free = [r for r in rows if not r.prior] if pinned else rows
+    cl = Clusterer(free, tax.weak, sim_t, serp_t, args.trust_parent_topic)
     lexical = cl.run()
     raw_pairs = cl.merge_candidates()
     if args.no_consolidate:
@@ -1175,6 +1303,7 @@ def main(argv=None) -> int:
         clusters, owner = consolidate(lexical)
     fluency = Fluency(k.keyword for k in kept if not k.fixed)
     clusters = [evergreen_seed(c, fluency) for c in clusters]
+    clusters += prior_clusters(pinned, warnings)  # after the engine's clusters: the pair indices below stay valid
     pairs, seen = [], set()
     for s, a, b, why, etype in raw_pairs:  # map pairs onto the consolidated clusters; drop pairs that are now one post
         a, b = owner[a], owner[b]

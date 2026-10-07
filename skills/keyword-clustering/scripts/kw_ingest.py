@@ -420,12 +420,14 @@ def read_keywords(path: str, overrides: dict | None = None) -> Table:
     return _read_csv(path, overrides, keyword_names)
 
 
-def read_tables(path: str, overrides: dict | None = None) -> list[Table]:
+def read_tables(path: str, overrides: dict | None = None, header_names: set[str] | None = None) -> list[Table]:
     """One Table per sheet with a keyword column (one for a CSV); each record of an .xlsx carries '_sheet'.
     info['sheets_read'] / info['sheets_skipped'] (name, reason) say what happened to every sheet. A Search Console
-    export also gets info['gsc_filters'] from its Filters sheet or the Filters.csv next to it ({} when absent)."""
+    export also gets info['gsc_filters'] from its Filters sheet or the Filters.csv next to it ({} when absent).
+    header_names: more column names that also mark a header row (a grouped file whose sheet has 'Main Keyword' but
+    no 'Keyword' column, kw_prior.py)."""
     overrides = {k: norm_header(v) for k, v in (overrides or {}).items()}
-    keyword_names = _keyword_names(overrides)
+    keyword_names = _keyword_names(overrides) | set(header_names or ())
     filters_rows = None
     if is_xlsx(path):
         found, skipped = _read_xlsx_all(path, keyword_names)
