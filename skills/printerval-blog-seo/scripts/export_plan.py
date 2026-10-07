@@ -21,7 +21,9 @@ Columns (the team's template, in this order):
 Other sheets: Keyword Map (every keyword placed in the plan and the post it belongs to), Schedule (writing order:
 deadlines from editorial-calendar's seasonal-plan.csv, then priority), QA (what a person should review before handing
 the plan over: overlapping posts, misplaced keywords, orphans...) and, for a one-topic export, Research Next (themes a
-POD blog needs that the file barely covers, with seed keywords to export).
+POD blog needs that the file barely covers, with seed keywords to export). After them (plan_review.py): Review (what
+each post rests on, from the data only), Back-check (--backcheck, status updated from the decision logs), Decisions
+(--decision-log) and Not Planned (backlog, skip and merged-away clusters, the biggest keywords of --excluded).
 """
 from __future__ import annotations
 
@@ -38,6 +40,7 @@ from xml.sax.saxutils import escape
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plan_qa  # noqa: E402
+import plan_review  # noqa: E402
 import table_io  # noqa: E402
 from published import Published, anchor_from_title  # noqa: E402
 
@@ -687,6 +690,14 @@ def main(argv=None) -> int:
                     help="related published posts listed first in Related Post (default 1)")
     ap.add_argument("--previous", help="a previous final-plan.xlsx/.csv the team already works in: keep its STT, "
                                        "the team's columns and real URLs (sheet Changes lists what moved)")
+    ap.add_argument("--backcheck", help="backcheck.csv from keyword-clustering: sheet Back-check (status updated from "
+                                        "the decision logs) and Open Issues in sheet Review")
+    ap.add_argument("--decision-log", action="append", default=[],
+                    help="decisions-log-<step>.csv (repeatable): sheet Decisions and Decisions Applied in sheet Review")
+    ap.add_argument("--excluded", help="excluded.csv from keyword-clustering: its biggest keywords are listed in sheet "
+                                       "Not Planned")
+    ap.add_argument("--not-planned-max", type=int, default=300,
+                    help="excluded keywords listed in sheet Not Planned, largest first (default 300)")
     args = ap.parse_args(argv)
     if "{slug}" not in args.url_pattern:
         ap.error("--url-pattern must contain {slug}")
@@ -717,6 +728,14 @@ def main(argv=None) -> int:
     schedule = schedule_rows(rows, seasonal, today, plan.url_override)
     with open(args.research_seeds, encoding="utf-8") as fh:
         research = research_rows(topic, keywords, json.load(fh), pub)
+    logs = [row for path in args.decision_log for row in plan_review.read_rows(path)]
+    decisions_file = getattr(args, "decisions", None)  # --decisions: reason and evidence of each logged decision
+    decisions = plan_review.read_decisions(decisions_file) if decisions_file else []
+    issues = plan_review.backcheck_status(plan_review.read_rows(args.backcheck), logs, decisions) if args.backcheck else None
+    review = plan_review.review_rows(plan, rows, signature, LIGHT, issues, logs)
+    not_planned = plan_review.not_planned_rows(plan, topic, plan_review.read_rows(args.excluded) if args.excluded else [],
+                                               signature, args.not_planned_max)
+    bc_columns = list(issues[0]) if issues else plan_review.BACKCHECK_COLUMNS
 
     out = args.out if args.out.lower().endswith(".xlsx") else args.out + ".xlsx"
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
@@ -726,7 +745,13 @@ def main(argv=None) -> int:
                      ("QA", sheet_xml(plan_qa.QA_COLUMNS, qa, plan_qa.QA_WIDTHS))]
                + ([("Research Next", sheet_xml(RESEARCH_COLUMNS, research, RESEARCH_WIDTHS))] if research else [])
                + ([("Published Match", sheet_xml(PUBLISHED_COLUMNS, published_sheet, PUBLISHED_WIDTHS))] if pub else [])
-               + ([("Changes", sheet_xml(CHANGES_COLUMNS, changes, CHANGES_WIDTHS))] if args.previous else []))
+               + ([("Changes", sheet_xml(CHANGES_COLUMNS, changes, CHANGES_WIDTHS))] if args.previous else [])
+               + [("Review", sheet_xml(plan_review.REVIEW_COLUMNS, review, plan_review.REVIEW_WIDTHS))]
+               + ([("Back-check", sheet_xml(bc_columns, [[i.get(c, "") for c in bc_columns] for i in issues],
+                                            [14] * len(bc_columns)))] if issues is not None else [])
+               + ([("Decisions", sheet_xml(plan_review.DECISIONS_COLUMNS, plan_review.decision_rows(logs, decisions),
+                                           plan_review.DECISIONS_WIDTHS))] if logs else [])
+               + [("Not Planned", sheet_xml(plan_review.NOT_PLANNED_COLUMNS, not_planned, plan_review.NOT_PLANNED_WIDTHS))])
     csv_path = out[:-5] + ".csv"
     with open(csv_path, "w", encoding="utf-8-sig", newline="") as fh:  # BOM: Excel opens the Vietnamese headers correctly
         w = csv.writer(fh)
@@ -750,6 +775,10 @@ def main(argv=None) -> int:
             kinds[x[2]] += 1
         print(f"Published: {len(pub.posts):,} posts read; " + ", ".join(f"{k} {v}" for k, v in kinds.items())
               + " (sheet Published Match; URL Blog uses the published URL for 'update this post')")
+    unreviewed = sum(1 for x in review if x[plan_review.REVIEW_COLUMNS.index("Angle (reviewed)")] == "unreviewed")
+    print(f"Review: {len(review)} posts, {unreviewed} without a reviewed angle; Not Planned: {len(not_planned)} rows"
+          + (f"; Back-check: {sum(1 for i in issues if i.get('status') == 'open')} open issues" if issues is not None else "")
+          + (f"; Decisions: {len(logs)} logged" if logs else ""))
     gaps = [f"{x[1]} ({x[5]})" for x in research if x[5] in ("missing", "thin")]
     if gaps:
         print("Research Next: themes to export seed keywords for: " + ", ".join(gaps))
