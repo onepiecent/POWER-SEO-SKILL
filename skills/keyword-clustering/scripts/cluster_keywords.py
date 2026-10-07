@@ -12,6 +12,7 @@ Output  : <out>/cluster-report.md     report on file reading, filters, results a
           <out>/merge-candidates.csv  pairs of nearby clusters for a person/Claude to review
           <out>/spelling-fixes.csv    every spelling fix learned from the file (to veto a wrong one)
           <out>/serp-check.csv        the pairs and word-only groups the SEO should check on the live SERP
+          <out>/decisions-log-cluster.csv   what happened to every decision of --decisions (empty without it)
 
 Two levels: CLUSTER (keywords with the same search intent -> one post), then GROUP (--group-by: groups the clusters
 along the dimension you ask for: occasion, recipient, interest, product, style, craft, category, intent...).
@@ -28,6 +29,9 @@ How clusters are formed:
   * Large files are sped up with an inverted index + prefix filter, so pairs are not compared one by one.
   * Every keyword records how it joined its cluster (joined_by) and every cluster what its grouping rests on
     (grouping_basis); tool intent and SERP features are kept as evidence next to the regex reader need.
+  * --decisions FILE applies the judgment calls of Claude or the SEO (each with a reason and evidence) on every run:
+    drop_keyword / keep_keyword at ingest, then merge, move_keyword, split, keep_apart, rename_main and set_need after
+    clustering; every decision is logged in decisions-log-cluster.csv (see kw_decisions.py).
 """
 from __future__ import annotations
 
@@ -42,6 +46,7 @@ import unicodedata
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from kw_decisions import LOG_FIELDS, ClusterDecisions, read_decisions  # noqa: E402
 from kw_evidence import (INFO_FEATURES, is_kp_bucketed, kp_bucket_range, kp_bucket_value, parse_intent,  # noqa: E402
                          parse_serp_features, parse_trend, peak_month, trend_header_range, vendor, ym_add)
 from kw_backcheck import decision_key, write_backcheck  # noqa: E402
@@ -323,7 +328,7 @@ def spelling_rows(respeller: Respeller, fixes: dict, rows: list[KW]) -> list[dic
     return out
 
 
-def ingest(args, tax: Taxonomy, noise, cats):
+def ingest(args, tax: Taxonomy, noise, cats, dec: ClusterDecisions | None = None):
     include_rx = [re.compile(p, re.I) for p in args.include or []]
     exclude_rx = [(p, re.compile(p, re.I)) for p in args.exclude or []]
     only = parse_only(args.only)
@@ -441,6 +446,7 @@ def ingest(args, tax: Taxonomy, noise, cats):
                             + ", ".join(f"'{k.keyword}' in {' / '.join(dict.fromkeys(t.group for t in k.prior))}"
                                         for k in twice[:5]) + ").")
     prior_hits: list[tuple] = []  # filters and noise rules never drop the SEO's keywords; they are reported instead
+    forced = dec.at_ingest(rows) if dec else {}  # drop_keyword / keep_keyword decisions, by row
     # Pass 2: spelling, filters, facets and reader need on each distinct keyword.
     respelled = 0
     fixes: dict[tuple, list] = {}
@@ -457,6 +463,11 @@ def ingest(args, tax: Taxonomy, noise, cats):
             if len(f[1]) < 3:
                 f[1].append(k.keyword)
         low, volume = k.keyword.lower(), k.volume
+        act, dcs = forced.get(id(k), ("", None))
+        if act == "drop_keyword":  # the decision excludes it, whatever the filters say
+            reasons["decision:drop_keyword"] += 1
+            excluded.append((k.keyword, volume, f"decision:{dcs['decision_id']}", k.src))
+            continue
         reason = None
         if noise is not None:  # language is judged on the original words ('celebracion' is a Spanish marker)
             reason = noise.check(low, k.norm)
@@ -476,7 +487,10 @@ def ingest(args, tax: Taxonomy, noise, cats):
                 if rx.search(norm) or rx.search(low):
                     reason = f"filter:exclude:{pat}"
                     break
-        if reason and k.prior:  # the grouped file decides: kept, and reported
+        if reason and act == "keep_keyword":  # the decision overrides the noise, volume, KD and regex filters
+            dec.rescued(dcs, reason)
+            reason = None
+        elif reason and k.prior:  # the grouped file decides: kept, and reported
             prior_hits.append((k.keyword, k.market, volume, reason, k.prior[0].group))
             reason = None
         if reason:
@@ -505,13 +519,21 @@ def ingest(args, tax: Taxonomy, noise, cats):
         k.category, k.variants, k.var_vols, k.var_vol = category, [], [], 0
         late = ("filter:only" if only and not _passes_only(k, only)
                 else "filter:drop_shop" if args.drop_shop and need == "shop" else None)
-        if late and k.prior:
+        if late == "filter:drop_shop" and act == "keep_keyword":  # the decision overrides --drop-shop
+            dec.rescued(dcs, late)
+        elif late and k.prior:
             prior_hits.append((k.keyword, k.market, volume, late, k.prior[0].group))
         elif late:
+            if late == "filter:only" and act == "keep_keyword":  # --only is the scope of the run: a decision does not widen it
+                dcs["_scope"] = True
             reasons[late] += 1
             excluded.append((k.keyword, volume, late, k.src))
             continue
+        if act == "keep_keyword":
+            dec.kept(dcs, k)
         kept.append(k)
+    if dec:
+        dec.finish_ingest()
     respell = {"typos": respeller.typos, "joins": respeller.joins, "splits": respeller.splits,
                "completions": respeller.completions, "keywords_changed": respelled,
                "fixes": spelling_rows(respeller, fixes, rows)}
@@ -825,8 +847,11 @@ def basis_kind(joined: str) -> str:
 
 
 def grouping_basis(cl: list[KW]) -> str:
-    """What the cluster's grouping rests on: single, serp, parent_topic, lexical (not verified by SERP) or mixed; an SEO
-    group is 'prior:seo' (kept as it is) or 'prior:seo+added' (export keywords joined it)."""
+    """What the cluster's grouping rests on: decision, single, serp, parent_topic, lexical (not verified by SERP) or
+    mixed. 'decision' = a decision of the decisions file changed who is in this post; an SEO group is 'prior:seo'
+    (kept as it is) or 'prior:seo+added' (export keywords joined it)."""
+    if any(r.joined.startswith("decision:") for r in cl):
+        return "decision"
     if cl[0].prior:
         return "prior:seo+added" if any(not r.prior for r in cl) else "prior:seo"
     if len(cl) == 1:
@@ -1245,6 +1270,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--no-respell", action="store_true", help="do not fix typos and split words learned from the file")
     ap.add_argument("--no-consolidate", action="store_true",
                     help="keep lexical clusters as they are (do not merge clusters that ask the same thing in other words)")
+    ap.add_argument("--decisions", metavar="FILE",
+                    help="decisions file (CSV, or .xlsx with a 'Decisions' sheet) written by Claude or the SEO, each row "
+                         "with a reason and evidence: drop_keyword, keep_keyword, set_need, merge, move_keyword, split, "
+                         "keep_apart, rename_main; applied on every run and logged in decisions-log-cluster.csv")
     ap.add_argument("--serp-check-max", type=int, default=30,
                     help="rows in serp-check.csv: the largest pairs and word-only groups to check on the live SERP "
                          "(default 30, a [Convention] review budget)")
@@ -1288,7 +1317,8 @@ def main(argv=None) -> int:
     if "category" in dims and not cats:
         raise SystemExit("--group-by category needs --categories file.json")
 
-    kept, excluded, reasons, infos, warnings, total_rows, respell, stats = ingest(args, tax, noise, cats)
+    dec = ClusterDecisions(read_decisions(args.decisions), tax.blog_fit) if args.decisions else None
+    kept, excluded, reasons, infos, warnings, total_rows, respell, stats = ingest(args, tax, noise, cats, dec)
     if not kept:
         raise SystemExit("No keywords left after filtering. Reasons: " + ", ".join(f"{r}={n}" for r, n in reasons.most_common(5)))
     n_kept = len(kept)
@@ -1311,6 +1341,12 @@ def main(argv=None) -> int:
         if a != b and (min(a, b), max(a, b)) not in seen:
             seen.add((min(a, b), max(a, b)))
             pairs.append((s, a, b, why, etype))
+    if dec:  # merge -> move_keyword -> split -> keep_apart -> rename_main -> set_need; pairs follow their clusters
+        refs = [(s, clusters[a], clusters[b], why, etype) for s, a, b, why, etype in pairs]
+        clusters = dec.apply(clusters, serp_t, lambda c: evergreen_seed(c, fluency), excluded)
+        pos = {id(c): i for i, c in enumerate(clusters)}
+        pairs = [(s, pos[id(A)], pos[id(B)], why, etype) for s, A, B, why, etype in refs
+                 if A is not B and id(A) in pos and id(B) in pos]
     kw_rows, cl_rows, ids, _ = build_rows(clusters, tax, fluency)
     checks = serp_check_rows(pairs, clusters, ids, serp_t, args.serp_check_max)
 
@@ -1326,12 +1362,13 @@ def main(argv=None) -> int:
     write_csv(os.path.join(args.out, "spelling-fixes.csv"),
               ["kind", "from", "to", "keywords_changed", "examples", "from_volume", "to_volume", "vetoed"], respell["fixes"])
     write_csv(os.path.join(args.out, "serp-check.csv"), SERP_CHECK_FIELDS, checks)
+    write_csv(os.path.join(args.out, "decisions-log-cluster.csv"), LOG_FIELDS, dec.log_rows() if dec else [])
     # back-check of the grouping (the SEO's groups, or the engine's clusters in raw mode); proposals are never applied
     also_in = {(k.market, decision_key(k.keyword)): [t.group for t in k.prior[1:] if t.group_key != k.prior[0].group_key]
                for c in clusters for k in c if len(k.prior) > 1}
     backcheck_line = write_backcheck(args.out, kw_rows, cl_rows, {(k.market, k.keyword): k.urls for c in clusters
                                                                   for k in c if k.urls}, serp_t, sim_t, KW_FIELDS,
-                                     also_in=also_in)
+                                     decided=dec.decided() if dec else None, also_in=also_in)
     # 'unclassified' = no niche recognised (the theme says what kind of post, not who it is for), so taxonomy
     # suggestions still surface unknown niches such as 'pickleball' in 'gifts for pickleball players'
     unclassified = [k for k in rows if not any(getattr(k, f) for f in FACET_ORDER if f != "theme") and not k.category]
@@ -1367,6 +1404,8 @@ def main(argv=None) -> int:
           f" | unclassified: {len(unclassified):,} | pairs to review: {len(pairs)}")
     for w in warnings:
         print("WARNING:", w, file=sys.stderr)
+    if dec:
+        print(dec.summary())
     print(backcheck_line)
     print(f"Read cluster-report.md first. Written to: {os.path.abspath(args.out)}")
     return 0
