@@ -58,12 +58,13 @@ class Where:
             slug = r.get("planned_slug") or r.get("merged_into") or ""
             if slug:
                 self.post_of_cluster[cid] = slug
-        self.cluster_of_kw: dict[str, str] = {}
+        self.cluster_of_kw: dict[tuple, str] = {}
         self.cluster_of_group: dict[str, str] = {}
+        self.target_of: dict[str, str] = {r.get("cluster_id", ""): r.get("merged_into", "") for r in topic}
         for k in keywords or []:
             cid = k.get("cluster_id", "")
             for kw in [k.get("keyword", "")] + [v for v in (k.get("variants") or "").split("|") if v]:
-                self.cluster_of_kw.setdefault(_key(kw), cid)
+                self.cluster_of_kw.setdefault((k.get("market", ""), _key(kw)), cid)
             if k.get("prior_group") and _key(k.get("keyword")) == _key(k.get("prior_main")):
                 self.cluster_of_group.setdefault((k.get("market", ""), k["prior_group"]), cid)
 
@@ -76,8 +77,10 @@ class Where:
         return None, {"skip": "not in the blog plan: shopping intent (shop pages)",
                       "backlog": "backlog: not planned as a post"}.get(role, "not in the plan")
 
-    def of_keyword(self, kw: str) -> tuple[int | None, str]:
-        cid = self.cluster_of_kw.get(_key(kw))
+    def of_keyword(self, kw: str, market: str = "") -> tuple[int | None, str]:
+        cid = self.cluster_of_kw.get((market, _key(kw)))
+        if cid is None and not market:
+            cid = next((c for (m, k), c in self.cluster_of_kw.items() if k == _key(kw)), None)
         return self.of_cluster(cid) if cid else (None, "not in the plan (filtered: see excluded.csv)")
 
 
@@ -95,9 +98,7 @@ def seo_audit_rows(plan, topic: list[dict], keywords: list[dict] | None, audits:
         if check == "possible_duplicate" and (a.get("market", ""), a.get("seo_group", "")) in merged_away:
             continue  # settled: the group is already part of another post
         kw = a.get("keyword", "")
-        n, now = where.of_keyword(kw) if kw else (None, "")
-        if check == "export_topic":
-            n, now = where.of_keyword(kw)
+        n, now = where.of_keyword(kw, a.get("market", "")) if kw else (None, "")
         out.append([a.get("seo_group", ""), a.get("seo_main", ""), a.get("seo_kind", ""), a.get("seo_pillar", ""),
                     check, RESULT.get(action, action), kw, a.get("keyword_volume", ""), n if n is not None else "",
                     now, a.get("evidence", ""), a.get("level", "")])
@@ -109,8 +110,15 @@ def seo_audit_rows(plan, topic: list[dict], keywords: list[dict] | None, audits:
         seen.add(g)
         if g in touched:
             continue
-        n, now = where.of_cluster(k.get("cluster_id", ""))
-        group_volume = where.volume.get(k.get("cluster_id", ""), k.get("volume", ""))
+        cid = k.get("cluster_id", "")
+        n, now = where.of_cluster(cid)
+        group_volume = where.volume.get(cid, k.get("volume", ""))
+        if where.role.get(cid) == "merged":  # the engine's sub-topic rule made it a section (a pillar it shares)
+            out.append([g[1], k.get("prior_main", ""), "", k.get("prior_pillar", ""), "section", "section",
+                        k.get("keyword", ""), group_volume, n if n is not None else "", now,
+                        "the topic map made it a section of this post: too little demand for a page of its own next "
+                        "to the posts of its pillar", "[Convention]"])
+            continue
         role = next((p["role"] for p in plan.posts if n is not None and plan.stt[p["planned_slug"]] == n), "")
         result = "kept as pillar" if role == "pillar" else "kept as post" if n is not None else "kept"
         out.append([g[1], k.get("prior_main", ""), "", k.get("prior_pillar", ""), "kept", result, k.get("keyword", ""),

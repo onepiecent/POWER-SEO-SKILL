@@ -762,8 +762,10 @@ def main(argv=None) -> int:
     not_planned = plan_review.not_planned_rows(plan, topic, plan_review.read_rows(args.excluded) if args.excluded else [],
                                                signature, args.not_planned_max, LIGHT)
     bc_columns = list(issues[0]) if issues else plan_review.BACKCHECK_COLUMNS
-    audits = [row for path in args.seo_audit if os.path.exists(path) for row in plan_review.read_rows(path)]
-    seo_audit = plan_audit.seo_audit_rows(plan, topic, keywords, audits) if audits else []
+    audit_files = [path for path in args.seo_audit if os.path.exists(path)]
+    audits = [row for path in audit_files for row in plan_review.read_rows(path)]
+    # with the audit's files the sheet always shows every SEO group, 'kept' ones too (also when nothing changed)
+    seo_audit = plan_audit.seo_audit_rows(plan, topic, keywords, audits) if audit_files else []
     link_rows = plan_audit.link_plan_rows(plan, links)
 
     out = args.out if args.out.lower().endswith(".xlsx") else args.out + ".xlsx"

@@ -81,7 +81,8 @@ def previous_values(rows: list[dict]) -> dict[tuple, dict]:
     for r in rows:
         low = {str(k).strip().lower(): str(v or "").strip() for k, v in r.items()}
         action = low.get("action", "")
-        if low.get("step") == "export" and action in CELL_OF and low.get("status", "").startswith("applied"):
+        if low.get("step") == "export" and action in CELL_OF and low.get("status", "") in (
+                "applied", "applied_with_warning", "already_true"):  # the cell still held the decision's value
             out[(low.get("decision id") or low.get("decision_id", ""), CELL_OF[action])] = {
                 "value": low.get("value", "").replace("\\n", "\n"), "keyword": low.get("keyword", ""),
                 "market": low.get("market", ""), "action": action}

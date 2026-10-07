@@ -59,6 +59,12 @@ def to_int(v, default=0):
         return default
 
 
+def pillar_number(pid: str) -> tuple:
+    """'P30' before 'P123': pillar ids are numbered by volume, so the smallest number is the biggest pillar."""
+    digits = re.sub(r"\D", "", pid or "")
+    return (int(digits) if digits else 10 ** 9, pid or "")
+
+
 def slug_of(ref: str) -> str:
     ref = (ref or "").strip()
     if "/" in ref or "." in ref:
@@ -95,7 +101,7 @@ def describes(anchor: str, main: str) -> bool:
     if set(NUMBER_RX.findall(anchor)) - set(NUMBER_RX.findall(main)):
         return False
     low = anchor.lower()
-    if QUESTION_ANY_RX.search(low) and not QUESTION_START_RX.match(low):
+    if QUESTION_START_RX.match(main.lower()) and QUESTION_ANY_RX.search(low) and not QUESTION_START_RX.match(low):
         return False  # an inverted tool phrasing: 'christmas how to decorate', 'secret santa how to reveal'
 
     a, m = word_counts([anchor]), word_counts([main])
@@ -168,7 +174,7 @@ class Planner:
         self.pillar_by_key = {(r["market"], r["pillar_key"]): r["pillar_id"]
                               for r in self.posts.values() if r["role"] == "pillar"}
         # a theme or SEO pillar ('christmas/decor', 'christmas/seo-...') is also found by its topic: the biggest one
-        for r in sorted((r for r in self.posts.values() if r["role"] == "pillar"), key=lambda r: r["pillar_id"]):
+        for r in sorted((r for r in self.posts.values() if r["role"] == "pillar"), key=lambda r: pillar_number(r["pillar_id"])):
             self.pillar_by_key.setdefault((r["market"], self.topic(r)), r["pillar_id"])
 
     # -- helpers
@@ -232,11 +238,14 @@ class Planner:
     def outbound(self, slug: str) -> int:
         return sum(1 for (s, _) in self.links if s == slug)
 
-    def related(self, post: dict, exclude: set[str]) -> list[dict]:
-        """Return only posts that share at least one facet: never force links between unrelated posts."""
+    def related(self, post: dict, exclude: set[str], pillar_last: bool = False) -> list[dict]:
+        """Return only posts that share at least one facet: never force links between unrelated posts. pillar_last:
+        a sibling first (an orphan's inbound link must not break the pillar's link budget)."""
         cands = [p for s, p in self.posts.items()
                  if s not in exclude and p["market"] == post["market"] and self.shared(post, p) >= 1]
-        cands.sort(key=lambda p: (-self.shared(post, p), -(p["role"] == "pillar"), -to_int(p["cluster_volume"])))
+        sign = 1 if pillar_last else -1
+        cands.sort(key=lambda p: (-self.shared(post, p), sign * (p["role"] == "pillar"), -to_int(p["cluster_volume"]),
+                                  p["planned_slug"]))
         return cands
 
     # -- build
@@ -272,13 +281,22 @@ class Planner:
                     self.add(c["planned_slug"], parent, "to_parent", "first H2: link to the guide this post narrows down", 1,
                              f"this post narrows down '{self.posts[parent]['primary_keyword']}' (its sub-hub)")
             for head, kids in children.items():
-                for k in sorted(kids, key=lambda k: -self.value(k))[: self.pillar_links]:
-                    self.add(head, k["planned_slug"], "from_parent", self.section_of(k), 1,
-                             f"sub-hub links down to the posts on its subject ({len(kids)} posts)")
+                for i, k in enumerate(sorted(kids, key=lambda k: (-self.value(k), k["planned_slug"]))):
+                    if i < self.pillar_links:
+                        self.add(head, k["planned_slug"], "from_parent", self.section_of(k), 1,
+                                 f"sub-hub links down to the posts on its subject ({len(kids)} posts)")
+                    else:
+                        self.later.append((k["planned_slug"], f"not linked from its sub-hub (budget of "
+                                                              f"{self.pillar_links} body links)"))
             if pillar:
                 direct = [c for c in clusters if c.get("parent_post") not in self.posts]
-                heads = [c for c in direct if c["planned_slug"] in children]
-                rest = sorted((c for c in direct if c["planned_slug"] not in children), key=lambda c: -self.value(c))
+                heads = sorted((c for c in direct if c["planned_slug"] in children),
+                               key=lambda c: (-len(children[c["planned_slug"]]), -self.value(c), c["planned_slug"]))
+                rest = sorted((c for c in direct if c["planned_slug"] not in children),
+                              key=lambda c: (-self.value(c), c["planned_slug"]))
+                if len(heads) > self.pillar_links:  # sub-hubs first, within the same budget
+                    rest = heads[self.pillar_links:] + rest
+                    heads = heads[: self.pillar_links]
                 budget = max(0, self.pillar_links - len(heads))
                 for c in heads:
                     self.add(pillar, c["planned_slug"], "from_pillar", self.section_of(c), 1,
@@ -317,8 +335,8 @@ class Planner:
                     self.add(p["planned_slug"], self.pillar_slug[pid], "cross_pillar", "body or related reading", 3,
                              f"shares facet '{f}={p[f]}' with another pillar")
                     done += len(self.links) - before
+        self._related_reading()  # before the orphan fix: a post beyond the pillar's budget is reached from its siblings
         self._fix_orphans_and_dead_ends()
-        self._related_reading()
         self._backlink_queue()
 
     def _related_reading(self) -> None:
@@ -380,7 +398,7 @@ class Planner:
     def _fix_orphans_and_dead_ends(self) -> None:
         for slug, p in self.posts.items():
             if self.inbound(slug) == 0:
-                for src in self.related(p, {slug}):
+                for src in self.related(p, {slug}, pillar_last=True):
                     before = len(self.links)
                     self.add(src["planned_slug"], slug, "orphan_fix", "body, where the topic is relevant", 1,
                              "post would have no inbound internal link otherwise")

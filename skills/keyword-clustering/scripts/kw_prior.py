@@ -34,6 +34,9 @@ MAIN_HEADERS = frozenset(ALIASES["main"])  # a sheet with 'Main Keyword' and no 
 OVERRIDES = {"role": "role"}  # the Keyword Map sheet of the team's plan names the keyword's role in a 'Role' column
 LIST_RX = re.compile(r"[\n;|]")
 PILLAR_ROLES = ("pillar", "pillar-hub", "pillar hub", "hub")
+# the other sheets of the final plan (export_plan.py): never groups, even when they have keyword-like columns
+PLAN_OUTPUT_SHEETS = frozenset({"schedule", "qa", "seo audit", "link plan", "research next", "published match",
+                                "changes", "review", "back-check", "decisions", "not planned"})
 
 
 class PriorTag(NamedTuple):
@@ -87,7 +90,8 @@ def _row_groups(table, layout: str, src: str, by_stt: dict | None, free: list[di
                     free.append(_rec(kw, {"group_key": None, "group": "", "main": "", "group_role": "", "role": "",
                                           "pillar": "", "stt": "", "is_main": False, "sheet": sheet}, rec, n, layout,
                                      src, one))
-                elif kw.lower() != cur["main"].lower():
+                elif kw.lower() != cur["main"].lower() or (rec.get("market") or "") != cur["_market"]:
+                    # the main's text on a row of another market ('christmas gifts for dad' for the UK) is kept
                     out.append(_rec(kw, {**cur, "role": "secondary", "is_main": False}, rec, n, "block", src, one))
             continue
         stt = rec.get("stt", "").strip()
@@ -103,7 +107,7 @@ def _row_groups(table, layout: str, src: str, by_stt: dict | None, free: list[di
             else:
                 pillar = pillar_now
         cur = {"group_key": (src, sheet, gid), "group": gid, "main": main, "group_role": role, "pillar": pillar,
-               "stt": stt, "sheet": sheet}
+               "stt": stt, "sheet": sheet, "_market": rec.get("market") or ""}
         members = by_stt.get(stt) if by_stt is not None and stt else None
         listed = {main.lower()}
         if members:
@@ -176,7 +180,11 @@ def read_prior(path: str) -> tuple[list[dict], dict]:
     kmap_sheet = kmap if kmap is not None and any(_layout(t) == "plan" for t in tables) else None
     records, free, layouts, sheets, first = [], [], [], [], None
     skipped = list(tables[0].info.get("sheets_skipped", [])) if tables else []
+    from_plan = kmap_sheet is not None or any(norm_header(t.info["sheet"]) == "plan" for t in tables)
     for t in tables:
+        if from_plan and norm_header(t.info["sheet"]) in PLAN_OUTPUT_SHEETS:
+            skipped.append((t.info["sheet"], "a sheet of the final plan, not a grouping (Plan and Keyword Map are read)"))
+            continue
         cols = t.info["columns"]
         if "group" not in cols and "keyword" in cols and norm_header(cols.get("ranking_url", "")) == "page":
             # Semrush Keyword Strategy Builder: Topic (the pillar) > Page (the post) > Keyword
@@ -211,6 +219,9 @@ def read_prior(path: str) -> tuple[list[dict], dict]:
         raise SystemExit(f"--prior {src}: no grouped layout found. Expected a keyword column with a group column "
                          "(long), a main keyword column with a secondary keyword column (wide or one keyword per "
                          f"row), or the team's final plan (Plan sheet). Columns found: {found}")
+    if len({r["sheet"] for r in records}) > 1:  # STT 1 of 'Christmas' is not STT 1 of 'Halloween'
+        for r in records:
+            r["group"] = f"{r['sheet']}: {r['group']}"
     info = dict(first.info)
     info.update(layout="+".join(dict.fromkeys(layouts)), groups=len({r["group_key"] for r in records}),
                 keywords=len(records), sheets=[s for s in sheets if s], sheets_skipped=skipped, free=len(free),

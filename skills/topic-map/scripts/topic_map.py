@@ -219,7 +219,7 @@ HUB_SWITCH = 1.5  # an SEO pillar gives way to a group at least as broad that wi
 def audit_row(log: list, r: dict, check: str, action: str, target: dict | None = None, evidence: str = "",
               level: str = "[Convention]") -> None:
     log.append({"audit_id": f"ST-{len(log) + 1:04d}", "step": "topic", "market": r.get("market", ""),
-                "seo_group": r.get("prior_group", ""), "seo_main": r.get("cluster_name", ""),
+                "seo_group": r.get("prior_group", ""), "seo_main": r.get("prior_main") or r.get("cluster_name", ""),
                 "seo_kind": r.get("prior_role", ""), "seo_pillar": r.get("prior_pillar", ""), "check": check,
                 "action": action, "keyword": r.get("cluster_name", ""), "keyword_volume": volume(r),
                 "target_group": (target or {}).get("prior_group", ""), "target_main": (target or {}).get("cluster_name", ""),
@@ -254,8 +254,11 @@ def seo_pillars(live: list[dict], log: list | None = None) -> tuple[list, dict, 
                       query the site can rank for, and the posts pass their link equity to it
     Returns ([(group key, (members, theme))], {group key: hub}, the clusters left to the engine)."""
     by_main: dict[tuple, dict] = {}
-    for r in live:
+    for r in live:  # the post's name, and the SEO's own main of the group when the audit renamed the post
         by_main.setdefault((r["market"], decision_key(r["cluster_name"])), r)
+    for r in live:
+        if r.get("prior_main"):
+            by_main.setdefault((r["market"], decision_key(r["prior_main"])), r)
     hubs = {id(r): r for r in live
             if r.get("prior_group") and (r.get("prior_role") or "").strip().lower() in SEO_PILLAR_ROLES}
     posts: dict[int, list[dict]] = defaultdict(list)
@@ -276,15 +279,16 @@ def seo_pillars(live: list[dict], log: list | None = None) -> tuple[list, dict, 
                 sc = subject_words(c, common)
                 if sc & subj[hid]:
                     continue
-                best = max(((len(sc & subj[o]), volume(hubs[o]), o) for o in hubs
-                            if o != hid and hubs[o]["market"] == c["market"]), default=(0, 0, None))
+                best = max(((len(sc & subj[o]), volume(hubs[o]), hubs[o]["cluster_id"], o) for o in hubs
+                            if o != hid and hubs[o]["market"] == c["market"]), default=(0, 0, "", None))
                 if best[0] > 0:
+                    to = best[3]
                     posts[hid].remove(c)
-                    posts[best[2]].append(c)
-                    shared = ", ".join(sorted(sc & subj[best[2]]))
-                    audit_row(log, c, "pillar_fit", "moved", hubs[best[2]],
+                    posts[to].append(c)
+                    shared = ", ".join(sorted(sc & subj[to]))
+                    audit_row(log, c, "pillar_fit", "moved", hubs[to],
                               f"shares no subject word with its pillar '{hubs[hid]['cluster_name']}' but shares "
-                              f"'{shared}' with the pillar '{hubs[best[2]]['cluster_name']}': a pillar links down to "
+                              f"'{shared}' with the pillar '{hubs[to]['cluster_name']}': a pillar links down to "
                               "posts on its own subject")
     items, hub_of, taken = [], {}, set()
     for h in hubs.values():
@@ -330,8 +334,8 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
     for m in others:
         groups[key_of(m)].append(m)
     hub_key = key_of(hub)
-    pool = []
-    for key, ms in groups.items():
+    pool, owns = [], {}
+    for key, ms in sorted(groups.items(), key=lambda kv: sorted(m["cluster_id"] for m in kv[1])):
         ms = sorted(ms, key=lambda m: (-winnable(m), -volume(m), m["cluster_id"]))
         target = hub if key == hub_key else ms[0]
         for m in ms:
@@ -344,15 +348,22 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
                       f"professionally, ideas, tips...) are set aside: {words}; one post answers both")
         if target is not hub:
             pool.append(target)
-    kept = [m for m in pool if volume(m) >= min_post_volume]
+            owns[target["cluster_id"]] = sum(volume(m) for m in ms)  # the post answers every group merged into it
+    kept = [m for m in pool if owns[m["cluster_id"]] >= min_post_volume]
     for m in pool:
         if m in kept:
             continue
         target = nearest_by_words(m, kept, hub, common)
         merged[m["cluster_id"]] = target
         audit_row(log, m, "section", "section", target,
-                  f"{volume(m):,} searches/month is below {min_post_volume:,} (--seo-min-post-volume): too little "
-                  f"demand for a page of its own; a section of '{target['cluster_name']}' answers it")
+                  f"{owns[m['cluster_id']]:,} searches/month is below {min_post_volume:,} (--seo-min-post-volume): "
+                  f"too little demand for a page of its own; a section of '{target['cluster_name']}' answers it")
+    for cid, target in list(merged.items()):  # a group merged into one that became a section follows it
+        seen = {cid}
+        while target["cluster_id"] in merged and target["cluster_id"] not in seen:
+            seen.add(target["cluster_id"])
+            target = merged[target["cluster_id"]]
+        merged[cid] = target
     return kept, merged
 
 
@@ -423,8 +434,10 @@ def winnable(r: dict) -> int:
 
 def audited(r: dict) -> bool:
     """An SEO group that keyword-clustering checked against the rules (--prior-mode audit): the topic map audits its
-    pillar and post-or-section too, instead of keeping it as the SEO set it."""
-    return (r.get("grouping_basis") or "").startswith("prior:audited")
+    pillar and post-or-section too, instead of keeping it as the SEO set it. The seo_audited column says so even
+    when a decision changed the group (grouping_basis 'decision')."""
+    flag = str(r.get("seo_audited") or "").strip()
+    return flag == "1" or (not flag and (r.get("grouping_basis") or "").startswith("prior:audited"))
 
 
 # Words that say how a post is written, not what it is about: 'how to decorate a christmas tree step by step' and
@@ -1161,7 +1174,7 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
 
     with_hub = {plan["pid"] for plan in plans if plan["chosen"]}  # a hint never names a group with no pillar row
     keys_by_market = {(m, k): pid for (m, t, k), pid in pillar_ids.items() if pid in with_hub}
-    for (market, ptype, key), pid in sorted(first_pid.items(), key=lambda kv: kv[1]):
+    for (market, ptype, key), pid in sorted(first_pid.items(), key=lambda kv: int(kv[1][1:])):
         if pid in with_hub:  # a split topic points to its biggest theme pillar that has a hub
             keys_by_market.setdefault((market, key), pid)
     hint_of_extra = {id(r): pid for r, gkey in extra_standalone

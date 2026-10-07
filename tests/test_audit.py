@@ -363,5 +363,142 @@ class SheetMarkets(unittest.TestCase):
             self.assertEqual(kws, {"gifts for mom": "us", "gifts for mum": "uk"})
 
 
+class ReviewRegressions(unittest.TestCase):
+    """Bugs found by the independent review of the audit, each reproduced first."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def cluster(self, body, *extra):
+        d = self.tmp.name
+        src = os.path.join(d, "seo.csv")
+        write_text(src, HEADER + body)
+        code, _, err = run_main(ck.main, ["--prior", src + "::us", "--out", d, *extra])
+        self.assertEqual(code, 0, err)
+        return (read_csv(os.path.join(d, "keyword-map.csv")), read_csv(os.path.join(d, "clusters.csv")),
+                read_csv(os.path.join(d, "seo-audit.csv")))
+
+    def topic(self):
+        d = self.tmp.name
+        self.assertEqual(run_main(tm.main, [os.path.join(d, "clusters.csv"), "--out", d])[0], 0)
+        return read_csv(os.path.join(d, "topic-map.csv"))
+
+    def test_a_duplicate_is_folded_not_lost(self):
+        kws, _, audit = self.cluster("1,how to decorate stairs for christmas,,,260,22,,Cluster\n"
+                                     ",,christmas garland stairs ideas,,170,20,,\n"
+                                     "2,how to hang garland on stairs,,,300,22,,Cluster\n"
+                                     ",,stairs christmas garland ideas,,150,20,,\n")
+        listed = {r["keyword"] for r in kws} | {v for r in kws for v in r["variants"].split("|") if v}
+        self.assertTrue({"christmas garland stairs ideas", "stairs christmas garland ideas"} <= listed)
+        self.assertEqual([a["check"] for a in audit], ["duplicate"])
+
+    def test_year_rule_only_takes_the_same_query(self):
+        _, cls, _ = self.cluster("1,christmas gift ideas 2026,,,1000,30,,Pillar\n,,white elephant gift rules,,210,20,,\n"
+                                 ",,christmas gift ideas for mom 2026,,300,20,,\n")
+        self.assertEqual(cls[0]["cluster_name"], "christmas gift ideas 2026")  # not 'white elephant gift rules'
+        _, cls, audit = self.cluster("1,christmas gift ideas 2026,,,1000,30,,Pillar\n,,christmas gift ideas,,8000,30,,\n")
+        self.assertEqual(cls[0]["cluster_name"], "christmas gift ideas")  # the year-free variant folded into the main
+        self.assertEqual(audit[0]["check"], "main_changed")
+
+    def test_a_pillar_renamed_by_the_audit_keeps_its_posts(self):
+        self.cluster("1,how to decorate a christmas tree with ribbon,,,1000,55,,Pillar\n"
+                     ",,how to decorate christmas tree with ribbon,,590,20,,\n"
+                     "2,how to decorate a christmas tree white,,,390,25,,Cluster\n"
+                     "3,how to decorate pink christmas tree,,,410,26,,Cluster\n"
+                     "4,how to decorate a christmas tree step by step,,,370,10,,Cluster\n")
+        out = self.topic()
+        hub = next(r for r in out if r["role"] == "pillar")
+        self.assertEqual(hub["primary_keyword"], "how to decorate christmas tree with ribbon")
+        self.assertEqual({r["pillar_id"] for r in out if r["role"] == "cluster"}, {hub["pillar_id"]})
+
+    def test_two_groups_with_the_same_main_are_one_post(self):
+        _, cls, audit = self.cluster("1,how to decorate stairs for christmas,,,260,22,,Cluster\n"
+                                     ",,how to decorate christmas stairs,,170,20,,\n"
+                                     "2,how to decorate stairs for christmas,,,260,22,,Cluster\n"
+                                     ",,christmas staircase decor ideas,,150,20,,\n")
+        self.assertEqual(len(cls), 1)
+        self.assertEqual([a["check"] for a in audit], ["same_query"])
+
+    def test_a_merge_into_a_post_that_became_a_section_follows_it(self):
+        self.cluster("1,how to decorate for christmas,,,1300,40,,Pillar\n"
+                     "2,how to decorate a christmas tree step by step,,,60,10,,Cluster\n"
+                     "3,how to decorate a christmas tree professionally,,,30,32,,Cluster\n"
+                     "4,how to decorate stairs for christmas,,,260,22,,Cluster\n"
+                     "5,how to decorate christmas mantel,,,460,25,,Cluster\n")
+        out = {r["primary_keyword"]: r for r in self.topic()}
+        slugs = {r["planned_slug"] for r in out.values() if r["planned_slug"]}
+        for kw in ("how to decorate a christmas tree step by step", "how to decorate a christmas tree professionally"):
+            self.assertEqual(out[kw]["role"], "merged")
+            self.assertIn(out[kw]["merged_into"], slugs)  # never a post that is itself merged away
+
+    def test_a_decision_does_not_switch_the_topic_audit_off(self):
+        d = self.tmp.name
+        dec = os.path.join(d, "dec.csv")
+        write_text(dec, "decision_id,action,market,keyword,target,value,reason,evidence,source_issue,author,date\n"
+                        "D-1,move_keyword,us,how to decor christmas,how to decorate christmas wreath,,r,e,,seo,\n")
+        _, cls, _ = self.cluster(SEO_FILE.split("\n", 1)[1], "--decisions", dec)
+        self.assertEqual({c["seo_audited"] for c in cls if c["prior_group"]}, {"1"})
+        self.topic()
+        checks = {a["check"] for a in read_csv(os.path.join(d, "seo-audit-topic.csv"))}
+        self.assertIn("section", checks)
+
+    def test_the_final_plan_as_prior_reads_plan_and_keyword_map_only(self):
+        plan_header = ["STT", "Main Keyword", "Secondary Keyword", "Volume", "KD", "Category Kind", "Thuộc Pillar"]
+        p = os.path.join(self.tmp.name, "final-plan.xlsx")
+        with open(p, "wb") as fh:
+            fh.write(xlsx_bytes([("Plan", [plan_header, [1, "christmas gift ideas", "", 9900, 40, "Pillar"]]),
+                                 ("Keyword Map", [["STT", "Main Keyword", "Keyword", "Volume", "KD", "Role"],
+                                                  [1, "christmas gift ideas", "christmas gift ideas", 9900, 40, "main"]]),
+                                 ("Schedule", [["Order", "STT", "Main Keyword", "Category Kind"],
+                                               [1, 1, "christmas gift ideas", "Pillar"]]),
+                                 ("Back-check", [["issue_id", "check", "group", "keyword"],
+                                                 ["BC-1", "weak_member", "1", "christmas gift ideas"]])]))
+        recs, info = kw_prior.read_prior(p)
+        self.assertEqual((info["groups"], info["sheets"]), (1, ["Plan", "Keyword Map"]))
+
+    def test_groups_of_two_sheets_never_collide(self):
+        p = os.path.join(self.tmp.name, "two.xlsx")
+        head = ["STT", "Main Keyword", "Secondary Keyword", "Volume", "KD"]
+        with open(p, "wb") as fh:
+            fh.write(xlsx_bytes([("Christmas", [head, [1, "christmas gift ideas", "", 9900, 40]]),
+                                 ("Halloween", [head, [1, "halloween costume ideas", "", 5000, 30]])]))
+        recs, _ = kw_prior.read_prior(p)
+        self.assertEqual(sorted(r["group"] for r in recs), ["Christmas: 1", "Halloween: 1"])
+
+    def test_a_uk_keyword_with_the_us_main_text_is_kept(self):
+        d = self.tmp.name
+        src = os.path.join(d, "usuk.csv")
+        write_text(src, "STT,Main keyword,Secondary keyword,Volume,KD,Kind,Market\n"
+                        "3,christmas gifts for dad,,4400,35,Cluster,us\n,,christmas gifts for dad,1900,30,,uk\n")
+        recs, _ = kw_prior.read_prior(src)
+        self.assertEqual(sorted(r["market"] for r in recs), ["uk", "us"])
+
+    def test_decision_values_stay_owned_after_an_already_true_run(self):
+        prev = plan_decisions.previous_values([{"Decision ID": "D-1", "Step": "export", "Action": "set_title",
+                                                "Keyword": "stt:1", "Value": "Title V1", "Status": "already_true"}])
+        self.assertEqual(prev[("D-1", "Title SEO")]["value"], "Title V1")
+
+
+class LinkRegressions(LinkRules):
+    def test_cross_pillar_goes_to_the_biggest_pillar_of_a_topic(self):
+        rows = [self.post("p123", "small pillar", role="pillar", pillar_id="P123", pillar_key="cars/seo-a"),
+                self.post("p30", "big pillar", role="pillar", pillar_id="P30", pillar_key="cars/seo-b")]
+        pl = lp.Planner(rows, None, 3, 1)
+        self.assertEqual(pl.pillar_by_key[("us", "cars")], "P30")
+
+    def test_an_orphan_fix_never_breaks_the_pillar_budget(self):
+        rows = [self.post("pillar", "how to decorate for christmas", role="pillar")]
+        rows += [self.post(f"p{i}", f"how to decorate christmas thing{i}", priority_score=str(1000 - i)) for i in range(6)]
+        pl = lp.Planner(rows, None, 3, 1, pillar_links=4)
+        pl.build()
+        self.assertEqual(sum(1 for (s, _), l in pl.links.items() if s == "pillar" and l["link_type"] != "related_reading"), 4)
+        self.assertTrue(all(pl.inbound(f"p{i}") for i in range(6)))  # still reached, from their siblings
+
+    def test_a_relative_clause_is_not_an_inverted_question(self):
+        self.assertTrue(lp.describes("gift ideas for dads who love fishing", "gifts for dad who loves fishing"))
+        self.assertFalse(lp.describes("christmas how to decorate", "how to decorate for christmas"))
+
+
 if __name__ == "__main__":
     unittest.main()

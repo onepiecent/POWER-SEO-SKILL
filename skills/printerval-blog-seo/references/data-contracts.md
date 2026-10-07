@@ -69,6 +69,8 @@ Columns of `clusters.csv` added for evidence:
 - `cluster_volume_dedup`: an estimate next to the `cluster_volume` sum; a keyword and its variants that report the **same** volume count once.
 - `peak_month, ramp_month, peak_ratio, seasonality_source`: reserved for cluster seasonality from data; empty in this version.
 - `cluster_winnable`: the sum of the members' winnable volumes; `main_kd_fit`: `kd_fit` of the main keyword; `site_kd`: the reach used (the same on every row).
+- `prior_main`: the SEO's own main keyword of the group (the topic map finds a pillar by it even when the audit renamed the post); `seo_audited` = 1 when the group came from `--prior` in audit mode (a decision on the group does not switch the topic map's audit off).
+- With several grouped sheets, `prior_group` is `<sheet>: <STT or name>` (STT 1 of two sheets are two groups).
 
 **`seo-audit.csv`** (keyword-clustering, `--prior` with `--prior-mode audit`) and **`seo-audit-topic.csv`** (topic-map, audited groups): `audit_id, step, market, seo_group, seo_main, seo_kind, seo_pillar, check, action, keyword, keyword_volume, target_group, target_main, evidence_type, evidence, level`. Cluster step `check` ∈ same_query (merged), duplicate (removed), shop_member (split), main_changed, possible_duplicate (check_serp: not applied), export_topic (added), noise_flag (kept); topic step ∈ pillar_fit (moved), pillar_changed, same_subject (merged), section. Written empty when nothing changed, never left from an earlier run.
 

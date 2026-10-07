@@ -160,6 +160,19 @@ def review_rows(plan, rows: list[dict], signature, light: set[str], issues: list
                 logs: list[dict] | None = None) -> list[list]:
     angle_of = getattr(plan, "angle_of", {}) or {}
     out = []
+    # indexes by matching key: a big plan has thousands of posts and issues (posts x issues was the hot spot)
+    issue_by_key: dict[str, list[int]] = {}
+    open_issues = [i for i in issues or [] if i.get("status", "open") == "open"]
+    for n_i, i in enumerate(open_issues):
+        for key in {decision_key(i.get(c, "")) for c in ("keyword", "group_main", "other_main")}:
+            issue_by_key.setdefault(key, []).append(n_i)
+    log_by_key: dict[str, list[int]] = {}
+    for n_l, log in enumerate(logs or []):
+        for key in {decision_key(log.get("keyword", "")), decision_key(log.get("target", ""))}:
+            log_by_key.setdefault(key, []).append(n_l)
+        stt_key = log.get("keyword", "").replace(" ", "").lower()
+        if stt_key.startswith("stt:"):
+            log_by_key.setdefault(stt_key, []).append(n_l)
     for r in rows:
         post, n = r["post"], r["n"]
         slug, market, main_kw = post["planned_slug"], post.get("market", ""), post["primary_keyword"]
@@ -173,15 +186,14 @@ def review_rows(plan, rows: list[dict], signature, light: set[str], issues: list
         groups = [g for g in [main.get("prior_group", "")] + [k.get("prior_group", "") for k in kws] if g]
         biggest = max((k for k, _ in r["roles"]), key=lambda k: to_int(k.get("volume"), 0), default=None)
         big_vol = to_int(biggest.get("volume")) if biggest else None
-        issue_ids = [f"{i['issue_id']} {i.get('check', '')} ({i.get('severity', '')})" for i in issues or []
-                     if i.get("status", "open") == "open" and same_market(i.get("market", ""), market)
-                     and {decision_key(i.get(c, "")) for c in ("keyword", "group_main", "other_main")} & keys]
+        hits = sorted({x for key in keys for x in issue_by_key.get(key, ())})
+        issue_ids = [f"{i['issue_id']} {i.get('check', '')} ({i.get('severity', '')})" for i in
+                     (open_issues[x] for x in hits) if same_market(i.get("market", ""), market)]
         applied, seen = [], set()
-        for log in logs or []:
+        on_post = sorted({x for key in list(keys) + [f"stt:{n}"] for x in log_by_key.get(key, ())})
+        for log in ((logs or [])[x] for x in on_post):
             did = log.get("decision_id", "")
-            on_post = ({decision_key(log.get("keyword", "")), decision_key(log.get("target", ""))} & keys
-                       or log.get("keyword", "").replace(" ", "").lower() == f"stt:{n}")
-            if log.get("status") in APPLIED and on_post and same_market(log.get("market", ""), market) and did not in seen:
+            if log.get("status") in APPLIED and same_market(log.get("market", ""), market) and did not in seen:
                 seen.add(did)
                 applied.append(f"{did} {log.get('action', '')} ({log.get('status')})")
         for k in kws:  # ids recorded in keyword-map.csv by the cluster step

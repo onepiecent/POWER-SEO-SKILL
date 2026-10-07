@@ -803,7 +803,7 @@ def prior_clusters(rows: list[KW], warnings: list, audited: bool = False) -> lis
         markets[gk].append(mk)
     for gk, mks in markets.items():
         if len(mks) > 1:
-            warnings.append(f"SEO group '{gk[1]}' ({gk[0]}) has keywords of several markets ({', '.join(sorted(mks))}): "
+            warnings.append(f"SEO group '{gk[-1]}' ({gk[0]}) has keywords of several markets ({', '.join(sorted(mks))}): "
                             "split into one post per market.")
     for cl in groups.values():
         cl.sort(key=lambda r: (not r.prior[0].is_main, -(r.volume + r.var_vol), r.keyword))
@@ -883,7 +883,8 @@ CL_FIELDS = ["cluster_id", "market", "cluster_name", "keyword_count", "seed_volu
              "theme", "core", "category", "season", "market_terms", "parent_topic", "keywords", "name_fluency",
              "grouping_basis", "serp_verified_share", "seed_basis", "prior_group", "prior_pillar", "prior_role",
              "intents_mix", "serp_features_main", "traffic_potential_main", "cluster_volume_dedup", "peak_month",
-             "ramp_month", "peak_ratio", "seasonality_source", "decision_ids", "cluster_winnable", "main_kd_fit", "site_kd"]
+             "ramp_month", "peak_ratio", "seasonality_source", "decision_ids", "cluster_winnable", "main_kd_fit", "site_kd",
+             "prior_main", "seo_audited"]
 VERIFIED_KINDS = ("serp", "parent_topic")  # membership that rests on the SERP (shared URLs, the tool's Parent Topic)
 
 
@@ -980,7 +981,8 @@ def fmt_flag(v: bool | None) -> str | int:
     return "" if v is None else int(v)
 
 
-def build_rows(clusters: list[list[KW]], tax: Taxonomy, fluency: Fluency | None = None, kd: KdModel | None = None):
+def build_rows(clusters: list[list[KW]], tax: Taxonomy, fluency: Fluency | None = None, kd: KdModel | None = None,
+               audited: bool = False):
     kd = kd or KdModel()
     kw_rows, cl_rows, ids = [], [], {}
     ordered = sorted(clusters, key=lambda c: (-sum(r.volume + r.var_vol for r in c), c[0].keyword))
@@ -1035,7 +1037,11 @@ def build_rows(clusters: list[list[KW]], tax: Taxonomy, fluency: Fluency | None 
                         "peak_month": "", "ramp_month": "", "peak_ratio": "", "seasonality_source": "",
                         "decision_ids": "|".join(sorted({d for r in cl for d in r.decision_ids})),
                         "cluster_winnable": round(sum(kd.winnable(r.volume + r.var_vol, r.kd, r.kd_src) for r in cl)),
-                        "main_kd_fit": kd.label(seed.kd, seed.kd_src), "site_kd": f"{kd.reach:g}"})
+                        "main_kd_fit": kd.label(seed.kd, seed.kd_src), "site_kd": f"{kd.reach:g}",
+                        # the SEO's own main of the group (its posts name it in Thuộc Pillar even when the audit
+                        # renamed the post) and whether the topic map audits it (a decision does not switch that off)
+                        "prior_main": (gtag.main or "") if gtag else "",
+                        "seo_audited": int(audited and any(r.prior for r in cl))})
     return kw_rows, cl_rows, ids, ordered
 
 
@@ -1415,7 +1421,7 @@ def main(argv=None) -> int:
         if a != b and (min(a, b), max(a, b)) not in seen:
             seen.add((min(a, b), max(a, b)))
             pairs.append((s, a, b, why, etype))
-    chosen = choose_groups(pinned) if audited else []  # a keyword in several SEO groups: the group it fits best
+    chosen, same_main = choose_groups(pinned) if audited else ([], [])  # a keyword in several SEO groups
     seo = prior_clusters(pinned, warnings, audited)
     audit = None
     if audited:  # the SEO's groups are checked against the rules and regrouped where one fails (kw_audit.py)
@@ -1428,7 +1434,7 @@ def main(argv=None) -> int:
         audit.noise(stats["prior_filter_hits"])
         audit.duplicates(chosen)
         refs = [(s, clusters[a], clusters[b], why, etype) for s, a, b, why, etype in pairs]
-        clusters = audit.run(seo, clusters)
+        clusters = audit.run(seo, clusters, same_main)
         pos = {id(c): i for i, c in enumerate(clusters)}
         pairs = [(s, pos[id(A)], pos[id(B)], why, etype) for s, A, B, why, etype in refs]
     else:
@@ -1439,7 +1445,7 @@ def main(argv=None) -> int:
         pos = {id(c): i for i, c in enumerate(clusters)}
         pairs = [(s, pos[id(A)], pos[id(B)], why, etype) for s, A, B, why, etype in refs
                  if A is not B and id(A) in pos and id(B) in pos]
-    kw_rows, cl_rows, ids, _ = build_rows(clusters, tax, fluency, kd)
+    kw_rows, cl_rows, ids, _ = build_rows(clusters, tax, fluency, kd, audited)
     checks = serp_check_rows(pairs, clusters, ids, serp_t, args.serp_check_max)
 
     os.makedirs(args.out, exist_ok=True)

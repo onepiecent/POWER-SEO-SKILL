@@ -78,16 +78,25 @@ def jaccard(a, b) -> float:
 WORD_RX = re.compile(r"[a-z0-9]+")
 
 
-def choose_groups(rows: list) -> list[tuple]:
+def choose_groups(rows: list) -> tuple[list[tuple], list[tuple]]:
     """A keyword the SEO listed in several groups (its rows were joined into one keyword with one tag per group): it
     stays in the group where it is the main keyword, else in the group whose main keyword shares most of its words;
-    the chosen tag is put first (prior_clusters() uses it). Returns [(keyword, chosen tag, other tags, why)]."""
-    out = []
+    the chosen tag is put first (prior_clusters() uses it). Two groups that both name it as their main keyword ask
+    the same query: they are returned to be merged. Returns ([(keyword, chosen tag, other tags, why)],
+    [(group key kept, group key merged into it, keyword)])."""
+    out, same_main = [], []
     for k in rows:
         tags = list(dict((t.group_key, t) for t in k.prior).values())
         if len(tags) < 2:
             continue
         mains = [t for t in tags if t.is_main]
+        if len(mains) > 1:  # the main of several groups: those groups are merged into the first one (Audit.run)
+            same_main += [(mains[0].group_key, t.group_key, k.keyword) for t in mains[1:]]
+            tags = [t for t in tags if t.group_key not in {m.group_key for m in mains[1:]}]
+            if len(tags) < 2:
+                k.prior = (mains[0],) + tuple(t for t in k.prior if t is not mains[0])
+                continue
+            mains = mains[:1]
         mine = set(WORD_RX.findall(k.keyword.lower()))
         if mains:
             best, why = mains[0], f"it is the main keyword of group '{mains[0].group}'"
@@ -98,7 +107,7 @@ def choose_groups(rows: list) -> list[tuple]:
             why = f"its words are closest to that group's main '{best.main}' ({score(best):.2f})"
         k.prior = (best,) + tuple(t for t in k.prior if t is not best)
         out.append((k, best, [t for t in tags if t is not best], why))
-    return out
+    return out, same_main
 
 
 class Audit:
@@ -143,8 +152,19 @@ class Audit:
         pool = [k for k in cl if k is not seed and not k.fixed and self.plain(k) and len(k.keyword.split()) <= 8
                 and same_subject(seed, k) and self.fluent(k) >= self.fluent(seed) - NATURAL_MARGIN]
         if YEAR_RX.search(seed.keyword):
+            # the same query without the year: a variant folded into the main, or a member with all of its words
+            forms = [(v, vol) for v, vol in zip(seed.variants, seed.var_vols)
+                     if not YEAR_RX.search(v) and vol >= 0.2 * seed.volume]
+            if forms:
+                v, vol = max(forms, key=lambda x: (x[1], -len(x[0])))
+                old, old_vol = seed.keyword, seed.volume
+                i = seed.variants.index(v)
+                seed.variants[i], seed.var_vols[i] = old, old_vol
+                seed.keyword, seed.volume = v, vol
+                return seed, (f"the main '{old}' names a year; '{v}' ({vol:,}/month, the same query) keeps one URL "
+                              "that is refreshed every year")
             evergreen = [k for k in cl if k is not seed and not YEAR_RX.search(k.keyword) and not k.fixed
-                         and total(k) >= 0.2 * total(seed)]
+                         and k.tokset >= seed.tokset and same_subject(seed, k) and total(k) >= 0.2 * total(seed)]
             if evergreen:
                 k = max(evergreen, key=lambda k: (self.win(k), total(k)))
                 return k, (f"the main '{seed.keyword}' names a year; '{k.keyword}' ({total(k):,}/month) keeps one URL "
@@ -166,7 +186,7 @@ class Audit:
                 break
         return best, why
 
-    def run(self, seo: list[list], free: list[list]) -> list[list]:
+    def run(self, seo: list[list], free: list[list], same_main: list[tuple] | None = None) -> list[list]:
         groups = [list(c) for c in seo]
         alive = [True] * len(groups)
 
@@ -178,10 +198,21 @@ class Audit:
             groups[j] = []
             alive[j] = False
 
-        # 1. same_query: equal main keys, or SERP overlap of the mains
+        # 1. same_query: two groups that name the same keyword as their main, equal main keys, SERP overlap of the mains
+        index: dict[tuple, int] = {}
+        for i, cl in enumerate(groups):
+            for k in cl:
+                if k.prior:
+                    index.setdefault((k.prior[0].group_key, k.market), i)
+        for keep_key, drop_key, kw in same_main or []:
+            for market in {k.market for cl in groups for k in cl}:
+                i, j = index.get((keep_key, market)), index.get((drop_key, market))
+                if i is not None and j is not None and i != j and alive[i] and alive[j]:
+                    merge(i, j, "lexical", f"both groups name '{kw}' as their main keyword: one query, one post")
         by_main: dict[tuple, list[int]] = defaultdict(list)
         for i, cl in enumerate(groups):
-            by_main[vkey(cl[0])].append(i)
+            if alive[i] and cl:
+                by_main[vkey(cl[0])].append(i)
         for key, idx in by_main.items():
             if len(idx) < 2:
                 continue
@@ -218,13 +249,19 @@ class Audit:
                 win = max(gs, key=lambda i: (jaccard(hits[0][1].tokens, groups[i][0].tokens), self.group_win(groups[i]), -i))
                 why = (f"its words are closest to that group's main '{groups[win][0].keyword}' "
                        f"({jaccard(hits[0][1].tokens, groups[win][0].tokens):.2f})")
+            keep = next(k for i, k in hits if i == win)
             for i, k in hits:
-                if i == win or k is groups[i][0]:
+                if i == win or k is groups[i][0] or k is keep:
                     continue
-                groups[i].remove(k)
+                groups[i].remove(k)  # folded into the kept keyword as a variant, as dedupe() does within a group
+                keep.variants = keep.variants + [k.keyword] + k.variants
+                keep.var_vols = keep.var_vols + [k.volume] + k.var_vols
+                keep.var_vol += k.volume + k.var_vol
+                keep.urls = keep.urls | k.urls
                 self.log(groups[i] or [k], "duplicate", "removed", k.keyword, total(k), groups[win], "lexical",
-                         f"'{k.keyword}' is listed in {len(gs)} groups; kept in '{groups[win][0].keyword}' because {why}: "
-                         "two posts would compete for it", "[Convention]")
+                         f"'{k.keyword}' is listed in {len(gs)} groups (the same words as '{keep.keyword}'); kept in "
+                         f"'{groups[win][0].keyword}' because {why}, as a variant: two posts would compete for it",
+                         "[Convention]")
         # 3. shopping keywords out of blog groups
         out: list[list] = []
         for i, cl in enumerate(groups):
@@ -240,12 +277,11 @@ class Audit:
             # 4. the main keyword
             new, why = self.better_main(cl)
             if new is not None:
-                old = cl[0]
-                cl.remove(new)
-                cl.insert(0, new)
+                if new is not cl[0]:
+                    cl.remove(new)
+                    cl.insert(0, new)
                 self.log(cl, "main_changed", "main_changed", new.keyword, total(new), None,
-                         "kd" if why.startswith("easier") else "volume", f"main '{old.keyword}' -> '{new.keyword}': {why}",
-                         "[Convention]")
+                         "kd" if why.startswith("easier") else "volume", why, "[Convention]")
             out.append(cl)
         for cl in out:
             if cl[0].prior:
@@ -256,6 +292,7 @@ class Audit:
         # the group it is closest to; only groups that share a word are compared
         if self.similar is not None:
             seeds = [cl for cl in out if cl[0].prior and cl[0].fit != "low"]
+            gw = [self.group_win(cl) for cl in seeds]  # once per group: the pair loop below is the hot spot
             by_tok: dict[tuple, list[int]] = defaultdict(list)
             for i, cl in enumerate(seeds):
                 for t in cl[0].tokset:
@@ -264,12 +301,12 @@ class Audit:
             for i, cl in enumerate(seeds):
                 cand = {j for t in cl[0].tokset for j in by_tok[(cl[0].market, t)][:500] if j != i}
                 for j in cand:
-                    small, big = (i, j) if (self.group_win(seeds[i]), -i) < (self.group_win(seeds[j]), -j) else (j, i)
+                    small, big = (i, j) if (gw[i], -i) < (gw[j], -j) else (j, i)
                     if small != i:
                         continue
                     sim = self.similar(seeds[i][0], seeds[j][0])
-                    if sim and (small not in best or (sim, self.group_win(seeds[big])) > best[small][:2]):
-                        best[small] = (sim, self.group_win(seeds[big]), big)
+                    if sim and (small not in best or (sim, gw[big]) > best[small][:2]):
+                        best[small] = (sim, gw[big], big)
             for small, (sim, _, big) in sorted(best.items(), key=lambda kv: -kv[1][0])[:MAX_POSSIBLE]:
                 cl, other = seeds[small], seeds[big]
                 self.log(cl, "possible_duplicate", "check_serp", cl[0].keyword, total(cl[0]), other, "lexical",
