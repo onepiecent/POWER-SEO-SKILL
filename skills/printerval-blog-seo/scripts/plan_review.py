@@ -34,6 +34,8 @@ NOT_PLANNED_COLUMNS = ["Market", "Keyword or Cluster", "Volume", "Where It Went"
                        "Evidence"]
 NOT_PLANNED_WIDTHS = [7, 40, 11, 44, 50, 40, 60]
 APPLIED = ("applied", "applied_with_warning", "already_true")
+QUOTES = str.maketrans({"‘": "'", "’": "'", "‚": "'", "‛": "'", "′": "'",
+                        "“": '"', "”": '"', "„": '"', "″": '"'})
 MAX_SEEDS = 8
 QUESTION_RX = re.compile(r"^(what|whats|when|where|why|how|who|which|can|do|does|did|is|are|was|were|should|will)\b")
 # [Convention] tool intent labels compatible with each reader need (a Semrush/Ahrefs label is a hint, not proof)
@@ -46,8 +48,7 @@ WHERE = {"backlog": "backlog: not planned (long tail that matches no planned pos
 
 def decision_key(text: str) -> str:
     """Contract C1 matching key: NFC, lowercase, curly quotes straight, apostrophes removed, '-' and '_' as spaces."""
-    t = unicodedata.normalize("NFC", text or "").lower()
-    t = t.replace("‘", "'").replace("’", "'").replace("“", '"').replace("”", '"')
+    t = unicodedata.normalize("NFC", str(text or "")).lower().translate(QUOTES)
     return " ".join(t.replace("'", "").replace("-", " ").replace("_", " ").split())
 
 

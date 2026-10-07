@@ -35,40 +35,71 @@ Use together with the existing skills **`seo-content-vn`** (title/meta, `seo_che
 ## Standard workflow
 
 ```
-CSV file (SEO specialist)
-  └─ keyword-clustering ──► clusters.csv + cluster-report.md   (read the report first, handle warnings, re-run if needed)
-       └─ topic-map ──► topic-map.csv (pillars, clusters, priority, gaps)
+Raw export and/or grouped file (SEO specialist)
+  └─ keyword-clustering ──► clusters.csv, keyword-map.csv, cluster-report.md, backcheck.csv + proposed-decisions.csv
+       │                    (read the reports first; decisions.csv ──► decisions-log-cluster.csv)
+       └─ topic-map ──► topic-map.csv (pillars, clusters, priority, gaps; decisions ──► decisions-log-topic.csv)
             ├─ editorial-calendar ──► seasonal-plan.csv (publish dates for seasonal posts)
             ├─ internal-link-planner ──► link-plan.csv
-            │    └─ export_plan.py ──► final-plan.xlsx (the content team's sheet: posts, keywords, links, planned URLs,
-            │                          + Keyword Map, Schedule, QA, Research Next)
+            │    └─ export_plan.py ──► final-plan.xlsx (the content team's 15 columns, + Keyword Map, Schedule, QA,
+            │                          Research Next, Review, Back-check, Decisions, Not Planned)
             └─ content-brief ──► briefs/*.md   (fill the [TO FILL] parts after reviewing the real SERP)
                  └─ write the post ──► helpful-content-editor + claims-compliance-check
                       └─ product-slot (hand-off) ──► content team adds links ──► publish (--final)
 ```
 
-**One command** for a keyword file (runs the five steps below, prints each summary; options of a single step go through `--cluster-args`, `--topic-args`, `--export-args`):
+### Three kinds of input, one pipeline
+
+| The SEO sends | Run |
+|---|---|
+| A raw export (Semrush, Ahrefs, Keyword Planner, GSC) | `run_plan.py export.xlsx --market us --out outputs` |
+| A file they already grouped (keyword + group columns, main + secondary keyword columns, or the team's earlier final plan with its Keyword Map sheet) | `run_plan.py --prior grouped.xlsx::us --out outputs` |
+| Both | `run_plan.py export.xlsx --prior grouped.xlsx::us --out outputs` (the export back-fills volume, KD, intent, trend and SERP features, and supplements keywords the grouping missed) |
+
+A grouped file goes in **only through `--prior`** (a positional file is always read as a raw export). It is the baseline: the script never regroups it silently. The SEO's groups are kept (`grouping_basis` `prior:seo`, or `prior:seo+added` when export keywords joined one); every group is back-checked against the data (`backcheck.csv`) with a proposed decision for each issue; only decisions change it. After the review, re-run with `--decisions decisions.csv`: `run_plan.py` passes it to the cluster step, `topic_map.py` and `export_plan.py`, and hands `backcheck.csv`, `excluded.csv` and every `decisions-log-*.csv` to `export_plan.py`.
 
 ```bash
-python3 skills/printerval-blog-seo/scripts/run_plan.py export.xlsx --market us --only occasion=thanksgiving \
-    --published published-posts.xlsx --previous outputs/final-plan.xlsx --out outputs
+python3 skills/printerval-blog-seo/scripts/run_plan.py export.xlsx --prior grouped.xlsx::us --market us \
+    --decisions decisions.csv --published published-posts.xlsx --previous outputs/final-plan.xlsx --out outputs
 ```
 
-Step by step (run from the repository root; every script uses only the Python 3 standard library):
+Options of a single step go through `--cluster-args`, `--topic-args`, `--export-args`. Step by step (run from the repository root; every script uses only the Python 3 standard library):
 
 ```bash
-python3 skills/keyword-clustering/scripts/cluster_keywords.py export.csv --out outputs --group-by occasion,recipient
-python3 skills/topic-map/scripts/topic_map.py outputs/clusters.csv --out outputs
+python3 skills/keyword-clustering/scripts/cluster_keywords.py export.csv --prior grouped.xlsx::us \
+    --decisions decisions.csv --out outputs --group-by occasion,recipient
+python3 skills/topic-map/scripts/topic_map.py outputs/clusters.csv --decisions decisions.csv --out outputs
 python3 skills/editorial-calendar/scripts/occasion_calendar.py --topic-map outputs/topic-map.csv --out outputs
 python3 skills/internal-link-planner/scripts/link_plan.py plan outputs/topic-map.csv --out outputs
 python3 skills/content-brief/scripts/make_brief.py --topic-map outputs/topic-map.csv \
     --link-plan outputs/link-plan.csv --seasonal-plan outputs/seasonal-plan.csv --bucket A --out outputs/briefs
 python3 skills/printerval-blog-seo/scripts/export_plan.py --topic-map outputs/topic-map.csv \
     --keyword-map outputs/keyword-map.csv --link-plan outputs/link-plan.csv \
-    --seasonal-plan outputs/seasonal-plan.csv --out outputs/final-plan.xlsx
+    --seasonal-plan outputs/seasonal-plan.csv --decisions decisions.csv --backcheck outputs/backcheck.csv \
+    --excluded outputs/excluded.csv --decision-log outputs/decisions-log-cluster.csv \
+    --decision-log outputs/decisions-log-topic.csv --out outputs/final-plan.xlsx
 ```
 
 A one-topic Semrush export (for example `thanksgiving-day_all-keywords_us.xlsx`, broad match, so it also holds other holidays) goes in as it is: `cluster_keywords.py file.xlsx --market us --only occasion=thanksgiving`.
+
+### The review step (Claude), the core of the method
+
+The scripts compute evidence; Claude (or the SEO) makes the judgment calls in `decisions.csv`; the scripts apply them deterministically on every re-run and log them in the final file. Run at least two passes. Formats, checks, actions per step and the contradiction rule: `keyword-clustering/references/backcheck-and-decisions.md`.
+
+**Pass 1: structure.** After the first run, read in this order: `cluster-report.md` (input, recognised and ignored columns, evidence coverage, warnings), `backcheck-report.md`, then `backcheck.csv` sorted by severity and volume, `spelling-fixes.csv`, `excluded.csv` (by volume), `merge-candidates.csv`. For each high issue, and each medium issue among the 30 largest groups by volume [Convention: review budget], accept, edit or reject the matching row of `proposed-decisions.csv` and write the accepted ones to `decisions.csv` with `author=claude`, a `reason` and the `evidence`. Everything else stays `open` and is labelled as a heuristic default in the final file.
+
+**Pass 2: content.** Re-run with `--decisions decisions.csv`. Check the Decisions sheet: every decision is `applied`, or its `stale`/`invalid`/`rejected_by_data`/`conflict` status is fixed or explained to the user. Then, in the Review sheet, write one `set_angle` per post (the reader need it serves for Printerval's audience, US/UK buyers of print-on-demand gifts and apparel, and which interpretation of the query it targets). Write `set_outline` for the rows the user asked for (default: bucket A), built from Outline Seeds. Write `drop_post` with reason `off-audience` when no honest angle exists. Re-run.
+
+**Before writing any decision, check and write down:**
+1. **Evidence, quoted from the files:** the `issue_id` and the numbers (volumes, SERP overlap counts, Parent Topic, the Semrush/Ahrefs intent labels, SERP features, trend peak). Never write a number that is not in a file. Your web search is not a Google SERP: never record overlap counts from it.
+2. **The evidence hierarchy:** SERP overlap > Parent Topic or KSB Page > co-ranking URL > tool intent and SERP features > monthly data > word similarity > your reading of the meaning. A decision that rests only on the last two says "not verified by SERP" in `evidence`, and the pair goes to the SEO through `serp-check.csv`. [Convention: vendor docs; thresholds disagree between tools]
+3. **Merge rule [Google]:** same SERP and compatible intent means one post (site diversity; doorway and scaled-content policies). Keeping two close variants apart needs SERP evidence that they differ, and a stated angle for each.
+4. **Data beats you:** a `claude` decision contradicted by SERP or Parent Topic data is `rejected_by_data` by the script. Do not retry it; tell the user, and ask the SEO to check the live SERP. A human decision against the data is `applied_with_warning`.
+5. **Nothing invented:** decisions only move, merge, split, rename, keep or drop keywords that are in the data. A brainstormed topic the file does not cover becomes a `research_seed` (Research Next, unverified until exported), never a post. Outlines contain no invented facts, figures, experience or word counts; mark gaps `[DATA NEEDED: ...]`; never promise FAQ or HowTo rich results [Google].
+6. **US and UK** are never merged; UK wording in UK rows.
+7. **Pillars are a [Convention]:** promote a pillar only when the head term has a broad SERP or the data shows at least two distinct sub-topics under it; never claim "topical authority".
+
+**Report to the user** (in their language): what was read, how many groups were confirmed by SERP / kept unverified / changed, the decisions applied with their basis, what still needs the SEO (the `serp-check.csv` list, `[DATA NEEDED]` rows), and where each is in the final file (Review, Back-check, Decisions, Not Planned sheets).
 
 ## The final plan (`export_plan.py`)
 
@@ -84,6 +115,8 @@ One row per post, in the content team's column order: `STT | Main Keyword | Seco
 - For a one-topic export, a **Research Next** sheet lists the themes a POD blog needs for that occasion (`assets/research-seeds.json`: gifts, apparel, quotes and messages, humor, decor, crafts, plus occasion ideas such as Friendsgiving) with how many keywords and searches the file has for each: `covered` only when the file holds a head keyword of the theme (`thanksgiving quotes`) and a real long tail, else `thin` or `missing` with the **seed keywords to export next** (Semrush, same market). Hand this list to the SEO specialist; do not plan posts for a theme without its keywords.
 - **`--published`** (the content team's list of published blog posts: any CSV/.xlsx with a URL and a Title column; Category and a focus keyword column are used when present). A **Published Match** sheet shows, per planned post: `update this post` (a published post already answers its main question or a secondary keyword, question words aside: "When Did Thanksgiving Day Begin?" = `history of thanksgiving`): **URL Blog becomes that URL, the Schedule uses the refresh deadline, and the advice flags a stale year in the title**; `also published` (a second post answering the same question: merge them); `covers part of it` (it answers one of the merged long-tail keywords: it becomes a body link); `related live post` (it shares a subject word: listed first in Related Post, `--live-related` 1). It also lists `duplicate published posts` of the topic (same slug, another id) and posts whose title names a brand or character on `claims-compliance-check`'s IP watchlist (`IP check`; never suggested as links). Every match is a heuristic on words: a person confirms each `update this post` before the team rewrites it.
 - **`--previous`** (an earlier `final-plan.xlsx`/`.csv` the team already works in, even re-saved by Excel or Google Sheets): matched posts (same URL Blog, same main keyword, or the old main keyword is now one of the post's keywords) **keep their STT, the team's columns (Category, Title SEO, Meta Description SEO, Outline, Trạng thái) and a real URL pasted in URL Blog** (every link to that post uses it); new posts get the next numbers; a previous row that matches nothing is kept as it is if the team filled anything in it, else dropped. A **Changes** sheet lists kept, renamed, new, dropped and kept-from-previous rows. Always re-run with `--previous` once the team has started on a plan.
+- After the existing sheets, four sheets show what each row rests on (`scripts/plan_review.py`; values come only from the data, nothing is invented): **Review** (one row per STT: tool intent and whether it fits the reader need, the main keyword's SERP features, the grouping basis, the SEO's group, main and owned volume, KD, outline seeds taken from the post's own keywords with their real volumes, the reviewed angle or `unreviewed`, open back-check issues, decisions applied, and why the post exists in numbers); **Back-check** (`--backcheck`: `backcheck.csv` as it is, status updated from the decision logs); **Decisions** (`--decision-log`, repeatable: every logged decision with its status, plus the reason and evidence from the decisions file); **Not Planned** (backlog, skip and merged-away clusters and the biggest keywords of `--excluded`, `--not-planned-max` 300: where each went, the reason and the nearest planned post). Without those files only Review and Not Planned appear. Keyword Map stays the second sheet.
+- Category, Title SEO, Meta Description SEO and Outline are filled only by the team or by a reviewed decision (`set_category`, `set_title`, `set_meta`, `set_outline`); a team value always wins.
 - A **QA** sheet lists what to review before handing the plan over, most severe first: two posts asking nearly the same thing (overlap), a keyword that is another post's main question (misplaced), a year in a main keyword, duplicate or long slugs, a post absorbing 100+ clusters, posts with few internal links or none pointing to them, weak posts (< 500 searches in total) and very hard main keywords (KD >= 70). The script prints a one-line summary. **Read it and resolve or explain every high item to the user**; the others are judgment calls.
 
 CSV schemas: `references/data-contracts.md`. Sources and verification levels: `references/sources.md`. Assumptions about Printerval and open questions: `references/printerval-context.md`.
