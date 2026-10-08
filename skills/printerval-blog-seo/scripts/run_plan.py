@@ -110,6 +110,8 @@ def main(argv=None) -> int:
     ap.add_argument("--serp", action="append", help="SERP data checked by hand or exported (serp.csv: keyword, url, "
                                                     "market, position...), repeatable: steps 1 and 5")
     ap.add_argument("--serp-budget", type=int, help="keywords in sheet SERP To-do (default 25; 0: no sheet)")
+    ap.add_argument("--posts", type=int, help="only when the SEO asks for N posts: the N with the highest priority are "
+                                             "planned, the rest go to the backlog (default: the data decides)")
     ap.add_argument("--out", default="outputs", help="output folder (default outputs)")
     ap.add_argument("--market", help="default market for files without a country column (us|uk)")
     ap.add_argument("--only", action="append", help="keep one topic, e.g. occasion=thanksgiving (repeatable)")
@@ -155,7 +157,7 @@ def main(argv=None) -> int:
     cluster += serp
     run("1/5 keyword-clustering", cluster + decisions + shlex.split(args.cluster_args))
     run("2/5 topic-map", [py, find_script("topic-map", "topic_map.py", args.skills_dir), o("clusters.csv"), "--out", out]
-        + decisions + shlex.split(args.topic_args))
+        + (["--posts", str(args.posts)] if args.posts else []) + decisions + shlex.split(args.topic_args))
     calendar = [py, find_script("editorial-calendar", "occasion_calendar.py", args.skills_dir),
                 "--topic-map", o("topic-map.csv"), "--out", out]
     run("3/5 editorial-calendar", calendar + (["--today", args.today] if args.today else []))

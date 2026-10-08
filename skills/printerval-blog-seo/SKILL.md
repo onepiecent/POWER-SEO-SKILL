@@ -84,6 +84,8 @@ python3 skills/printerval-blog-seo/scripts/export_plan.py --topic-map outputs/to
 
 A one-topic Semrush export (for example `thanksgiving-day_all-keywords_us.xlsx`, broad match, so it also holds other holidays) goes in as it is: `cluster_keywords.py file.xlsx --market us --only occasion=thanksgiving`.
 
+**Any topic, any size.** Nothing in the scripts is written for one topic: what the skill knows about occasions, recipients, interests, products and themes is data (`keyword-clustering/assets/taxonomy.json`, noise rules, research seeds, the occasion calendar), and a niche it does not know still clusters by words and shows up in `taxonomy-suggestions.csv` (add it with `--extend-taxonomy`). **The number of posts is never fixed:** by default the data decides (every group that earns a page, the rest as sections), which is the plan to hand over. Only when the SEO asks for a number, pass it: `run_plan.py ... --posts 40` plans the 40 posts with the highest priority (a cluster brings its pillar) and lists the others in the backlog with their rank (Not Planned sheet), instead of merging posts against their SERP to reach the number.
+
 ### The SERP check, without an API or a budget
 
 Two groups are one post when Google ranks the same pages for both [Google: the live SERP decides; the threshold of 4 shared top-10 URLs is a Convention]. Checking every keyword costs hours (and tokens when Claude reads the pages), and most checks only confirm what the rules already decided: in the SEO's check of 53 Halloween pairs, 46 only confirmed the plan. So the skill checks in three layers (`references/serp-check.md`):

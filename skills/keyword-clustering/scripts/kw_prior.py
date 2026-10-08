@@ -16,6 +16,11 @@ Layouts, detected per sheet (every sheet of a workbook is read; a sheet with no 
   long  a keyword column and a group column (cluster, group, topic...); a blank group cell continues the group
         above it (a block of rows under one group name, or cells merged in Excel). The main keyword is the row's
         main keyword column when there is one; otherwise cluster_keywords.py names the group after its biggest keyword.
+  columns  groups side by side: at least two (keyword, volume) column pairs, each pair one group named in the header
+        row ('when is black friday' over its keywords and their volumes). Only a pair the SEO named is a group: a
+        pair under a generic header ('Keyword') or no header is a list of keywords for the engine to cluster (a
+        scratch list is never taken for one post). The header names the main keyword when it is one of the pair's
+        keywords; otherwise the biggest keyword names the group.
 Keywords on rows above the first group are not dropped: they are returned without a group (the engine clusters them).
 """
 from __future__ import annotations
@@ -24,7 +29,7 @@ import os
 import re
 from typing import NamedTuple
 
-from kw_ingest import ALIASES, norm_header, read_tables
+from kw_ingest import ALIASES, norm_header, parse_number, read_tables
 
 PLAN_HEADERS = frozenset(norm_header(h) for h in (
     "STT", "Main Keyword", "Secondary Keyword", "Volume", "KD", "Category", "Category Kind", "Thuộc Pillar",
@@ -154,6 +159,74 @@ def _long_groups(table, src: str, free: list[dict]) -> list[dict]:
     return out
 
 
+KEYWORD_HEADERS = frozenset(norm_header(h) for h in ALIASES["keyword"])
+
+
+def _number(cell: str) -> bool:
+    return bool(cell.strip()) and parse_number(cell)[0] is not None
+
+
+def _keyword_column(cells: list[str]) -> bool:
+    """Cells that read as keywords, not as labels or numbers: text, mostly distinct, no comma lists, 1-12 words."""
+    texts = [c for c in cells if not _number(c)]
+    if len(cells) < 3 or len(texts) < 0.9 * len(cells):
+        return False
+    if sum("," in c for c in texts) > 0.05 * len(texts) or len({c.lower() for c in texts}) < 0.8 * len(texts):
+        return False  # 'Sitelinks, People also ask' or a repeated label ('Informational') is not a keyword column
+    return 1 <= sum(len(c.split()) for c in texts) / len(texts) <= 12
+
+
+def _column_groups(table, src: str, free: list[dict]) -> list[dict] | None:
+    """Layout 'columns' (module docstring); None when the sheet has fewer than two (keyword, volume) column pairs."""
+    if table.grid is None:
+        return None
+    h, rows = table.grid
+    header, body = rows[h], rows[h + 1:]
+    width = max([len(header)] + [len(r) for r in body])
+
+    def col(j: int) -> list[str]:
+        return [(r[j] if j < len(r) else "").strip() for r in body]
+    blocks, j = [], 0
+    while j < width - 1:
+        kws, vols = [c for c in col(j) if c], [c for c in col(j + 1) if c]
+        if _keyword_column(kws) and vols and sum(map(_number, vols)) >= 0.9 * len(vols) and len(vols) >= 0.5 * len(kws):
+            blocks.append(j)
+            j += 2
+        else:
+            j += 1
+    if len(blocks) < 2:
+        return None
+    sheet, out, names = table.info.get("sheet", ""), [], set()
+    for j in blocks:
+        head = _clean(header[j] if j < len(header) else "")
+        pairs = [(n, _clean(r[j]), (r[j + 1] if j + 1 < len(r) else "").strip())
+                 for n, r in enumerate(body, h + 2) if j < len(r) and _clean(r[j])]
+        named = head and norm_header(head) not in KEYWORD_HEADERS
+        gid = head if head.lower() not in names else f"{head} ({_letter(j)})"
+        names.add(gid.lower())
+        main = head if named and any(kw.lower() == head.lower() for _, kw, _ in pairs) else ""
+        for n, kw, vol in pairs:
+            if not named:
+                free.append(_rec(kw, {"group_key": None, "group": "", "main": "", "group_role": "", "role": "",
+                                      "pillar": "", "stt": "", "is_main": False, "sheet": sheet}, {"volume": vol}, n,
+                                 "columns", src, True))
+                continue
+            is_main = bool(main) and kw.lower() == main.lower()
+            out.append(_rec(kw, {"group_key": (src, sheet, gid), "group": gid, "main": main, "group_role": "",
+                                 "role": "main" if is_main else "secondary", "pillar": "", "stt": "",
+                                 "is_main": is_main, "sheet": sheet}, {"volume": vol}, n, "columns", src, True))
+    return out
+
+
+def _letter(j: int) -> str:
+    s = ""
+    j += 1
+    while j:
+        j, r = divmod(j - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
 def _layout(t) -> str:
     cols = set(t.info["columns"])
     if norm_header(t.info["sheet"]) == "plan" and "main" in cols:
@@ -173,7 +246,7 @@ def read_prior(path: str) -> tuple[list[dict], dict]:
     with group_key None is a keyword outside any group (rows above the first group): cluster it like an export row.
     info: the first grouped table's info (filename_market...) plus 'layout', 'groups', 'sheets', 'sheets_skipped'
     [(sheet, why)], 'free' (keywords outside any group) and 'block_rows' (rows that continued the group above)."""
-    tables = read_tables(path, OVERRIDES, header_names=MAIN_HEADERS)
+    tables = read_tables(path, OVERRIDES, header_names=MAIN_HEADERS, keep_grid=True)
     src = os.path.basename(path)
     kmap = next((t for t in tables if norm_header(t.info["sheet"]) == "keyword map"
                  and {"keyword", "stt"} <= set(t.info["columns"])), None)
@@ -194,9 +267,11 @@ def read_prior(path: str) -> tuple[list[dict], dict]:
         layout = _layout(t)
         if t is kmap_sheet:
             continue  # read with its Plan sheet
-        if not layout:
-            skipped.append((t.info["sheet"] or src, "no grouped layout (a keyword column with a group column, or a "
-                            "main keyword column with secondary keywords): pass it as an export to cluster it"))
+        columns = _column_groups(t, src, free) if not layout else None
+        if not layout and columns is None:
+            skipped.append((t.info["sheet"] or src, "no grouped layout (a keyword column with a group column, a "
+                            "main keyword column with secondary keywords, or named (keyword, volume) column pairs): "
+                            "pass it as an export to cluster it"))
             continue
         by_stt = None
         if layout == "plan" and kmap is not None:
@@ -204,7 +279,10 @@ def read_prior(path: str) -> tuple[list[dict], dict]:
             for n, rec in enumerate(kmap, 1):
                 if rec.get("stt", "").strip() and rec.get("keyword", "").strip():
                     by_stt.setdefault(rec["stt"].strip(), []).append((n, rec))
-        got = _long_groups(t, src, free) if layout == "long" else _row_groups(t, layout, src, by_stt, free)
+        if columns is not None:
+            got, layout = columns, "columns"
+        else:
+            got = _long_groups(t, src, free) if layout == "long" else _row_groups(t, layout, src, by_stt, free)
         if any(r["layout"] == "block" for r in got):
             layout = "block"
         records += got

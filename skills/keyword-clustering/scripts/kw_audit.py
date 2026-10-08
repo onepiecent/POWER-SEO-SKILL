@@ -16,6 +16,9 @@ be one post even if they share no word). A rule changes the grouping only on pos
   main_changed     the group's main keyword is not the best target: it has a year while an evergreen keyword exists,
                    or a member has >= 2x its volume, or a member wins >= 1.25x its winnable volume (KD against the
                    site's reach, kw_kd.py): the competitor's secondary keyword can be our main keyword
+  same_question    export keywords in no SEO group that ask an SEO group's question (the engine's one-post-per-question
+                   rule: the same guard, theme and core, as 'black friday date' and 'when is black friday'): they join
+                   that group instead of competing with it as a post of their own
   export_topic     an export keyword in no SEO group that the engine clusters into a topic of its own (largest first)
   serp_apart       two groups whose main keywords ask nearly the same words but share fewer than --serp-overlap
                    top-10 URLs (SERP data: --serp or a serp_urls column): kept apart, also by the topic map
@@ -142,9 +145,10 @@ def choose_groups(rows: list) -> tuple[list[tuple], list[tuple]]:
 
 class Audit:
     def __init__(self, kd: KdModel, fluency=None, serp_t: int = 4, sim_t: float = 0.6, weak=frozenset(),
-                 plain=None, similar=None, tone=frozenset(), lists=frozenset()):
+                 plain=None, similar=None, tone=frozenset(), lists=frozenset(), question=None):
         self.kd, self.fluency, self.serp_t, self.sim_t, self.weak = kd, fluency, serp_t, sim_t, weak
         self.tone, self.lists = tone, lists  # taxonomy.json modifier_rules (stemmed)
+        self.question = question  # keyword -> the engine's one-post-per-question key (consolidate), or None
         self.plain = plain or (lambda k: True)
         self.similar = similar  # (a seed, b seed) -> word overlap when the engine's lexical rule would merge, else 0
         self.rows: list[dict] = []
@@ -388,7 +392,27 @@ class Audit:
                          "them (the SERP To-do sheet; --serp); a group too small for a post of its own becomes a "
                          "section anyway (topic map)", "[Convention]")
             out = [cl for cl in out if cl]
-        # 6. export topics the SEO's file does not have
+        # 6. export keywords that ask an SEO group's question join it; the others are topics of their own
+        if self.question is not None:
+            asks: dict[tuple, list] = {}
+            for cl in out:
+                if cl and cl[0].prior and cl[0].fit != "low":
+                    asks.setdefault(self.question(cl[0]), cl)
+            rest = []
+            for cl in free:
+                target = asks.get(self.question(cl[0])) if cl[0].fit != "low" else None
+                if target is None or (cl[0].urls and target[0].urls and
+                                      len(cl[0].urls & target[0].urls) < self.serp_t):
+                    rest.append(cl)
+                    continue
+                self.log(target, "same_question", "merged", cl[0].keyword, sum(total(k) for k in cl), target, "lexical",
+                         f"{len(cl)} export keyword(s) in no SEO group ask the question of '{target[0].keyword}' (the "
+                         f"same theme '{cl[0].theme or '-'}' and core '{' '.join(sorted(cl[0].core)) or '-'}'): they "
+                         "join it instead of competing with it as a post of their own", "[Convention]")
+                for k in cl:
+                    k.joined = "audit:same_question"
+                target.extend(cl)
+            free = rest
         topics = sorted((cl for cl in free if cl[0].fit != "low"), key=lambda c: -self.group_win(c))
         for cl in topics[:MAX_EXPORT_TOPICS]:
             self.log(cl, "export_topic", "added", cl[0].keyword, sum(total(k) for k in cl), None, "lexical",

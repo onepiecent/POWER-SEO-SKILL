@@ -89,6 +89,9 @@ LIGHT = {"what", "when", "where", "why", "how", "who", "which", "whats", "whens"
 MAX_FORMULA = 8000
 MAX_SECONDARY_WORDS = 8  # longer queries stay in the Keyword Map sheet ('also covers')
 MAX_REPHRASINGS = 3  # secondary keywords that only rephrase the main keyword; the other slots go to new angles
+# a letter alone at either end is a keyword tool's alphabet expansion ('r black friday', 'black friday y'), not a
+# reader's query: kept in Keyword Map, never shown as a secondary keyword ('a', 'i', 't shirt', 'v neck', 'x mas' are words)
+STRAY_LETTER_RX = re.compile(r"^(?![aitvx]\b)[a-z]\s|\s(?![aitvx]\b)[a-z]$")
 
 
 def read_csv(path: str) -> list[dict]:
@@ -214,7 +217,7 @@ class Plan:
         """Up to max_secondary keywords, largest first: at most MAX_REPHRASINGS that only rephrase what is already
         listed ('what day is thanksgiving' next to 'when is thanksgiving'), the other slots for keywords that add a new
         angle ('day after thanksgiving', 'how many days until thanksgiving'). Never a duplicate that only differs by
-        word order, a year or a plural, a fixed typo, a query of more than 8 words or a past year."""
+        word order, a year or a plural, a fixed typo, a query of more than 8 words, a past year or a stray letter."""
         seen = {signature(post["primary_keyword"])}
         covered = set(signature(post["primary_keyword"])) | LIGHT
         picked, rephrasings, roles = [], 0, []
@@ -226,7 +229,8 @@ class Plan:
                 continue
             sig = signature(k["keyword"])
             ok = (len(picked) < self.max_secondary and sig and sig not in seen and k.get("spelling_fixed", "0") != "1"
-                  and len(k["keyword"].split()) <= MAX_SECONDARY_WORDS and not stale_year(k["keyword"], self.year))
+                  and len(k["keyword"].split()) <= MAX_SECONDARY_WORDS and not stale_year(k["keyword"], self.year)
+                  and not STRAY_LETTER_RX.search(k["keyword"].lower()))
             content = sig - LIGHT
             new_angle = bool(content) and len(content - covered) / len(content) > 0.25  # 'which president made ...'
             # after 'what president declared ...' only rephrases it

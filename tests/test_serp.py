@@ -223,19 +223,23 @@ class KeepApartDecision(unittest.TestCase):
 class TodoBudget(unittest.TestCase):
     def test_budget_biggest_decision_first_and_one_lookup_per_keyword(self):
         class Plan:
-            stt, posts = {}, []
+            stt = {"trio-halloween-costumes": 1}
+            posts = [{"planned_slug": "trio-halloween-costumes", "primary_keyword": "trio halloween costumes"}]
+        topic = [{"cluster_id": "C1", "role": "pillar", "planned_slug": "trio-halloween-costumes", "cluster_volume": 14800}]
         audits = [{"check": "possible_duplicate", "market": "us", "keyword": k, "keyword_volume": v,
-                   "target_main": "trio halloween costumes"} for k, v in
-                  (("cute trio halloween costumes", 590), ("best trio halloween costumes", 720),
-                   ("tiny trio halloween costumes", 40))]
+                   "target_main": t} for k, v, t in
+                  (("cute trio halloween costumes", 590, "trio halloween costumes"),
+                   ("best trio halloween costumes", 720, "trio halloween costumes"),
+                   ("tiny trio halloween costumes", 40, "trio halloween costumes"),
+                   ("cute duo costumes", 900, "duo costumes"))]  # neither side planned (backlog, --posts): later
         kws = [{"market": "us", "keyword": "trio halloween costumes", "volume": "14800", "cluster_id": "C1"}]
-        rows = plan_serp.todo_rows(Plan(), [], kws, audits, [], {}, budget=2, min_volume=100)
+        rows = plan_serp.todo_rows(Plan(), topic, kws, audits, [], {}, budget=2, min_volume=100)
         self.assertEqual([r[2] for r in rows], ["trio halloween costumes", "best trio halloween costumes"])
-        rows = plan_serp.todo_rows(Plan(), [], kws, audits, [], {}, budget=10, min_volume=100)
-        self.assertEqual(len(rows), 3)  # 'tiny' (40) is a section whatever the SERP says
+        rows = plan_serp.todo_rows(Plan(), topic, kws, audits, [], {}, budget=10, min_volume=100)
+        self.assertEqual(len(rows), 3)  # 'tiny' (40) is a section whatever the SERP says; 'duo' is not planned
         checked = {("us", "trio halloween costumes"): {"keyword": "trio halloween costumes", "urls": ["a.com"],
                                                        "checked_at": "", "source": ""}}
-        rows = plan_serp.todo_rows(Plan(), [], kws, audits, [], checked, budget=10, min_volume=100)
+        rows = plan_serp.todo_rows(Plan(), topic, kws, audits, [], checked, budget=10, min_volume=100)
         self.assertNotIn("trio halloween costumes", [r[2] for r in rows])
 
 

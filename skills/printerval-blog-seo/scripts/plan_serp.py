@@ -9,7 +9,8 @@ confirm what the rules already decided. So the skill picks the few that can chan
                on a product topic: 'cute trio halloween costumes' vs 'trio halloween costumes'), groups the topic map
                merged as the same subject (seo-audit-topic.csv) and, for a raw export, serp-check.csv. A pair counts
                only when the smaller side has --serp-min-volume searches (default 100: below that it is a section of
-               a post whatever the SERP says). Keywords are picked pair by pair, the biggest decision first, and one
+               a post whatever the SERP says) and at least one side is in the plan (--posts leaves the rest for
+               later). Keywords are picked pair by pair, the biggest decision first, and one
                lookup serves every pair of that keyword ('trio halloween costumes' once for 4 pairs). Keywords with
                SERP data already (--serp) are skipped. Each row has the Google URL to open (gl/hl of the market).
   SERP Check   every pair of checked keywords (--serp) that ask nearly the same words: shared top-10 URLs, the
@@ -163,7 +164,9 @@ def todo_rows(plan, topic: list[dict], keywords: list[dict] | None, audits: list
 
     def volume_of(market: str, kw: str) -> int:
         return vol.get((market, _key(kw)), 0)
-    pairs = [p for p in candidate_pairs(audits, checks, volume_of) if p["va"] >= min_volume]
+    def planned(p: dict) -> bool:  # a pair whose two sides are both out of the plan (backlog, --posts) can wait
+        return any(where.of_keyword(kw, p["market"])[0] is not None for kw in (p["a"], p["b"]))
+    pairs = [p for p in candidate_pairs(audits, checks, volume_of) if p["va"] >= min_volume and planned(p)]
     pairs.sort(key=lambda p: (-p["va"], -p["vb"], p["a"]))
     chosen: dict[tuple, dict] = {}
     for p in pairs:

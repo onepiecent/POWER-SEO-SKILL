@@ -1469,8 +1469,11 @@ def main(argv=None) -> int:
                 return 0.0
             s = weighted_jaccard(a.tokset, b.tokset, tax.weak)
             return s if s >= sim_t else 0.0
+        def question(k: KW) -> tuple:  # consolidate()'s key: one post per question
+            group = "list" if k.ngroup in ("list", "info") else k.ngroup
+            return (k.market, group, *part_key(k)[2:], k.core)
         audit = Audit(kd, fluency, serp_t, sim_t, tax.weak, plain=plain_kw, similar=similar, tone=tax.tone_words,
-                      lists=tax.list_topics)
+                      lists=tax.list_topics, question=question)
         audit.noise(stats["prior_filter_hits"])
         audit.duplicates(chosen)
         refs = [(s, clusters[a], clusters[b], why, etype) for s, a, b, why, etype in pairs]
