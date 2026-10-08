@@ -323,6 +323,8 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
                     pillar): merged into the one that wins more traffic
       section       its volume is below min_post_volume: too little demand for a page; it becomes a section (and its
                     keywords secondary keywords) of the closest kept post, else of the pillar [Convention]
+    Two clusters that must stay apart (clusters.csv keep_apart_from: their SERPs differ, or a keep_apart decision) are
+    never merged as the same subject, and a section never goes into a post it must stay apart from (check kept_apart).
     Returns (kept clusters, {cluster_id: target row})."""
     others = [m for m in members if m is not hub]
     merged: dict[str, dict] = {}
@@ -341,6 +343,14 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
         for m in ms:
             if m is target:
                 continue
+            if kept_apart(m, target):
+                audit_row(log, m, "kept_apart", "kept_apart", target,
+                          f"the same subject words as '{target['cluster_name']}' once angle words are set aside, but "
+                          "the two must stay apart (clusters.csv keep_apart_from: their SERPs share too few top-10 "
+                          "URLs, or a keep_apart decision): two posts", "[Google: SERP; Convention]")
+                pool.append(m)
+                owns[m["cluster_id"]] = volume(m)
+                continue
             merged[m["cluster_id"]] = target
             words = " ".join(sorted(key[0])) or "(none: the pillar's own subject)"
             audit_row(log, m, "same_subject", "merged", target,
@@ -353,7 +363,7 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
     for m in pool:
         if m in kept:
             continue
-        target = nearest_by_words(m, kept, hub, common)
+        target = nearest_by_words(m, [k for k in kept if not kept_apart(m, k)], hub, common)
         merged[m["cluster_id"]] = target
         audit_row(log, m, "section", "section", target,
                   f"{owns[m['cluster_id']]:,} searches/month is below {min_post_volume:,} (--seo-min-post-volume): "
@@ -365,6 +375,75 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
             target = merged[target["cluster_id"]]
         merged[cid] = target
     return kept, merged
+
+
+def restore_seo_groups(kept: list[dict], merged: dict, members: list[dict], hub: dict | None, min_post_volume: int,
+                       log: list) -> None:
+    """A pillar that mixes the SEO's audited groups with export clusters is planned by select_posts() (by sub-topic),
+    which may fold an SEO group into another post with nothing against it ('when is black friday', a date question,
+    into 'black friday deals'). An audited group keeps the audit's rules (select_posts_audit): it stays a post unless
+    it asks the same subject as the post it was folded into (angle words aside, the same kind of need) or has less
+    than min_post_volume searches (a section). In place."""
+    by_id = {m["cluster_id"]: m for m in members}
+    common = topic_words(members, hub)
+    restored: list[dict] = []
+
+    def key_of(r: dict) -> tuple:
+        return frozenset(subject_words(r, common)), "list" if r["reader_need"] in LIST_NEEDS else r["reader_need"]
+    for cid, target in sorted(merged.items()):
+        m = by_id.get(cid)
+        if m is None or not audited(m) or m is hub:
+            continue
+        if key_of(m) == key_of(target):
+            audit_row(log, m, "same_subject", "merged", target,
+                      f"same subject words as '{target['cluster_name']}' once angle words are set aside, and the same "
+                      "kind of need: one post answers both")
+        elif volume(m) < min_post_volume:
+            audit_row(log, m, "section", "section", target,
+                      f"{volume(m):,} searches/month is below {min_post_volume:,} (--seo-min-post-volume): a section of "
+                      f"'{target['cluster_name']}' answers it")
+        else:
+            kept.append(m)
+            del merged[cid]
+            restored.append(m)
+    # an export cluster folded into another post follows a restored SEO post that asks the same thing: the same theme
+    # and core (the engine's one-post-per-question rule: 'black friday date' -> 'when is black friday'), or the same
+    # subject words and kind of need
+    for cid, target in sorted(merged.items()):
+        r = by_id.get(cid)
+        if r is None or audited(r):
+            continue
+        same = [m for m in restored if m is not target and (
+            (r.get("theme") and (r.get("theme"), core_of(r), key_of(r)[1]) == (m.get("theme"), core_of(m), key_of(m)[1]))
+            or key_of(r) == key_of(m))]
+        if same and key_of(target) != key_of(r):
+            merged[cid] = max(same, key=lambda m: (volume(m), m["cluster_id"]))
+
+
+def apart_ids(r: dict) -> set[str]:
+    return {x for x in str(r.get("keep_apart_from") or "").split("|") if x}
+
+
+def kept_apart(a: dict, b: dict) -> bool:
+    """keyword-clustering says the two clusters are different posts (clusters.csv keep_apart_from)."""
+    return b["cluster_id"] in apart_ids(a) or a["cluster_id"] in apart_ids(b)
+
+
+def honour_keep_apart(kept: list[dict], merged: dict, members: list[dict], hub: dict | None,
+                      min_post_volume: int) -> None:
+    """select_posts() picks posts by sub-topic: a cluster merged into a post it must stay apart from becomes a post
+    of its own when it has the demand for one, else it goes to the nearest other post (in place)."""
+    by_id = {m["cluster_id"]: m for m in members}
+    for cid, target in sorted(merged.items()):
+        r = by_id.get(cid)
+        if r is None or not kept_apart(r, target):
+            continue
+        if volume(r) >= min_post_volume:
+            kept.append(r)
+            del merged[cid]
+        else:
+            others = [k for k in kept if k is not target and not kept_apart(r, k)]
+            merged[cid] = nearest_post(r, others, hub or target) if others else (hub or target)
 
 
 def nearest_by_words(r: dict, kept: list[dict], hub: dict, common: set[str]) -> dict:
@@ -1105,6 +1184,9 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         else:
             kept, merged = select_posts(chosen, members, max_posts, min_post_volume, min_post_share, keep_volume,
                                         small_pillar)
+            if any(audited(m) for m in members):  # the SEO's groups among export clusters keep the audit's rules
+                restore_seo_groups(kept, merged, members, chosen, seo_min_post_volume, audit_log)
+            honour_keep_apart(kept, merged, members, chosen, min_post_volume)
         plans.append({"pid": pid, "promoted": promoted, "no_pillar": chosen is None, "theme": theme, "members": members, "chosen": chosen, "kept": kept, "merged": merged,
                       "topic": (market, ptype, key.split("/", 1)[0]),
                       "base": {"pillar_id": pid, "pillar_type": ptype, "pillar_key": key, "pillar_name": title,
@@ -1231,6 +1313,46 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
 
 NO_PILLAR_NOTE = "No real pillar yet: research a head keyword for this group; until then link these posts to each other"
 PLANNED_ROLES = ("pillar", "cluster", "standalone")
+
+
+def limit_posts(out: list[dict], n: int) -> int:
+    """--posts N, when the SEO asks for a plan of N posts: the N posts with the highest priority (winnable volume x
+    blog fit) stay planned, a cluster bringing its pillar along (the post links up to it); the others, and the
+    sections merged into them, go to the backlog with their rank, so nothing is merged against its SERP to reach the
+    number. Without --posts the data alone decides how many posts the plan has. Returns the number moved out."""
+    planned = [o for o in out if o["role"] in PLANNED_ROLES]
+    if not n or len(planned) <= n:
+        return 0
+    pillar_of = {o["pillar_id"]: o for o in planned if o["role"] == "pillar" and o["pillar_id"]}
+    ranked = sorted(planned, key=lambda o: (-o["priority_score"], o["planned_slug"]))
+    keep: dict[int, dict] = {}
+    for o in ranked:
+        if id(o) in keep:
+            continue
+        need = [o]
+        pillar = pillar_of.get(o["pillar_id"]) if o["role"] == "cluster" else None
+        if pillar is not None and id(pillar) not in keep:
+            need.insert(0, pillar)
+        if len(keep) + len(need) <= n:
+            keep.update((id(x), x) for x in need)
+    rank = {id(o): i for i, o in enumerate(ranked, 1)}
+    gone = {o["planned_slug"]: o for o in planned if id(o) not in keep}
+    for o in out:
+        if id(o) in rank and id(o) not in keep:
+            o["note"] = (f"beyond --posts {n}: priority rank {rank[id(o)]} of {len(ranked)}; a larger --posts or a "
+                         f"restore_backlog decision plans it")
+        elif o["role"] == "merged" and o.get("merged_into") in gone:
+            o["note"] = f"a section of '{gone[o['merged_into']]['primary_keyword']}', beyond --posts {n}"
+        else:
+            if o.get("parent_post") in gone:
+                o["parent_post"] = ""  # its sub-hub is not planned: the post links to its pillar
+            continue
+        o.update(role="backlog", post_type="backlog", planned_slug="", merged_into="", bucket="", parent_post="")
+    kept = sorted(keep.values(), key=lambda o: -o["priority_score"])
+    for i, o in enumerate(kept):
+        pct = (i + 1) / max(1, len(kept))
+        o["bucket"] = "A" if pct <= 0.2 else "B" if pct <= 0.5 else "C"
+    return len(gone)
 THEME_GAPS = {
     "gifts": "gift ideas, shirts and custom products for {topic} (the closest fit for Printerval): export seed keywords "
              "such as '{topic} gifts', '{topic} shirts', 'personalized {topic} gifts'",
@@ -1328,6 +1450,10 @@ def main(argv=None) -> int:
     ap.add_argument("--target-posts", type=int, default=0,
                     help="cap the plan size: in a pillar that is too big, a cluster must also be among the N largest "
                          "clusters of the file to stay a post (default 0 = off)")
+    ap.add_argument("--posts", type=int, default=0,
+                    help="only when the SEO asks for a plan of N posts: the N with the highest priority stay planned "
+                         "(a cluster brings its pillar), the others go to the backlog with their rank (default 0: the "
+                         "data decides how many posts)")
     ap.add_argument("--taxonomy", default=None)
     ap.add_argument("--decisions", help="decisions file (CSV, or .xlsx sheet Decisions): applies set_pillar, promote_pillar, "
                                         "demote_pillar, restore_backlog and drop_post; log in decisions-log-topic.csv")
@@ -1348,6 +1474,7 @@ def main(argv=None) -> int:
                       args.min_post_volume, args.max_sub_pillars, args.target_posts, args.min_post_share,
                       args.keep_volume, args.keep_all_up_to, args.promote_min_volume, args.promote_min_share,
                       decisions, log, args.seo_min_post_volume, audit_log)
+    beyond = limit_posts(out, args.posts)
     os.makedirs(args.out, exist_ok=True)
     audit_path = os.path.join(args.out, "seo-audit-topic.csv")
     if any(audited(r) for r in rows) or os.path.exists(audit_path):  # never leave a stale audit behind
@@ -1382,6 +1509,9 @@ def main(argv=None) -> int:
     for o in out:
         counts[o["role"]] += 1
     print(f"{len(rows)} clusters -> {n_p} pillars ({n_np} groups with no real pillar yet) | " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    if beyond:
+        print(f"--posts {args.posts}: the {args.posts} posts with the highest priority are planned; {beyond} more went "
+              "to the backlog with their rank (topic-map.csv note)")
     print(f"Written to: {os.path.abspath(args.out)}")
     return 0
 

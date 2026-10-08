@@ -146,6 +146,10 @@ def merge_taxonomy(base: dict, extra: dict) -> dict:
         base[k] = list(dict.fromkeys(base.get(k, []) + extra.get(k, [])))
     for k in ("variants", "phrase_variants", "blog_fit", "core_synonyms"):
         base.setdefault(k, {}).update(extra.get(k, {}))
+    for k, v in extra.get("modifier_rules", {}).items():
+        if isinstance(v, list):
+            mod = base.setdefault("modifier_rules", {})
+            mod[k] = list(dict.fromkeys(mod.get(k, []) + v))
     if extra.get("reader_need_rules_prepend"):
         base["reader_need_rules"] = extra["reader_need_rules_prepend"] + base["reader_need_rules"]
     return base
@@ -182,6 +186,11 @@ class Taxonomy:
         self.theme_product = theme.get("product_theme", "")
         self.core_stop = frozenset(data.get("core_stopwords", [])) | self.weak
         self.core_syn = data.get("core_synonyms", {})
+        mod = data.get("modifier_rules") or {}
+        # words that only change the tone of a keyword, and the list topics where a tone word keeps the same SERP
+        # (kw_audit.py): stemmed like the keywords' tokens
+        self.tone_words = frozenset(stem(w) for w in mod.get("tone_words", []))
+        self.list_topics = frozenset(stem(w) for w in mod.get("list_topics", []))
 
     @classmethod
     def load(cls, path: str | None = None, extend: list[str] | None = None) -> "Taxonomy":

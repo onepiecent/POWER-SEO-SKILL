@@ -309,6 +309,7 @@ class Table:
 
     def __init__(self, info: dict, rows: Iterator[dict]):
         self.info, self.rows = info, rows
+        self.grid = None  # (header row index, raw rows) when read_tables(keep_grid=True)
 
     def __iter__(self):
         return self.rows
@@ -420,25 +421,36 @@ def read_keywords(path: str, overrides: dict | None = None) -> Table:
     return _read_csv(path, overrides, keyword_names)
 
 
-def read_tables(path: str, overrides: dict | None = None, header_names: set[str] | None = None) -> list[Table]:
+def read_tables(path: str, overrides: dict | None = None, header_names: set[str] | None = None,
+                keep_grid: bool = False) -> list[Table]:
     """One Table per sheet with a keyword column (one for a CSV); each record of an .xlsx carries '_sheet'.
     info['sheets_read'] / info['sheets_skipped'] (name, reason) say what happened to every sheet. A Search Console
     export also gets info['gsc_filters'] from its Filters sheet or the Filters.csv next to it ({} when absent).
     header_names: more column names that also mark a header row (a grouped file whose sheet has 'Main Keyword' but
-    no 'Keyword' column, kw_prior.py)."""
+    no 'Keyword' column, kw_prior.py). keep_grid: each Table also keeps its sheet as raw cells in .grid (header row
+    index, rows), for layouts the column map cannot express (kw_prior.py: groups laid out in columns)."""
     overrides = {k: norm_header(v) for k, v in (overrides or {}).items()}
     keyword_names = _keyword_names(overrides) | set(header_names or ())
     filters_rows = None
     if is_xlsx(path):
         found, skipped = _read_xlsx_all(path, keyword_names)
-        tables = [_make_table(path, "xlsx", f"sheet '{name}'", idx, rows[idx], iter(rows[idx + 1:]), overrides, sheet=name)
-                  for name, idx, rows in found]
+        tables = []
+        for name, idx, rows in found:
+            tables.append(_make_table(path, "xlsx", f"sheet '{name}'", idx, rows[idx], iter(rows[idx + 1:]), overrides,
+                                      sheet=name))
+            tables[-1].grid = (idx, rows) if keep_grid else None
         for t in tables:
             t.info["sheets_read"] = [name for name, _, _ in found]
             t.info["sheets_skipped"] = [(name, why) for name, why, _ in skipped]
         filters_rows = next((rows for name, _, rows in skipped if norm_header(name) == "filters"), None)
     else:
         tables = [_read_csv(path, overrides, keyword_names)]
+        if keep_grid:
+            with open(path, "rb") as fh:
+                text, _ = decode_bytes(fh.read())
+            delim = {"TAB": "\t"}.get(tables[0].info["delimiter"], tables[0].info["delimiter"])
+            tables[0].grid = (tables[0].info["header_row"] - 1, list(csv.reader(io.StringIO(text, newline=""),
+                                                                               delimiter=delim)))
         if tables[0].info["source_tool"] == "gsc":  # Search Console zips hold Queries.csv next to Filters.csv
             folder = os.path.dirname(os.path.abspath(path))
             sibling = next((f for f in sorted(os.listdir(folder)) if f.lower() == "filters.csv"), None)

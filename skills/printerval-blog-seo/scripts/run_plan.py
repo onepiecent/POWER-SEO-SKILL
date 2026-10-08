@@ -4,12 +4,15 @@
     run_plan.py export.xlsx --market us --only occasion=thanksgiving --out outputs \\
         [--published published-posts.xlsx] [--previous outputs/final-plan.xlsx] [--today 2026-10-06]
     run_plan.py [export.csv] --prior seo-grouped.xlsx::us --decisions decisions.csv --out outputs
+    run_plan.py ... --serp serp.csv          # after checking the keywords of sheet SERP To-do on Google
 
 --prior goes to step 1 with --prior-mode (audit, the default: the SEO's grouping is checked against the rules and
 regrouped where one fails; keep: kept as it is) and --site-kd (the KD the site can rank for: winnable volume picks
 main keywords, pillars and posts); --decisions to steps 1, 2 and 5 (each logs decisions-log-<step>.csv). Step 5 also
-gets backcheck.csv, excluded.csv, seo-audit*.csv and this run's decision logs when they exist; the last line counts
-the decisions.
+gets backcheck.csv, excluded.csv, seo-audit*.csv, serp-check.csv and this run's decision logs when they exist; the
+last line counts the decisions. --serp (SERP data checked by hand: the keywords of sheet SERP To-do, looked up with
+assets/serp-extract.js) goes to steps 1 and 5: shared top-10 URLs merge or keep apart, and sheet SERP Check shows
+every verdict; --serp-budget sets how many keywords SERP To-do asks for (default 25).
 
 Steps (each skill's own script, run as a separate process so every skill stays self-contained):
   1. keyword-clustering   cluster_keywords.py  -> clusters.csv, keyword-map.csv, cluster-report.md
@@ -17,8 +20,8 @@ Steps (each skill's own script, run as a separate process so every skill stays s
   3. editorial-calendar   occasion_calendar.py -> seasonal-plan.csv
   4. internal-link-planner link_plan.py plan   -> link-plan.csv
   5. printerval-blog-seo  export_plan.py       -> final-plan.xlsx + .csv (Plan, Keyword Map, Schedule, QA, SEO Audit,
-                                                  Link Plan, Research Next, Published Match, Changes, Review,
-                                                  Back-check, Decisions, Not Planned)
+                                                  Link Plan, SERP To-do, SERP Check, Research Next, Published Match,
+                                                  Changes, Review, Back-check, Decisions, Not Planned)
 The skills are looked up next to this one (the repository and claude.ai's /mnt/skills/... share that layout), in
 --skills-dir, or in ~/.claude/skills. Each step's summary is printed; read cluster-report.md and the QA sheet before
 handing the plan over. Options that are not listed here go through --cluster-args / --topic-args / --export-args.
@@ -104,6 +107,11 @@ def main(argv=None) -> int:
                                                   "positions in the exports, else 30)")
     ap.add_argument("--decisions", help="decisions file (CSV, or .xlsx sheet Decisions) applied by the cluster, topic "
                                         "and export steps; each step logs them in decisions-log-<step>.csv")
+    ap.add_argument("--serp", action="append", help="SERP data checked by hand or exported (serp.csv: keyword, url, "
+                                                    "market, position...), repeatable: steps 1 and 5")
+    ap.add_argument("--serp-budget", type=int, help="keywords in sheet SERP To-do (default 25; 0: no sheet)")
+    ap.add_argument("--posts", type=int, help="only when the SEO asks for N posts: the N with the highest priority are "
+                                             "planned, the rest go to the backlog (default: the data decides)")
     ap.add_argument("--out", default="outputs", help="output folder (default outputs)")
     ap.add_argument("--market", help="default market for files without a country column (us|uk)")
     ap.add_argument("--only", action="append", help="keep one topic, e.g. occasion=thanksgiving (repeatable)")
@@ -143,9 +151,13 @@ def main(argv=None) -> int:
         cluster += ["--prior-mode", args.prior_mode]
     if args.site_kd is not None:
         cluster += ["--site-kd", str(args.site_kd)]
+    serp = []
+    for p in args.serp or []:
+        serp += ["--serp", os.path.abspath(p)]
+    cluster += serp
     run("1/5 keyword-clustering", cluster + decisions + shlex.split(args.cluster_args))
     run("2/5 topic-map", [py, find_script("topic-map", "topic_map.py", args.skills_dir), o("clusters.csv"), "--out", out]
-        + decisions + shlex.split(args.topic_args))
+        + (["--posts", str(args.posts)] if args.posts else []) + decisions + shlex.split(args.topic_args))
     calendar = [py, find_script("editorial-calendar", "occasion_calendar.py", args.skills_dir),
                 "--topic-map", o("topic-map.csv"), "--out", out]
     run("3/5 editorial-calendar", calendar + (["--today", args.today] if args.today else []))
@@ -159,8 +171,10 @@ def main(argv=None) -> int:
                         ("--year", args.year), ("--url-pattern", args.url_pattern)):
         if value:
             export += [flag, str(value)]
+    export += serp + (["--serp-budget", str(args.serp_budget)] if args.serp_budget is not None else [])
     for flag, name in (("--backcheck", "backcheck.csv"), ("--excluded", "excluded.csv"),
-                       ("--seo-audit", "seo-audit.csv"), ("--seo-audit", "seo-audit-topic.csv")):
+                       ("--seo-audit", "seo-audit.csv"), ("--seo-audit", "seo-audit-topic.csv"),
+                       ("--serp-check", "serp-check.csv")):
         if os.path.exists(o(name)):
             export += [flag, o(name)]
     for log in this_run_logs(o, logs_before):  # the cluster and topic logs (an earlier run's are left out)

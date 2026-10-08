@@ -24,10 +24,11 @@ LINK_COLUMNS = ["From STT", "From Main Keyword", "To STT", "To Main Keyword", "L
 LINK_WIDTHS = [8, 40, 7, 40, 15, 40, 44, 8, 80]
 RESULT = {"merged": "merged", "section": "section", "main_changed": "main changed", "removed": "keyword moved",
           "split": "split out", "moved": "moved to pillar", "pillar_changed": "pillar changed",
-          "check_serp": "check SERP", "kept": "kept (flagged)", "added": "added from export"}
-CHECK_ORDER = {"pillar_changed": 0, "pillar_fit": 1, "same_query": 2, "same_subject": 3, "section": 4,
-               "main_changed": 5, "duplicate": 6, "shop_member": 7, "possible_duplicate": 8, "noise_flag": 9,
-               "export_topic": 10, "kept": 11}
+          "check_serp": "check SERP", "kept": "kept (flagged)", "added": "added from export",
+          "kept_apart": "kept apart"}
+CHECK_ORDER = {"pillar_changed": 0, "pillar_fit": 1, "same_query": 2, "tone_variant": 3, "same_subject": 4,
+               "section": 5, "main_changed": 6, "duplicate": 7, "shop_member": 8, "serp_apart": 9, "kept_apart": 10,
+               "segment_modifier": 11, "possible_duplicate": 12, "noise_flag": 13, "export_topic": 14, "kept": 15}
 LINK_ORDER = {"to_pillar": 0, "to_parent": 1, "from_pillar": 2, "from_parent": 3, "contextual": 4, "cross_pillar": 5,
               "orphan_fix": 6, "related": 7, "related_reading": 8, "backlink_old_post": 9}
 
@@ -90,18 +91,25 @@ def seo_audit_rows(plan, topic: list[dict], keywords: list[dict] | None, audits:
     where = Where(plan, topic, keywords)
     out = []
     merged_away = {(a.get("market", ""), a.get("seo_group", "")) for a in audits
-                   if a.get("check") in ("same_query", "same_subject", "section")}
+                   if a.get("check") in ("same_query", "same_subject", "section", "tone_variant")}
     touched = merged_away | {(a.get("market", ""), a.get("seo_group", "")) for a in audits
-                             if a.get("check") in ("pillar_fit", "pillar_changed", "main_changed")}
+                             if a.get("check") in ("pillar_fit", "pillar_changed", "main_changed", "serp_apart",
+                                                   "kept_apart", "segment_modifier")}
     for a in audits:
         check, action = a.get("check", ""), a.get("action", "")
         if check == "possible_duplicate" and (a.get("market", ""), a.get("seo_group", "")) in merged_away:
             continue  # settled: the group is already part of another post
         kw = a.get("keyword", "")
         n, now = where.of_keyword(kw, a.get("market", "")) if kw else (None, "")
+        result, evidence = RESULT.get(action, action), a.get("evidence", "")
+        if check == "possible_duplicate" and n is not None:
+            t, _ = where.of_keyword(a.get("target_main", ""), a.get("market", ""))
+            if t == n:  # a decision (or the SERP check behind it) merged the pair after the audit listed it
+                result, evidence = "merged", (f"resolved: both are post {n} now (a decision merged them); "
+                                              f"listed by the audit as: {evidence}")
         out.append([a.get("seo_group", ""), a.get("seo_main", ""), a.get("seo_kind", ""), a.get("seo_pillar", ""),
-                    check, RESULT.get(action, action), kw, a.get("keyword_volume", ""), n if n is not None else "",
-                    now, a.get("evidence", ""), a.get("level", "")])
+                    check, result, kw, a.get("keyword_volume", ""), n if n is not None else "",
+                    now, evidence, a.get("level", "")])
     seen = set()
     for k in keywords or []:
         g = (k.get("market", ""), k.get("prior_group", ""))
@@ -133,7 +141,7 @@ def audit_summary(rows: list[list]) -> str:
     for r in rows:
         counts[r[5]] += 1
     order = ["kept as pillar", "kept as post", "merged", "section", "main changed", "moved to pillar", "pillar changed",
-             "keyword moved", "split out", "check SERP", "kept (flagged)", "added from export"]
+             "keyword moved", "split out", "kept apart", "check SERP", "kept (flagged)", "added from export"]
     return ", ".join(f"{k} {counts[k]}" for k in order if counts.get(k))
 
 
