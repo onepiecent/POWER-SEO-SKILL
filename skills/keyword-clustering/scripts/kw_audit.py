@@ -17,8 +17,15 @@ be one post even if they share no word). A rule changes the grouping only on pos
                    or a member has >= 2x its volume, or a member wins >= 1.25x its winnable volume (KD against the
                    site's reach, kw_kd.py): the competitor's secondary keyword can be our main keyword
   export_topic     an export keyword in no SEO group that the engine clusters into a topic of its own (largest first)
-  possible_duplicate  two groups the engine's lexical rule would merge (word overlap >= --sim, compatible cores, same
-                   facets) but with no proof: NOT applied, check the live SERP (serp-check.csv / the SEO Audit sheet)
+  serp_apart       two groups whose main keywords ask nearly the same words but share fewer than --serp-overlap
+                   top-10 URLs (SERP data: --serp or a serp_urls column): kept apart, also by the topic map
+  segment_modifier two groups the engine's lexical rule would merge whose mains differ by a word that is not a tone
+                   word (taxonomy.json modifier_rules): a number, a who, a character, a decade, a setting ('trio
+                   halloween costumes male', 'group costume ideas for 4'): another reader, kept apart, no SERP check
+  tone_variant     ... whose mains differ only by tone words ('cute', 'short', 'scary') and both name a list topic
+                   (jokes, captions): one list answers both, merged [Research: the SEO's SERP check, see taxonomy.json]
+  possible_duplicate  the other pairs (tone words on other topics: 'cute trio halloween costumes'): NOT applied, check
+                   the live SERP (the SERP To-do sheet of the final plan; --serp re-runs with the result)
   noise_flag       an SEO keyword that matches a noise rule or filter: kept (the SEO chose it), listed to check
 
 The topic map (topic_map.py) then audits the structure: the pillar of each group, groups too small to be posts of
@@ -76,6 +83,29 @@ def jaccard(a, b) -> float:
 
 
 WORD_RX = re.compile(r"[a-z0-9]+")
+CLOSE_WORDS = 0.6   # mains this close in words (or one inside the other) are the pairs a SERP verdict settles
+
+
+def close_words(a: frozenset, b: frozenset) -> bool:
+    """Two keywords the word rules could take for one post: one's words inside the other's ('easy trio halloween
+    costumes' / 'trio halloween costumes'), or a Jaccard of at least CLOSE_WORDS."""
+    return bool(a and b) and (a <= b or b <= a or jaccard(a, b) >= CLOSE_WORDS)
+
+
+def modifier_kind(a, b, tone: frozenset, lists: frozenset) -> tuple[str, list[str]]:
+    """How the main keywords of two groups differ (taxonomy.json modifier_rules; tokens are stemmed):
+    ('segment', words) when a differing word is not a tone word (a number, a who, a character, a setting),
+    ('list_tone', words) when only tone words differ and both name a list topic (jokes, captions), ('tone', words)
+    otherwise; ('', []) without rules."""
+    if not tone:
+        return "", []
+    diff = sorted((a.tokset ^ b.tokset) - ORDER_FILLER)
+    segment = [w for w in diff if w not in tone]
+    if segment:
+        return "segment", segment
+    if lists & a.tokset & b.tokset:
+        return "list_tone", diff
+    return "tone", diff
 
 
 def choose_groups(rows: list) -> tuple[list[tuple], list[tuple]]:
@@ -112,8 +142,9 @@ def choose_groups(rows: list) -> tuple[list[tuple], list[tuple]]:
 
 class Audit:
     def __init__(self, kd: KdModel, fluency=None, serp_t: int = 4, sim_t: float = 0.6, weak=frozenset(),
-                 plain=None, similar=None):
+                 plain=None, similar=None, tone=frozenset(), lists=frozenset()):
         self.kd, self.fluency, self.serp_t, self.sim_t, self.weak = kd, fluency, serp_t, sim_t, weak
+        self.tone, self.lists = tone, lists  # taxonomy.json modifier_rules (stemmed)
         self.plain = plain or (lambda k: True)
         self.similar = similar  # (a seed, b seed) -> word overlap when the engine's lexical rule would merge, else 0
         self.rows: list[dict] = []
@@ -232,6 +263,13 @@ class Audit:
                         keep, drop = (i, j) if self.group_win(groups[i]) >= self.group_win(groups[j]) else (j, i)
                         merge(keep, drop, "serp", f"the main keywords share {shared} top-10 URLs (threshold "
                               f"{self.serp_t}): Google answers both with the same pages")
+                    elif close_words(ki.tokset, kj.tokset):
+                        small, big = (i, j) if (self.group_win(groups[i]), -i) < (self.group_win(groups[j]), -j) else (j, i)
+                        self.log(groups[small], "serp_apart", "kept_apart", groups[small][0].keyword,
+                                 total(groups[small][0]), groups[big], "serp",
+                                 f"nearly the same words as '{groups[big][0].keyword}' but the SERPs share {shared} of "
+                                 f"the top-10 URLs (threshold {self.serp_t}): Google ranks different pages, two posts",
+                                 "[Google: SERP; Convention: threshold]")
         # 2. duplicate: one keyword in several groups
         where: dict[tuple, list[tuple[int, object]]] = defaultdict(list)
         for i, cl in enumerate(groups):
@@ -307,13 +345,49 @@ class Audit:
                     sim = self.similar(seeds[i][0], seeds[j][0])
                     if sim and (small not in best or (sim, gw[big]) > best[small][:2]):
                         best[small] = (sim, gw[big], big)
-            for small, (sim, _, big) in sorted(best.items(), key=lambda kv: -kv[1][0])[:MAX_POSSIBLE]:
+            parent: dict[int, int] = {}  # a group merged by tone_variant -> the group it joined
+
+            def root(i: int) -> int:
+                while i in parent:
+                    i = parent[i]
+                return i
+            n_possible = 0
+            for small, (sim, _, big) in sorted(best.items(), key=lambda kv: (-kv[1][0], kv[0])):
+                big = root(big)
                 cl, other = seeds[small], seeds[big]
+                if big == small or not cl or not other:
+                    continue
+                kind, words = modifier_kind(cl[0], other[0], self.tone, self.lists)
+                said = ", ".join(f"'{w}'" for w in words) or "word order only"
+                if kind == "segment":
+                    self.log(cl, "segment_modifier", "kept_apart", cl[0].keyword, total(cl[0]), other, "rule",
+                             f"differs from '{other[0].keyword}' by {said}: another reader (how many, who, which "
+                             "character or setting), a post of its own; such pairs ranked different pages on the SERPs "
+                             "checked so far (taxonomy.json modifier_rules)", "[Research: SERP sample; Convention]")
+                    continue
+                if kind == "list_tone":
+                    vol = sum(total(k) for k in cl)
+                    self.log(cl, "tone_variant", "merged", cl[0].keyword, vol, other, "rule",
+                             f"differs from '{other[0].keyword}' only by the tone word(s) {said} and both are lists "
+                             f"of {', '.join(sorted(self.lists & cl[0].tokset & other[0].tokset))}: one list answers "
+                             "both; such pairs shared >= 4 top-10 URLs on the SERPs checked so far (taxonomy.json "
+                             "modifier_rules)", "[Research: SERP sample; Convention]")
+                    for k in cl:
+                        k.joined = "audit:merged"
+                    other.extend(cl)
+                    cl.clear()
+                    parent[small] = big
+                    continue
+                if n_possible >= MAX_POSSIBLE:
+                    continue
+                n_possible += 1
+                tone = f" (tone words {said}: on these topics the SERPs differ as often as not)" if kind == "tone" else ""
                 self.log(cl, "possible_duplicate", "check_serp", cl[0].keyword, total(cl[0]), other, "lexical",
-                         f"word overlap {sim:.2f} with '{other[0].keyword}' and the same subject words; not merged "
-                         "without proof: if the live SERPs share >= 4 of their top-10 URLs, merge them (decision "
-                         "'merge'); a group too small for a post of its own becomes a section anyway (topic map)",
-                         "[Convention]")
+                         f"word overlap {sim:.2f} with '{other[0].keyword}' and the same subject words{tone}; not "
+                         f"merged without proof: if the live SERPs share >= {self.serp_t} of their top-10 URLs, merge "
+                         "them (the SERP To-do sheet; --serp); a group too small for a post of its own becomes a "
+                         "section anyway (topic map)", "[Convention]")
+            out = [cl for cl in out if cl]
         # 6. export topics the SEO's file does not have
         topics = sorted((cl for cl in free if cl[0].fit != "low"), key=lambda c: -self.group_win(c))
         for cl in topics[:MAX_EXPORT_TOPICS]:

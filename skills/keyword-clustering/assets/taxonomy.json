@@ -1403,5 +1403,10 @@
     "personalised",
     "customised",
     "colour"
-  ]
+  ],
+  "modifier_rules": {
+    "_comment": "Two SEO groups whose main keywords differ only by a few words (kw_audit.py, --prior-mode audit). A word that is not a tone word names a segment (how many people, who, which character, decade or setting): a different reader, kept apart without a SERP check. Tone words only: merged when both name a list topic below, else checked on the live SERP (serp-todo). Source: the SEO's live SERP check of 53 pairs, Halloween US, 2026-10-08 (google.com gl=us, top 7-8 organic results): segment words 30 of 32 pairs had different SERPs (the 2 that matched were captions at 20 searches/month); tone words on jokes and captions 6 of 6 matched (>= 4 shared); tone words on costumes 4 of 11 matched; 'cute halloween wishes' 3 of 7. Observed tone words: cute, funny, short, best, easy, scary, hot, themes; the others are a convention. Add a list topic only after its SERPs were checked.",
+    "tone_words": ["cute", "funny", "short", "best", "easy", "scary", "spooky", "hot", "good", "great", "top", "cool", "fun", "simple", "quick", "idea", "ideas", "theme", "themes"],
+    "list_topics": ["joke", "jokes", "caption", "captions"]
+  }
 }

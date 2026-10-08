@@ -89,6 +89,7 @@
 
 - **Google Sheets / hand-made:** only a keyword column is needed (`Keyword`, `Query`, `Từ khóa`...). If a column has an unusual name: `--map keyword="<column name>" volume="<column name>"` (every canonical name in `printerval-blog-seo/references/data-contracts.md` can be mapped).
 - **SERP API export (DataForSEO, SerpAPI...):** keyword + the top-10 URLs in a `serp_urls` column (pipe or whitespace separated). This is the **most accurate** way to cluster (at least 4 shared URLs = the same post) [Convention: vendor thresholds differ]. Each market needs the SERP of that market (google.com for US, google.co.uk for UK).
+- **SERP checked by hand (`--serp serp.tsv`, `kw_serp.py`):** one row per result with `keyword`, `url` and optionally `market`, `position`, `title`, `checked_at`, `source` (the header of `printerval-blog-seo/assets/serp-template.tsv`; `serp-extract.js` copies these rows from a Google results page), or one row per keyword with `serp_urls`. CSV (delimiter read from the header line: titles hold commas and `|`), TSV or .xlsx (sheet `SERP`). Positions above 10 are dropped, a URL is counted once, the latest `checked_at` of a keyword wins, and a row without a market applies to every market (warning). The file wins over an export's `serp_urls` column for the same keyword (it is the newer check).
 
 ## The same keyword more than once
 

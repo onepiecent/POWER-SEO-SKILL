@@ -46,6 +46,7 @@ import plan_audit  # noqa: E402
 import plan_decisions  # noqa: E402
 import plan_qa  # noqa: E402
 import plan_review  # noqa: E402
+import plan_serp  # noqa: E402
 import table_io  # noqa: E402
 from published import Published, anchor_from_title  # noqa: E402
 
@@ -710,6 +711,19 @@ def main(argv=None) -> int:
     ap.add_argument("--seo-audit", action="append", default=[],
                     help="seo-audit.csv (keyword-clustering) and seo-audit-topic.csv (topic-map), repeatable: sheet SEO "
                          "Audit, what the rules changed in the SEO's grouping and why, group by group")
+    ap.add_argument("--serp", action="append", default=[],
+                    help="SERP data checked by hand or exported (serp.csv, repeatable; see plan_serp.py): sheet SERP "
+                         "Check, and its keywords are not asked again in sheet SERP To-do")
+    ap.add_argument("--serp-check", help="serp-check.csv from keyword-clustering (a raw export's pairs near the merge "
+                                         "threshold): candidates for sheet SERP To-do")
+    ap.add_argument("--serp-budget", type=int, default=25,
+                    help="keywords in sheet SERP To-do: the lookups that can change the plan, biggest first (default 25; "
+                         "0: no sheet)")
+    ap.add_argument("--serp-min-volume", type=int, default=100,
+                    help="a pair goes to SERP To-do only when its smaller side has this volume (default 100, as "
+                         "topic-map --seo-min-post-volume: below it the group is a section whatever the SERP says)")
+    ap.add_argument("--serp-overlap", type=int, default=4,
+                    help="shared top-10 URLs for 'one post' in sheet SERP Check (default 4, as keyword-clustering)")
     ap.add_argument("--not-planned-max", type=int, default=300,
                     help="excluded keywords listed in sheet Not Planned, largest first (default 300)")
     args = ap.parse_args(argv)
@@ -767,6 +781,11 @@ def main(argv=None) -> int:
     # with the audit's files the sheet always shows every SEO group, 'kept' ones too (also when nothing changed)
     seo_audit = plan_audit.seo_audit_rows(plan, topic, keywords, audits) if audit_files else []
     link_rows = plan_audit.link_plan_rows(plan, links)
+    serp = plan_serp.read_serp([p for p in args.serp if os.path.exists(p)]) if args.serp else {}
+    checks = plan_review.read_rows(args.serp_check) if args.serp_check and os.path.exists(args.serp_check) else []
+    serp_todo = plan_serp.todo_rows(plan, topic, keywords, audits, checks, serp, args.serp_budget,
+                                    args.serp_min_volume) if args.serp_budget > 0 else []
+    serp_check = plan_serp.check_rows(plan, topic, keywords, audits, checks, serp, args.serp_overlap)
 
     out = args.out if args.out.lower().endswith(".xlsx") else args.out + ".xlsx"
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
@@ -778,6 +797,8 @@ def main(argv=None) -> int:
                      ("QA", sheet_xml(plan_qa.QA_COLUMNS, qa, plan_qa.QA_WIDTHS))]
                + ([("SEO Audit", sheet_xml(plan_audit.AUDIT_COLUMNS, seo_audit, plan_audit.AUDIT_WIDTHS))] if seo_audit else [])
                + ([("Link Plan", sheet_xml(plan_audit.LINK_COLUMNS, link_rows, plan_audit.LINK_WIDTHS))] if link_rows else [])
+               + ([("SERP To-do", sheet_xml(plan_serp.TODO_COLUMNS, serp_todo, plan_serp.TODO_WIDTHS))] if serp_todo else [])
+               + ([("SERP Check", sheet_xml(plan_serp.CHECK_COLUMNS, serp_check, plan_serp.CHECK_WIDTHS))] if serp_check else [])
                + ([("Research Next", sheet_xml(RESEARCH_COLUMNS, research, RESEARCH_WIDTHS))] if research else [])
                + ([("Published Match", sheet_xml(PUBLISHED_COLUMNS, published_sheet, PUBLISHED_WIDTHS))] if pub else [])
                + ([("Changes", sheet_xml(CHANGES_COLUMNS, changes, CHANGES_WIDTHS))] if args.previous else [])
@@ -819,6 +840,13 @@ def main(argv=None) -> int:
     if seo_audit:
         print(f"SEO Audit: {len({r[0] for r in seo_audit if r[0]})} SEO groups: " + plan_audit.audit_summary(seo_audit)
               + " (sheet SEO Audit)")
+    if serp_check:
+        off = [r for r in serp_check if r[9].startswith("no")]
+        print(f"SERP Check: {len(serp_check)} pairs of checked keywords, "
+              + (f"{len(off)} the plan does not follow (sheet SERP Check)" if off else "the plan follows every verdict"))
+    if serp_todo:
+        print(f"SERP To-do: {len(serp_todo)} keywords to look up on Google before the plan is final (sheet SERP To-do; "
+              "save the results as serp.csv and re-run with --serp)")
     gaps = [f"{x[1]} ({x[5]})" if len({r[0] for r in research}) == 1 else f"{x[0]} {x[1]} ({x[5]})"
             for x in research if x[5] in ("missing", "thin")]
     if gaps:

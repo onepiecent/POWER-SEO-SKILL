@@ -323,6 +323,8 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
                     pillar): merged into the one that wins more traffic
       section       its volume is below min_post_volume: too little demand for a page; it becomes a section (and its
                     keywords secondary keywords) of the closest kept post, else of the pillar [Convention]
+    Two clusters that must stay apart (clusters.csv keep_apart_from: their SERPs differ, or a keep_apart decision) are
+    never merged as the same subject, and a section never goes into a post it must stay apart from (check kept_apart).
     Returns (kept clusters, {cluster_id: target row})."""
     others = [m for m in members if m is not hub]
     merged: dict[str, dict] = {}
@@ -341,6 +343,14 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
         for m in ms:
             if m is target:
                 continue
+            if kept_apart(m, target):
+                audit_row(log, m, "kept_apart", "kept_apart", target,
+                          f"the same subject words as '{target['cluster_name']}' once angle words are set aside, but "
+                          "the two must stay apart (clusters.csv keep_apart_from: their SERPs share too few top-10 "
+                          "URLs, or a keep_apart decision): two posts", "[Google: SERP; Convention]")
+                pool.append(m)
+                owns[m["cluster_id"]] = volume(m)
+                continue
             merged[m["cluster_id"]] = target
             words = " ".join(sorted(key[0])) or "(none: the pillar's own subject)"
             audit_row(log, m, "same_subject", "merged", target,
@@ -353,7 +363,7 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
     for m in pool:
         if m in kept:
             continue
-        target = nearest_by_words(m, kept, hub, common)
+        target = nearest_by_words(m, [k for k in kept if not kept_apart(m, k)], hub, common)
         merged[m["cluster_id"]] = target
         audit_row(log, m, "section", "section", target,
                   f"{owns[m['cluster_id']]:,} searches/month is below {min_post_volume:,} (--seo-min-post-volume): "
@@ -365,6 +375,32 @@ def select_posts_audit(hub: dict, members: list[dict], min_post_volume: int, log
             target = merged[target["cluster_id"]]
         merged[cid] = target
     return kept, merged
+
+
+def apart_ids(r: dict) -> set[str]:
+    return {x for x in str(r.get("keep_apart_from") or "").split("|") if x}
+
+
+def kept_apart(a: dict, b: dict) -> bool:
+    """keyword-clustering says the two clusters are different posts (clusters.csv keep_apart_from)."""
+    return b["cluster_id"] in apart_ids(a) or a["cluster_id"] in apart_ids(b)
+
+
+def honour_keep_apart(kept: list[dict], merged: dict, members: list[dict], hub: dict | None,
+                      min_post_volume: int) -> None:
+    """select_posts() picks posts by sub-topic: a cluster merged into a post it must stay apart from becomes a post
+    of its own when it has the demand for one, else it goes to the nearest other post (in place)."""
+    by_id = {m["cluster_id"]: m for m in members}
+    for cid, target in sorted(merged.items()):
+        r = by_id.get(cid)
+        if r is None or not kept_apart(r, target):
+            continue
+        if volume(r) >= min_post_volume:
+            kept.append(r)
+            del merged[cid]
+        else:
+            others = [k for k in kept if k is not target and not kept_apart(r, k)]
+            merged[cid] = nearest_post(r, others, hub or target) if others else (hub or target)
 
 
 def nearest_by_words(r: dict, kept: list[dict], hub: dict, common: set[str]) -> dict:
@@ -1105,6 +1141,7 @@ def build(rows: list[dict], priority: list[str], min_clusters: int, tax: dict | 
         else:
             kept, merged = select_posts(chosen, members, max_posts, min_post_volume, min_post_share, keep_volume,
                                         small_pillar)
+            honour_keep_apart(kept, merged, members, chosen, min_post_volume)
         plans.append({"pid": pid, "promoted": promoted, "no_pillar": chosen is None, "theme": theme, "members": members, "chosen": chosen, "kept": kept, "merged": merged,
                       "topic": (market, ptype, key.split("/", 1)[0]),
                       "base": {"pillar_id": pid, "pillar_type": ptype, "pillar_key": key, "pillar_name": title,

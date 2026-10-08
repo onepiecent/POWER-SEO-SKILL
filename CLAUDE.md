@@ -13,7 +13,7 @@ This repo is an SEO content skill set for the **Printerval blog** (print-on-dema
 ## Commands
 
 ```bash
-python3 -W error::ResourceWarning -m unittest discover -s tests     # 253 tests, runs in a few seconds
+python3 -W error::ResourceWarning -m unittest discover -s tests     # 267 tests, runs in a few seconds
 python3 scripts/package_skills.py                                    # dist/<skill>.zip
 python3 skills/printerval-blog-seo/scripts/export_plan.py --help     # final plan (.xlsx) for the content team
 python3 skills/printerval-blog-seo/scripts/run_plan.py --help        # the whole pipeline in one command
@@ -24,6 +24,7 @@ The scripts use only the Python 3 standard library (tested on 3.11, 3.12 and 3.1
 ## When editing
 
 - Adding or changing taxonomy regexes, themes, core synonyms or noise rules: run the tests; re-read `excluded.csv` and `topic-map.md` on sample data (a theme regex decides which pillar a post lands in).
+- Changing `modifier_rules` in `taxonomy.json` (tone words, list topics): only on SERP evidence (the SERP Check sheet of a real plan), with the counts in `_comment`; re-run the Halloween-style tests in `tests/test_serp.py`.
 - Adding an occasion: edit `OCCASIONS` in `occasion_calendar.py` and add a test that checks the date against the **real calendar** (do not take dates from search results, which have been wrong before).
 - The SKILL.md frontmatter must be valid YAML (no `: ` inside `description`); `tests/test_skills.py` checks this.
 - Update `skills/printerval-blog-seo/references/sources.md` whenever a new source is used, and state its verification level.

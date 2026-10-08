@@ -69,6 +69,14 @@ Used by `keyword-clustering` (`kw_ingest.py`, `kw_evidence.py`, `cluster_keyword
 | UK IPO: trade marks | https://www.gov.uk/how-to-register-a-trade-mark | A UK trade mark is refused if it is identical or similar to an earlier one | S |
 | Bank holidays | https://www.gov.uk/bank-holidays | The official source for bank holidays (the calendar script does NOT compute bank holidays) | S |
 
+## SERP checks (2026-10-08)
+
+| Topic | Source | What it is used for | Level |
+|---|---|---|---|
+| The SEO's live SERP check of the Halloween plan | The team's `File_Plan_SERP.xlsx`, sheet SERP Check (53 pairs, google.com `gl=us` in a browser from a Vietnam IP, top 7-8 organic results, compared by URL or domain + title) | `keyword-clustering/assets/taxonomy.json` `modifier_rules`: segment words 30 of 32 pairs had different SERPs; tone words on jokes and captions 6 of 6 matched; tone words on costumes 4 of 11. One season, one market: a sample, not a law | D (team file, read in this session) |
+| Google Terms of Service: automated access | https://policies.google.com/terms (read through https://conductatlas.com/platform/google/google-terms-of-service/provision/CA-P-017332/prohibition-on-unauthorized-automated-content-access/, a third-party tracker) | `references/serp-check.md`: look keywords up one at a time in a browser, never script bulk queries to Google | S (secondary summary; open Google's page before relying on it) |
+| Semrush Keyword Strategy Builder groups by intent and SERP similarity | https://www.semrush.com/blog/keyword-clustering/ | Context only: a KSB export (Topic > Page > Keyword) is read as the SEO's grouping and audited; Semrush does not publish its threshold | S |
+
 ## Pitfalls met during the research
 
 - **Search results can be wrong about holiday dates.** Search summaries returned "Mothering Sunday 2026 is 19 March" and "Father's Day 2026 is Wednesday 21 June", both wrong (Mothering Sunday 2026 is Sunday 15 March; Father's Day 2026 is Sunday 21 June). That is why `occasion_calendar.py` **computes dates by rule** and has tests that check them against the real calendar.

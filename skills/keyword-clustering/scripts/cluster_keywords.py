@@ -50,7 +50,8 @@ from kw_decisions import LOG_FIELDS, ClusterDecisions, read_decisions  # noqa: E
 from kw_evidence import (INFO_FEATURES, is_kp_bucketed, kp_bucket_range, kp_bucket_value, parse_intent,  # noqa: E402
                          parse_serp_features, parse_trend, peak_month, trend_header_range, vendor, ym_add)
 from kw_backcheck import decision_key, write_backcheck  # noqa: E402
-from kw_audit import AUDIT_FIELDS, Audit, choose_groups, same_subject  # noqa: E402
+from kw_audit import AUDIT_FIELDS, Audit, choose_groups, close_words, same_subject  # noqa: E402
+from kw_serp import apply_serp, norm_url, read_serp  # noqa: E402
 from kw_ingest import ALIASES, norm_market, parse_number, read_tables  # noqa: E402
 from kw_kd import KdModel, build_model, is_personal  # noqa: E402
 from kw_prior import PriorTag, read_prior  # noqa: E402
@@ -577,8 +578,7 @@ def ingest(args, tax: Taxonomy, noise, cats, dec: ClusterDecisions | None = None
 
 
 def _norm_url(u: str) -> str:
-    u = re.sub(r"^https?://(www\.)?", "", u.strip().lower())
-    return re.split(r"[?#]", u)[0].rstrip("/")
+    return norm_url(u)
 
 
 def _passes_only(k: KW, only: dict) -> bool:
@@ -884,7 +884,7 @@ CL_FIELDS = ["cluster_id", "market", "cluster_name", "keyword_count", "seed_volu
              "grouping_basis", "serp_verified_share", "seed_basis", "prior_group", "prior_pillar", "prior_role",
              "intents_mix", "serp_features_main", "traffic_potential_main", "cluster_volume_dedup", "peak_month",
              "ramp_month", "peak_ratio", "seasonality_source", "decision_ids", "cluster_winnable", "main_kd_fit", "site_kd",
-             "prior_main", "seo_audited"]
+             "prior_main", "seo_audited", "keep_apart_from"]
 VERIFIED_KINDS = ("serp", "parent_topic")  # membership that rests on the SERP (shared URLs, the tool's Parent Topic)
 
 
@@ -1091,6 +1091,29 @@ def serp_check_rows(pairs: list[tuple], clusters: list[list[KW]], ids: dict, ser
                          f"grouped by words only ({basis}); no SERP data", f"same post ({ids[id(cl)]})", q]))
     out.sort(key=lambda x: (-x[0], x[1][1], x[1][3]))
     return [dict(zip(SERP_CHECK_FIELDS, row)) for _, row in out[:limit]]
+
+
+def keep_apart_pairs(clusters: list[list[KW]], serp_t: int, dec=None) -> dict[int, set[int]]:
+    """{id(cluster): {id(cluster)}} of posts that must stay apart in the topic map (clusters.csv keep_apart_from): the
+    mains of both have SERP data, ask nearly the same words and share fewer than serp_t top-10 URLs; or a keep_apart
+    decision put them apart (the topic map would otherwise merge them again as 'the same subject')."""
+    out: dict[int, set[int]] = defaultdict(set)
+    seeds = [cl for cl in clusters if cl and cl[0].urls]
+    for a in range(len(seeds)):
+        for b in range(a + 1, len(seeds)):
+            A, B = seeds[a][0], seeds[b][0]
+            if A.market == B.market and len(A.urls & B.urls) < serp_t and close_words(A.tokset, B.tokset):
+                out[id(seeds[a])].add(id(seeds[b]))
+                out[id(seeds[b])].add(id(seeds[a]))
+    if dec is not None:
+        where = {id(k): cl for cl in clusters for k in cl}
+        for d in dec.items:
+            if d["action"] == "keep_apart" and d.get("status") in ("applied", "applied_with_warning", "already_true"):
+                a, b = (where.get(id(k)) for k in d.get("_kw") or (None, None))
+                if a is not None and b is not None and a is not b:
+                    out[id(a)].add(id(b))
+                    out[id(b)].add(id(a))
+    return out
 
 
 def coverage(rows: list[KW]) -> list[tuple]:
@@ -1352,6 +1375,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="decisions file (CSV, or .xlsx with a 'Decisions' sheet) written by Claude or the SEO, each row "
                          "with a reason and evidence: drop_keyword, keep_keyword, set_need, merge, move_keyword, split, "
                          "keep_apart, rename_main; applied on every run and logged in decisions-log-cluster.csv")
+    ap.add_argument("--serp", action="append", metavar="FILE",
+                    help="SERP data checked by hand or exported (CSV or .xlsx): one row per result (keyword, url, "
+                         "market, position...) as printerval-blog-seo/assets/serp-extract.js copies it, or one row per "
+                         "keyword with serp_urls; the top-10 URLs cluster by shared URLs (--serp-overlap) and keep "
+                         "apart two posts whose SERPs differ (kw_serp.py)")
     ap.add_argument("--serp-check-max", type=int, default=30,
                     help="rows in serp-check.csv: the largest pairs and word-only groups to check on the live SERP "
                          "(default 30, a [Convention] review budget)")
@@ -1376,6 +1404,7 @@ def parse_args(argv: list[str]):
     if not args.files and not args.prior:
         ap.error("at least one CSV file is required (or a 'files' key in --request), or --prior FILE")
     args.files = [args.files] if isinstance(args.files, str) else (args.files or [])
+    args.serp = [args.serp] if isinstance(args.serp, str) else (args.serp or [])
     return args
 
 
@@ -1403,6 +1432,16 @@ def main(argv=None) -> int:
     kd = build_model(args.site_kd, [(k.position, k.kd) for k in kept
                                     if k.position is not None and k.kd is not None and not is_personal(k.kd_src)])
     rows, merged = dedupe(kept)
+    serp_line = ""
+    if args.serp:  # the SERP file wins over an export's serp_urls column: it is the newer check
+        serp, serp_warnings = read_serp(args.serp)
+        warnings += serp_warnings
+        matched, unused = apply_serp(rows, serp)
+        serp_line = (f"SERP data: {len(serp):,} keyword(s) checked in {', '.join(os.path.basename(p) for p in args.serp)}"
+                     f", {matched:,} keyword(s) matched")
+        if unused:
+            warnings.append(f"--serp: {unused:,} checked keyword(s) match no keyword of the plan (another market, a "
+                            "filtered keyword, or a spelling the export does not have)")
     pinned = [r for r in rows if r.prior]  # the SEO's groups (--prior): audited (default) or kept as they are
     free = [r for r in rows if not r.prior] if pinned else rows
     audited = bool(pinned) and args.prior_mode == "audit"
@@ -1430,7 +1469,8 @@ def main(argv=None) -> int:
                 return 0.0
             s = weighted_jaccard(a.tokset, b.tokset, tax.weak)
             return s if s >= sim_t else 0.0
-        audit = Audit(kd, fluency, serp_t, sim_t, tax.weak, plain=plain_kw, similar=similar)
+        audit = Audit(kd, fluency, serp_t, sim_t, tax.weak, plain=plain_kw, similar=similar, tone=tax.tone_words,
+                      lists=tax.list_topics)
         audit.noise(stats["prior_filter_hits"])
         audit.duplicates(chosen)
         refs = [(s, clusters[a], clusters[b], why, etype) for s, a, b, why, etype in pairs]
@@ -1445,7 +1485,10 @@ def main(argv=None) -> int:
         pos = {id(c): i for i, c in enumerate(clusters)}
         pairs = [(s, pos[id(A)], pos[id(B)], why, etype) for s, A, B, why, etype in refs
                  if A is not B and id(A) in pos and id(B) in pos]
-    kw_rows, cl_rows, ids, _ = build_rows(clusters, tax, fluency, kd, audited)
+    kw_rows, cl_rows, ids, ordered = build_rows(clusters, tax, fluency, kd, audited)
+    apart = keep_apart_pairs(clusters, serp_t, dec)
+    for c, row in zip(ordered, cl_rows):
+        row["keep_apart_from"] = "|".join(sorted(ids[x] for x in apart.get(id(c), ())))
     checks = serp_check_rows(pairs, clusters, ids, serp_t, args.serp_check_max)
 
     os.makedirs(args.out, exist_ok=True)
@@ -1499,6 +1542,8 @@ def main(argv=None) -> int:
         print(f"Spelling fixed from the file: {respell['keywords_changed']:,} keywords "
               f"({len(respell['typos']):,} typos, {len(respell['joins']):,} joined, {len(respell['splits']):,} split, "
               f"{len(respell['completions']):,} completed words)")
+    if serp_line:
+        print(serp_line)
     print(f"Excluded {sum(reasons.values()):,} keywords: " + (", ".join(f"{r}={n:,}" for r, n in reasons.most_common(4)) or "none"))
     print("Blog fit: " + ", ".join(f"{k}={fit[k]:,}" for k in ("high", "medium", "low")) +
           f" | unclassified: {len(unclassified):,} | pairs to review: {len(pairs)}")
