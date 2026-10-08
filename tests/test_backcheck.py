@@ -88,11 +88,28 @@ class BackCheck(unittest.TestCase):
         self.assertEqual((weak[0]["severity"], weak[0]["keyword"], weak[0]["proposed_target"]),
                          ("high", "teacher mug ideas", "teacher mugs"))
         self.assertIn("own main 'gifts for teachers' 1/10, with 'teacher mugs' 9/10 (threshold 4)", weak[0]["evidence"])
-        rows = [kw("gifts for teachers", "C1", 4000), kw("teacher mug ideas", "C1", 700),
-                kw("mug ideas teacher funny", "C2", 2000)]
-        weak = by_check(bc.backcheck(rows, [cl("C1", "gifts for teachers"), cl("C2", "mug ideas teacher funny")],
-                                     sim_t=0.6), "weak_member")
-        self.assertEqual((weak[0]["severity"], weak[0]["evidence_type"]), ("medium", "lexical"))
+        # words only: an SEO group's keyword is listed for a SERP check, with no proposal
+        seo = dict(prior_group="G1", prior_main="gifts for teachers")
+        rows = [kw("gifts for teachers", "C1", 4000, **seo), kw("funny teacher mug ideas", "C1", 700, **seo),
+                kw("teacher mug ideas cute", "C2", 2000, prior_group="G2", prior_main="teacher mug ideas cute")]
+        cls = [cl("C1", "gifts for teachers", prior_group="G1"), cl("C2", "teacher mug ideas cute", prior_group="G2")]
+        weak = by_check(bc.backcheck(rows, cls, sim_t=0.6), "weak_member")
+        self.assertEqual((weak[0]["severity"], weak[0]["evidence_type"], weak[0]["proposed_action"]),
+                         ("low", "lexical", ""))
+        self.assertIn("check both SERPs", weak[0]["evidence"])
+        # never for the engine's own clusters, never a keyword bigger than the target group, never a head term
+        # moved under a longer phrase that contains it ('thanksgiving date' -> 'thanksgiving date rule')
+        plain = [dict(r, prior_group="", prior_main="") for r in rows]
+        self.assertFalse(by_check(bc.backcheck(plain, [cl("C1", "gifts for teachers"), cl("C2", "teacher mug ideas cute")],
+                                               sim_t=0.6), "weak_member"))
+        big = [rows[0], dict(rows[1], volume=5000), rows[2]]
+        self.assertFalse([i for i in by_check(bc.backcheck(big, cls, sim_t=0.6), "weak_member") if i["other_main"]])
+        head = [kw("when is thanksgiving", "C1", 9000, prior_group="G1", prior_main="when is thanksgiving"),
+                kw("thanksgiving date", "C1", 5000, prior_group="G1", prior_main="when is thanksgiving"),
+                kw("thanksgiving date rule", "C2", 9000, prior_group="G2", prior_main="thanksgiving date rule")]
+        self.assertFalse([i for i in by_check(bc.backcheck(head, [cl("C1", "when is thanksgiving", prior_group="G1"),
+                                                                  cl("C2", "thanksgiving date rule", prior_group="G2")],
+                                                           sim_t=0.6), "weak_member") if i["other_main"]])
 
     def test_mixed_intent(self):
         rows = [kw("t shirt printing", "C1", 1000, intents="informational"),

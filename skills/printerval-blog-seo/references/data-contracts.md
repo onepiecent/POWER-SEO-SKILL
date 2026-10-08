@@ -57,16 +57,22 @@ Evidence columns of `keyword-map.csv` (empty when the export has no such data):
 - `volume_sources`: every source of the keyword after exact duplicates were joined, `tool:value` `|`-separated, `~` before an estimate, `-` for an empty cell (`semrush-kmt:40500|ahrefs-ke:38000`, `gkp:~1000`). Tools: semrush-kmt, semrush-ksb, semrush-api, semrush-positions, ahrefs-ke, ahrefs-se, gkp, gsc, team-plan, generic. `kd_source`: the tool the KD came from.
 - `prior_group, prior_main, prior_role, prior_pillar`: filled for keywords that came from a grouped file (`--prior FILE[::market]`, repeatable): the SEO's group id or name (as text), the SEO's main keyword of that group, the role and the pillar. Empty in raw mode (no `--prior`), where the engine's clusters are the groups.
 - `decision_ids`: the ids of the decisions applied to the keyword (`|`-separated), else empty.
+- `kd_fit` ∈ easy, stretch, hard, unknown: the keyword's KD against the site's reach (`--site-kd`, else measured from ranking positions, else 30; a Personal KD against 49); `winnable_volume` = (volume + variant volume) x fit of that KD (`kw_kd.py`). `kd_source` ends with `:pkd` when the KD is Semrush's Personal Keyword Difficulty.
 
 Columns of `clusters.csv` added for evidence:
 
-- `grouping_basis` ∈ `single`, `serp`, `parent_topic`, `lexical (not verified by SERP)` (`lexical` and `core` joins), `mixed`; with `--prior`: `prior:seo` (an SEO group kept as it is) or `prior:seo+added` (export keywords joined it).
+- `grouping_basis` ∈ `single`, `serp`, `parent_topic`, `lexical (not verified by SERP)` (`lexical` and `core` joins), `mixed`; with `--prior`: `prior:audited` (an SEO group checked against the rules, the default; see `seo-audit.csv`) or `prior:seo` (`--prior-mode keep`: kept as it is), each with `+added` when export keywords joined it.
 - `prior_group, prior_pillar, prior_role`: the SEO's group, pillar and role of a cluster that came from `--prior`; empty in raw mode.
 - `serp_verified_share`: share of the cluster volume whose membership rests on shared SERP URLs or the Parent Topic (the seed counts once a member is verified), 2 decimals; empty for a single keyword.
-- `seed_basis`: why the post is named after its main keyword: `max_volume`, `evergreen (no year)`, `spelled correctly`, `more natural phrasing`, `plain phrasing`.
+- `seed_basis`: why the post is named after its main keyword: `max_volume`, `evergreen (no year)`, `spelled correctly`, `more natural phrasing`, `easier to rank (KD)`, `plain phrasing`, `seo main`, `audit: better main than the SEO's`.
 - `intents_mix`: the members' tool intent labels with counts and volume (`informational (3 kw, 8,100) | no label (1 kw, 90)`); empty when no member has a label. `serp_features_main` / `traffic_potential_main`: those of the main keyword.
 - `cluster_volume_dedup`: an estimate next to the `cluster_volume` sum; a keyword and its variants that report the **same** volume count once.
 - `peak_month, ramp_month, peak_ratio, seasonality_source`: reserved for cluster seasonality from data; empty in this version.
+- `cluster_winnable`: the sum of the members' winnable volumes; `main_kd_fit`: `kd_fit` of the main keyword; `site_kd`: the reach used (the same on every row).
+- `prior_main`: the SEO's own main keyword of the group (the topic map finds a pillar by it even when the audit renamed the post); `seo_audited` = 1 when the group came from `--prior` in audit mode (a decision on the group does not switch the topic map's audit off).
+- With several grouped sheets, `prior_group` is `<sheet>: <STT or name>` (STT 1 of two sheets are two groups).
+
+**`seo-audit.csv`** (keyword-clustering, `--prior` with `--prior-mode audit`) and **`seo-audit-topic.csv`** (topic-map, audited groups): `audit_id, step, market, seo_group, seo_main, seo_kind, seo_pillar, check, action, keyword, keyword_volume, target_group, target_main, evidence_type, evidence, level`. Cluster step `check` ∈ same_query (merged), duplicate (removed), shop_member (split), main_changed, possible_duplicate (check_serp: not applied), export_topic (added), noise_flag (kept); topic step ∈ pillar_fit (moved), pillar_changed, same_subject (merged), section. Written empty when nothing changed, never left from an earlier run.
 
 **`merge-candidates.csv`**: `cluster_a, name_a, cluster_b, name_b, score, reason, evidence_type, volume_a, volume_b, need_a, need_b, theme_a, theme_b, core_a, core_b, guard_diff, keywords_a, keywords_b`. `evidence_type` ∈ lexical, serp, parent_topic; `guard_diff` lists the guard fields that differ (`interest: hunting vs -`); at most 300 pairs (the report says when the cap is hit).
 
@@ -80,7 +86,7 @@ Others: `excluded.csv` (keyword, volume, reason, source_file; reasons include `m
 
 Full rules (checks, actions per step, evidence hierarchy, the contradiction rule): `keyword-clustering/references/backcheck-and-decisions.md`.
 
-**Grouped input** (`cluster_keywords.py --prior FILE[::market]`, repeatable; `run_plan.py --prior`): a file the SEO already grouped (keyword + group columns, main + secondary keyword columns, or the team's final plan with its Keyword Map sheet). A positional file is always a raw export; a grouped file is never auto-detected.
+**Grouped input** (`cluster_keywords.py --prior FILE[::market]`, repeatable; `run_plan.py --prior`): a file the SEO already grouped (keyword + group columns; main + secondary keyword columns, one group per row or one keyword per row below its main; a Semrush Keyword Strategy Builder export, Page = group; or the team's final plan with its Keyword Map sheet, whose Secondary Keyword cell is read too). Every sheet is read; keywords above the first group are clustered, not dropped. A positional file is always a raw export; a grouped file is never auto-detected. `--prior-mode audit` (default) or `keep`.
 
 **`backcheck.csv`** (keyword-clustering, every run): `issue_id, check, severity, market, group, group_main, keyword, keyword_volume, other_group, other_main, evidence_type, evidence, proposed_action, proposed_keyword, proposed_target, proposed_value, status`
 
@@ -90,27 +96,30 @@ Full rules (checks, actions per step, evidence hierarchy, the contradiction rule
 
 **Decisions file** (`--decisions FILE` on `cluster_keywords.py`, `topic_map.py`, `export_plan.py`, `run_plan.py`; a CSV, or an `.xlsx` whose sheet `Decisions`, else the first sheet, has the headers): `decision_id, action, market, keyword, target, value, reason, evidence, source_issue, author, date`
 
-- `reason` and `evidence` are required (empty → `invalid`). `author` = `claude`, anything else is a human.
+- `reason` and `evidence` are required (empty → `invalid`). `author` = `claude`, `proposal` (a row copied as it is from `proposed-decisions.csv`: `invalid`, never applied), anything else is a human.
+- A CSV uses the delimiter of its header line (`,`, `;` from Excel with Vietnamese or European settings, or a tab); a `|` inside a cell (several `source_issue` ids) is never a delimiter. `market` `gb` is `uk`, `all` or empty is any market.
 - Matching key `decision_key(text)`: Unicode NFC, lowercase, curly quotes made straight, apostrophes removed, `-` and `_` as spaces, whitespace collapsed. Export actions also accept `STT:<n>` as the keyword.
 - Actions: cluster step `drop_keyword, keep_keyword, set_need, merge, move_keyword, split, keep_apart, rename_main`; topic step `set_pillar, promote_pillar, demote_pillar, restore_backlog, drop_post`; export step `set_category, set_title, set_meta, set_outline, set_angle, research_seed`. A step ignores (does not log) the actions of other steps.
 
-**`decisions-log-<step>.csv`** (`cluster`, `topic`, `export`): `decision_id, step, action, market, keyword, target, value, author, status, detail`; `status` ∈ applied, applied_with_warning, already_true, rejected_by_data, stale, invalid, conflict.
+**`decisions-log-<step>.csv`** (`cluster`, `topic`, `export`): `decision_id, step, action, market, keyword, target, value, author, status, detail`; `status` ∈ applied, applied_with_warning, already_true, rejected_by_data, stale, invalid, conflict, and in the export step team_value_kept (the team's own value wins) and withdrawn (a value this decision wrote last run, cleared because the decision left the file). An unknown action is logged once, by the cluster step (by the export step only when it runs alone).
 
 Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop. `blog_fit` ∈ high, medium, low (shop = low). `market` ∈ us, uk, all.
 
 ## topic-map.csv
 
-`pillar_id, pillar_type, pillar_key, pillar_name, role, cluster_id, primary_keyword, planned_slug, post_type, reader_need, cluster_volume, priority_score, bucket, season, market, occasion, recipient, interest, product, craft, keywords, parent_hint, note, theme, merged_into`
+`pillar_id, pillar_type, pillar_key, pillar_name, role, cluster_id, primary_keyword, planned_slug, post_type, reader_need, cluster_volume, priority_score, bucket, season, market, occasion, recipient, interest, product, craft, keywords, parent_hint, note, theme, merged_into, decision_ids, parent_post, winnable, main_kd_fit`
 
 - `role` ∈ pillar, cluster, standalone (the planned posts), merged (covered by the post `merged_into`, which may sit in another theme pillar of the same topic; no slug of its own), backlog (long tail that matches no theme pillar; not planned), skip (shopping intent). `post_type` ∈ pillar-hub, gift-guide, ideas-list, choose-guide, how-to, explainer, copy-ideas, merged, backlog, skip.
-- A split topic has `pillar_key` = `<topic>/<theme>` (for example `thanksgiving/history`).
+- A split topic has `pillar_key` = `<topic>/<theme>` (for example `thanksgiving/history`); a pillar from the SEO's grouped file has `<facet value>/seo-<slug>-<cluster id>` (unique even when two names slugify alike).
+- `parent_post`: the slug of the post's sub-hub inside its pillar (a kept post whose subject is one word shared by >= 3 kept posts), else empty. `winnable` and `main_kd_fit` come from `clusters.csv`; `priority_score` = winnable x blog-fit weight.
+- `parent_hint` names only a pillar that has a hub row. `decision_ids`: the topic decisions applied to the row.
 - `bucket` A/B/C by priority score (top 20% = A, up to 50% = B). `planned_slug` is a proposed slug (not a real URL).
 
 ## link-plan.csv
 
-`source_slug, source_keyword, target_slug, link_type, anchor, anchor_alternatives, placement, priority, status, reason`
+`source_slug, source_keyword, target_slug, target_main_keyword, link_type, anchor, anchor_alternatives, placement, priority, status, reason`
 
-- `link_type` ∈ to_pillar, from_pillar, contextual, sibling, cross_pillar, orphan_fix, related, backlink_old_post. The final plan's Internal Link column takes every type except `sibling`; Related Post takes the siblings.
+- `link_type` ∈ to_pillar, to_parent (to the sub-hub), from_pillar (at most `--pillar-links`, 12), from_parent, contextual, cross_pillar, orphan_fix, related, related_reading, backlink_old_post (and `sibling` from older plans). The final plan's Internal Link column takes the body links; Related Post takes `related_reading` (and `sibling`).
 - `status` ∈ include_in_draft, include_in_draft_target_not_live_yet, existing_verify_present, update_old_post_after_target_live.
 
 ## seasonal-plan.csv
@@ -121,7 +130,8 @@ Values: `reader_need` ∈ inspire, choose, how_to, solve, copy_ideas, info, shop
 
 Sheet **Plan**, one row per planned post: `STT, Main Keyword, Secondary Keyword, Volume, KD, Category, Category Kind, Thuộc Pillar, Title SEO, Meta Description SEO, Outline, Internal Link (Anchor || URL), Related Post (Anchor || URL), URL Blog, Trạng thái`
 
-- Empty for the content team: Category, Title SEO, Meta Description SEO, Outline, Trạng thái.
+- Filled by the content team: Category, Title SEO, Meta Description SEO, Outline, Trạng thái (empty in a new plan; kept from `--previous`; a reviewed decision may fill an empty cell).
+- `Thuộc Pillar` of a post whose group has no real pillar: "No real pillar yet (research a head keyword)".
 - `Category Kind` ∈ Pillar, Cluster; `Thuộc Pillar` = the pillar's Main Keyword for a Cluster, empty for a Pillar (or for a standalone post without a pillar).
 - `Secondary Keyword`, `Internal Link`, `Related Post`: one item per line (`anchor || URL` for links). In the .xlsx the link cells are formulas that read `URL Blog` of the target row by STT; the .csv has plain text (UTF-8 with BOM).
 
@@ -129,7 +139,11 @@ Sheet **Keyword Map**: `STT, Main Keyword, Keyword, Volume, KD, Role` with Role 
 
 Sheet **Schedule**: `Order, STT, Main Keyword, Category Kind, Priority, Volume, KD, Season, Event Date, Publish By, Status, Note`; Status ∈ late: publish ASAP, due soon, on time, no date rule, evergreen.
 
-Sheet **Research Next** (one-topic exports only): `Topic, Theme, Why It Matters, Keywords In File, Volume In File, Status, Seeds To Export`; Status ∈ covered, thin, missing, suggested (occasion ideas).
+Sheet **SEO Audit** (with `--seo-audit`, i.e. `--prior` in audit mode): `SEO STT, SEO Main Keyword, SEO Kind, SEO Pillar, Check, Result, Keyword, Volume, Now in Plan (STT), Now Main Keyword, Why, Level`, in the SEO's order; Result ∈ kept as pillar, kept as post, merged, section, main changed, moved to pillar, pillar changed, keyword moved, split out, check SERP, kept (flagged), added from export.
+
+Sheet **Link Plan**: `From STT, From Main Keyword, To STT, To Main Keyword, Link Type, Anchor, Placement, Priority, Reason` (every link of `link-plan.csv` between planned posts).
+
+Sheet **Research Next** (occasion topics: theme pillars of an occasion, plus `research_seed` decisions in any export): `Topic, Theme, Why It Matters, Keywords In File, Volume In File, Status, Seeds To Export, Published Posts`; Status ∈ covered, thin, missing, suggested (occasion ideas), and `unverified: export volume (same market)` for a decision's seed.
 
 Sheet **Published Match** (with `--published`): `STT, Main Keyword, Match, Published Title, URL, Category, Score, Advice`; Match ∈ update this post, also published, covers part of it, related live post, duplicate published posts, IP check. The published-posts input is any CSV/.xlsx whose header (within the first 20 rows of a sheet) has a URL column (`URL`, `Link`, `Permalink`...) and a title column (`Title`, `Tiêu đề`...); optional `Category` and a focus keyword column.
 

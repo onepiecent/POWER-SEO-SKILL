@@ -185,6 +185,9 @@ class ClusterDecisions:
         a = d["action"]
         if not d["decision_id"]:
             return f"decision_id is empty (row {d['_row']})"
+        if (d.get("author") or "").strip().lower() == "proposal":
+            return ("author 'proposal': a back-check proposal is never applied as it is; copy it into the decisions "
+                    "file with your own reason, evidence, author and date")
         if a not in CLUSTER_ACTIONS:
             return ((f"unknown action '{a}'" if a else "action is empty") + "; cluster-step actions: "
                     + ", ".join(INGEST_ACTIONS + CLUSTER_ORDER))

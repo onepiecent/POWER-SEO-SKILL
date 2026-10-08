@@ -164,19 +164,17 @@ class ReviewSheets(unittest.TestCase):
         listed = {line.split(": ", 1)[1].rsplit(" (", 1)[0] for r in rows for line in r[seeds].split("\n") if line}
         self.assertLessEqual(listed, {k["keyword"] for k in KEYWORDS})
 
-    def test_not_planned_lists_backlog_skip_merged_and_excluded(self):
+    def test_not_planned_lists_backlog_skip_and_excluded(self):
         rows = as_dicts(self.data["Not Planned"])
         self.assertEqual(self.data["Not Planned"][0], pr.NOT_PLANNED_COLUMNS)
         got = [(r["Keyword or Cluster"], r["Volume"]) for r in rows]
+        # a cluster merged into a post is planned (a section of it, sheet Keyword Map): not listed here
         self.assertEqual(got, [("thanksgiving shirts", "1200"), ("thanksgiving jeopardy", "700"),
-                               ("thanksgiving history for kids", "300"), ("thanksgiving 2019", "5000"),
-                               ("macys parade live stream", "900")])
+                               ("thanksgiving 2019", "5000"), ("macys parade live stream", "900")])
         by_kw = {r["Keyword or Cluster"]: r for r in rows}
         self.assertTrue(by_kw["thanksgiving shirts"]["Where It Went"].startswith("skipped"))
         self.assertTrue(by_kw["thanksgiving jeopardy"]["Where It Went"].startswith("backlog"))
         self.assertEqual(by_kw["thanksgiving jeopardy"]["Reason"], "long tail that matches no theme pillar")
-        self.assertEqual(by_kw["thanksgiving history for kids"]["Where It Went"],
-                         "merged into STT 1 (thanksgiving history)")
         self.assertEqual((by_kw["thanksgiving 2019"]["Reason"], by_kw["thanksgiving 2019"]["Evidence"]),
                          ("past_year", "source: export.csv"))
 

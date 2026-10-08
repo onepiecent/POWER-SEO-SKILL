@@ -8,7 +8,8 @@ Columns (the team's template, in this order):
   STT | Main Keyword | Secondary Keyword | Volume | KD | Category | Category Kind | Thuộc Pillar | Title SEO |
   Meta Description SEO | Outline | Internal Link (Anchor || URL) | Related Post (Anchor || URL) | URL Blog | Trạng thái
 
-  * Category, Title SEO, Meta Description SEO, Outline and Trạng thái are left empty: the content team fills them.
+  * Category, Title SEO, Meta Description SEO, Outline and Trạng thái belong to the content team: empty in a new plan,
+    kept from --previous, filled only into an empty cell by a reviewed decision (--decisions).
   * Category Kind is Pillar or Cluster; a Cluster names its pillar (the pillar's main keyword) in Thuộc Pillar.
   * Volume and KD are those of the main keyword (--volume post puts the post's total instead, an upper bound).
   * Secondary Keyword: the post's other keywords (including clusters merged into it), largest first: at most 3 that
@@ -20,10 +21,12 @@ Columns (the team's template, in this order):
 
 Other sheets: Keyword Map (every keyword placed in the plan and the post it belongs to), Schedule (writing order:
 deadlines from editorial-calendar's seasonal-plan.csv, then priority), QA (what a person should review before handing
-the plan over: overlapping posts, misplaced keywords, orphans...) and, for a one-topic export, Research Next (themes a
-POD blog needs that the file barely covers, with seed keywords to export). After them (plan_review.py): Review (what
-each post rests on, from the data only), Back-check (--backcheck, status updated from the decision logs), Decisions
-(--decision-log) and Not Planned (backlog, skip and merged-away clusters, the biggest keywords of --excluded).
+the plan over: overlapping posts, misplaced keywords, orphans...), SEO Audit (--seo-audit: what the rules changed in
+the SEO's grouping and why), Link Plan (every planned link with its placement and reason) and, for an occasion topic,
+Research Next (themes a POD blog needs that the file barely covers, with seed keywords to export). After them
+(plan_review.py): Review (what each post rests on, from the data only), Back-check (--backcheck, status updated from
+the decision logs), Decisions (--decision-log) and Not Planned (backlog and skip clusters, the biggest keywords the
+noise filters excluded; the run's scope as one row).
 """
 from __future__ import annotations
 
@@ -39,6 +42,7 @@ from collections import defaultdict
 from xml.sax.saxutils import escape
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import plan_audit  # noqa: E402
 import plan_decisions  # noqa: E402
 import plan_qa  # noqa: E402
 import plan_review  # noqa: E402
@@ -69,7 +73,9 @@ CHANGES_COLUMNS = ["STT", "Main Keyword", "Change", "Detail"]
 CHANGES_WIDTHS = [6, 44, 30, 90]
 PLANNED = ("pillar", "cluster", "standalone")
 NO_PILLAR = "No real pillar yet (research a head keyword)"
-BODY_LINKS = ("to_pillar", "contextual", "cross_pillar", "from_pillar", "orphan_fix", "related", "backlink_old_post")
+BODY_LINKS = ("to_pillar", "to_parent", "contextual", "cross_pillar", "from_pillar", "from_parent", "orphan_fix", "related",
+              "backlink_old_post")
+RELATED_LINKS = ("related_reading", "sibling")  # the 'Related reading' block: the Related Post column
 STOP = {"the", "a", "an", "of", "in", "on", "for", "to", "is", "are", "was", "were", "do", "does", "did", "and"}
 YEAR_RX = re.compile(r"^(19|20)\d\d$")
 YEAR_IN_TEXT_RX = re.compile(r"\b(19|20)\d\d\b")
@@ -249,7 +255,7 @@ class Plan:
         order = {t: i for i, t in enumerate(BODY_LINKS)}
         body = sorted((l for l in mine if l["link_type"] in order), key=lambda l: order[l["link_type"]])
         internal = [(l["anchor"], l["target_slug"]) for l in body]
-        related = [(l["anchor"], l["target_slug"]) for l in mine if l["link_type"] == "sibling"]
+        related = [(l["anchor"], l["target_slug"]) for l in mine if l["link_type"] in RELATED_LINKS]
         if not self.links:  # no link plan: hub <-> pillar links and the biggest siblings
             pillar = self.pillar_of(post)
             if post["role"] == "pillar":
@@ -485,9 +491,9 @@ def research_rows(topic: list[dict], keywords: list[dict] | None, spec: dict, pu
     holds one of its head keywords ('thanksgiving quotes') and a real long tail (>= 10 keywords, >= 1,000 searches):
     a broad 'thanksgiving day' export has long-tail quotes but not 'thanksgiving quotes' itself."""
     clusters: dict[str, set[str]] = defaultdict(set)
-    for r in topic:
+    for r in topic:  # occasion topics only: the seeds read '{topic} gifts', '{topic} quotes'...
         key = r.get("pillar_key") or ""
-        if "/" in key and r.get("cluster_id"):
+        if "/" in key and r.get("cluster_id") and r.get("pillar_type", "occasion") in ("occasion", ""):
             clusters[key.split("/", 1)[0]].add(r["cluster_id"])
     out = []
     for t, ids in clusters.items():
@@ -701,6 +707,9 @@ def main(argv=None) -> int:
                     help="decisions-log-<step>.csv (repeatable): sheet Decisions and Decisions Applied in sheet Review")
     ap.add_argument("--excluded", help="excluded.csv from keyword-clustering: its biggest keywords are listed in sheet "
                                        "Not Planned")
+    ap.add_argument("--seo-audit", action="append", default=[],
+                    help="seo-audit.csv (keyword-clustering) and seo-audit-topic.csv (topic-map), repeatable: sheet SEO "
+                         "Audit, what the rules changed in the SEO's grouping and why, group by group")
     ap.add_argument("--not-planned-max", type=int, default=300,
                     help="excluded keywords listed in sheet Not Planned, largest first (default 300)")
     args = ap.parse_args(argv)
@@ -725,8 +734,17 @@ def main(argv=None) -> int:
     if pub or args.previous:
         rows = list(plan.rows())  # again, with the published URLs, links and stable STT
     decision_log, decision_research = [], []
+    decisions = plan_decisions.read_decisions(args.decisions) if args.decisions else []  # one reader for every sheet
     if args.decisions:  # after --previous: a team value always wins over a decision
-        decision_log, decision_research = plan_decisions.apply(plan_decisions.read_decisions(args.decisions), plan, rows)
+        prev_values = {}
+        if args.previous and args.previous.lower().endswith((".xlsx", ".xlsm")):
+            try:  # what the decisions wrote last run: that value belongs to the decision, not to the team
+                prev_values = plan_decisions.previous_values(table_io.read_table(args.previous, {"decision id"},
+                                                                                 sheet="Decisions"))
+            except SystemExit:
+                prev_values = {}
+        decision_log, decision_research = plan_decisions.apply(decisions, plan, rows, prev_values,
+                                                               log_unknown=not args.decision_log)
     xlsx_rows, csv_rows, map_rows = build_outputs(plan, args.plain_links, rows)
     xlsx_rows += kept_rows
     csv_rows += kept_rows
@@ -739,13 +757,16 @@ def main(argv=None) -> int:
     # the other steps' logs, then this run's export log (its file is written below, after run_plan collected the logs)
     logs = [row for path in args.decision_log if os.path.basename(path) != "decisions-log-export.csv"
             for row in plan_review.read_rows(path)] + decision_log
-    decisions_file = getattr(args, "decisions", None)  # --decisions: reason and evidence of each logged decision
-    decisions = plan_review.read_decisions(decisions_file) if decisions_file else []
     issues = plan_review.backcheck_status(plan_review.read_rows(args.backcheck), logs, decisions) if args.backcheck else None
     review = plan_review.review_rows(plan, rows, signature, LIGHT, issues, logs)
     not_planned = plan_review.not_planned_rows(plan, topic, plan_review.read_rows(args.excluded) if args.excluded else [],
-                                               signature, args.not_planned_max)
+                                               signature, args.not_planned_max, LIGHT)
     bc_columns = list(issues[0]) if issues else plan_review.BACKCHECK_COLUMNS
+    audit_files = [path for path in args.seo_audit if os.path.exists(path)]
+    audits = [row for path in audit_files for row in plan_review.read_rows(path)]
+    # with the audit's files the sheet always shows every SEO group, 'kept' ones too (also when nothing changed)
+    seo_audit = plan_audit.seo_audit_rows(plan, topic, keywords, audits) if audit_files else []
+    link_rows = plan_audit.link_plan_rows(plan, links)
 
     out = args.out if args.out.lower().endswith(".xlsx") else args.out + ".xlsx"
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
@@ -755,6 +776,8 @@ def main(argv=None) -> int:
                      ("Keyword Map", sheet_xml(MAP_COLUMNS, map_rows, MAP_WIDTHS)),
                      ("Schedule", sheet_xml(SCHEDULE_COLUMNS, schedule, SCHEDULE_WIDTHS)),
                      ("QA", sheet_xml(plan_qa.QA_COLUMNS, qa, plan_qa.QA_WIDTHS))]
+               + ([("SEO Audit", sheet_xml(plan_audit.AUDIT_COLUMNS, seo_audit, plan_audit.AUDIT_WIDTHS))] if seo_audit else [])
+               + ([("Link Plan", sheet_xml(plan_audit.LINK_COLUMNS, link_rows, plan_audit.LINK_WIDTHS))] if link_rows else [])
                + ([("Research Next", sheet_xml(RESEARCH_COLUMNS, research, RESEARCH_WIDTHS))] if research else [])
                + ([("Published Match", sheet_xml(PUBLISHED_COLUMNS, published_sheet, PUBLISHED_WIDTHS))] if pub else [])
                + ([("Changes", sheet_xml(CHANGES_COLUMNS, changes, CHANGES_WIDTHS))] if args.previous else [])
@@ -793,9 +816,14 @@ def main(argv=None) -> int:
     print(f"Review: {len(review)} posts, {unreviewed} without a reviewed angle; Not Planned: {len(not_planned)} rows"
           + (f"; Back-check: {sum(1 for i in issues if i.get('status') == 'open')} open issues" if issues is not None else "")
           + (f"; Decisions: {len(logs)} logged" if logs else ""))
-    gaps = [f"{x[1]} ({x[5]})" for x in research if x[5] in ("missing", "thin")]
+    if seo_audit:
+        print(f"SEO Audit: {len({r[0] for r in seo_audit if r[0]})} SEO groups: " + plan_audit.audit_summary(seo_audit)
+              + " (sheet SEO Audit)")
+    gaps = [f"{x[1]} ({x[5]})" if len({r[0] for r in research}) == 1 else f"{x[0]} {x[1]} ({x[5]})"
+            for x in research if x[5] in ("missing", "thin")]
     if gaps:
-        print("Research Next: themes to export seed keywords for: " + ", ".join(gaps))
+        print("Research Next: themes to export seed keywords for: " + ", ".join(gaps[:12])
+              + (f" and {len(gaps) - 12} more" if len(gaps) > 12 else ""))
     if not args.keyword_map:
         print("No --keyword-map: Volume/KD are empty and secondary keywords come from topic-map.csv (15 per cluster).", file=sys.stderr)
     if not args.link_plan:

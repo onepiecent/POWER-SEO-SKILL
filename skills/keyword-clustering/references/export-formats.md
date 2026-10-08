@@ -9,7 +9,8 @@
 - **Headers are NFC-normalised** before matching, so Vietnamese headers typed with composed or decomposed accents (`Từ khóa`, `Từ khoá`) are the same column.
 - **Ignored columns** are listed per file. Some are ignored on purpose and say why: `Global volume` and `Global traffic potential` (worldwide, never the US/UK volume), `Competition` (advertising competition, not SEO difficulty), `SV Forecasting trend` (a forecast, not measured searches), `#` (row number).
 - **Markets other than US and UK** (`au`, `ca`, `pk`...) are excluded with the reason `market:<code>` in `excluded.csv`; they are not planned as silent extra markets. Ahrefs' `gb` is read as `uk`.
-- **Grouping columns** (Cluster, Group, Main Keyword, Secondary Keyword, Page, Topic, Pillar, Page type, Thuộc Pillar, Category Kind, Nhóm, Cụm, Chủ đề) are recognised, but reading an existing grouping and back-checking it is not built yet: the report warns, and the keywords are clustered as a raw export.
+- **Grouping columns** (Cluster, Group, Main Keyword, Secondary Keyword, Topic, Pillar, Page type, Kind, Thuộc Pillar, Category Kind, Nhóm, Cụm, Chủ đề) are recognised. In a file passed as a raw export they are not used (the report warns): pass a grouped file with `--prior` to read the grouping and audit it (`keyword-clustering/SKILL.md`). `Page` / `Landing page` is read as the ranking URL (Search Console Query + Page), except in a `--prior` Keyword Strategy Builder export, where it is the group.
+- **A sheet named after a market** (`US`, `UK`, `UK keywords`) gives the market of its rows without a market column; several sheets without one read with a single `--market` are reported.
 
 ## Semrush
 
@@ -30,7 +31,7 @@
 |---|---|
 | Real header (D) | `Database,Keyword,Seed keyword,Page,Topic,Page type,Tags,Volume,Keyword Difficulty,CPC (USD),Competitive Density,Number of Results,Intent,SERP Features,Trend,Click potential,Content references,Competitors` |
 | File name (D) | `<name>_clusters_YYYY-MM-DD.csv`, `<name>_list_YYYY-MM-DD.csv`: the export date only, no market. |
-| Read as | `Database` → market per row (one real file mixed `us` and `au`; the `au` rows are excluded), Intent, SERP Features (Title Case: `Site Links, People Also Ask, Adwords Bottom`), Trend. `Page` (the post's main keyword), `Topic` (the pillar when `Page` is present) and `Page type` (`Pillar page`, `Sub page`) are recognised as grouping columns, which are not used yet (warning). `Click potential` is recognised and not used. |
+| Read as | `Database` → market per row (one real file mixed `us` and `au`; the `au` rows are excluded), Intent, SERP Features (Title Case: `Site Links, People Also Ask, Adwords Bottom`), Trend. `Page` (the post's main keyword), `Topic` (the pillar when `Page` is present) and `Page type` (`Pillar page`, `Sub page`) are the grouping: with `--prior`, each Page is an SEO group under its Topic pillar; as a raw export they are not used (warning). `Click potential` is recognised and not used. |
 | Watch out | `Content references` and `Competitors` hold 10 multi-line `"domain":"url"` pairs that are **the same for every keyword of a Page**: they are the page's reference SERP, not a SERP per keyword. They are never read as `serp_urls` (that would merge every keyword of the page by construction) and appear under *Ignored columns*. In a `_list_` export most rows have no Page. |
 
 ### Semrush API and semicolon exports: `semrush-api`
