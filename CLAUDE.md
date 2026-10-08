@@ -19,7 +19,7 @@ python3 skills/printerval-blog-seo/scripts/export_plan.py --help     # final pla
 python3 skills/printerval-blog-seo/scripts/run_plan.py --help        # the whole pipeline in one command
 ```
 
-The scripts use only the Python 3 standard library (tested on 3.13). Each skill is self-contained in `skills/<name>/` (SKILL.md, scripts/, references/, assets/); do not import across skills. Two data files are read across skills, each with a fallback when missing: `topic-map` reads `keyword-clustering`'s `taxonomy.json` to name pillars, and `printerval-blog-seo/scripts/published.py` reads `claims-compliance-check`'s `ip-watchlist.txt` to flag published posts that name a brand. `run_plan.py` runs the other skills' scripts as separate processes (no import).
+The scripts use only the Python 3 standard library (tested on 3.11, 3.12 and 3.13; CI runs all three on every pull request). Each skill is self-contained in `skills/<name>/` (SKILL.md, scripts/, references/, assets/); do not import across skills. Two data files are read across skills, each with a fallback when missing: `topic-map` reads `keyword-clustering`'s `taxonomy.json` to name pillars, and `printerval-blog-seo/scripts/published.py` reads `claims-compliance-check`'s `ip-watchlist.txt` to flag published posts that name a brand. `run_plan.py` runs the other skills' scripts as separate processes (no import).
 
 ## When editing
 

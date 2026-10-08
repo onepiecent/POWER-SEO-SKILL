@@ -35,7 +35,7 @@ Raw export and/or a file the SEO already grouped (--prior)
 
 Three kinds of input go through one command, `skills/printerval-blog-seo/scripts/run_plan.py`: a raw export (`run_plan.py export.xlsx --market us --out outputs`), a file the SEO already grouped (`--prior grouped.xlsx::us`; its groups are audited against the same rules and regrouped only where a rule fails, every change and its reason in the SEO Audit sheet; `--prior-mode keep` keeps them as they are), or both (the export back-fills volume, KD, intent and SERP features and supplements missing keywords). Judgment calls go into a decisions file (`--decisions decisions.csv`), each with a reason and evidence; the scripts apply them deterministically, reject a Claude decision the SERP data contradicts and log every one in the final file. Claude reviews in two passes (structure, then content): see `skills/printerval-blog-seo/SKILL.md` and `skills/keyword-clustering/references/backcheck-and-decisions.md`.
 
-## Quick start (Python 3, standard library only; tested on 3.13)
+## Quick start (Python 3, standard library only; tested on 3.11, 3.12 and 3.13)
 
 ```bash
 # 1. Cluster on request: group by occasion then recipient, US only, drop keywords under 100 searches
@@ -117,6 +117,8 @@ Use **all nine together**: `printerval-blog-seo` is the entry point and the skil
 The skill instructions, reference documents and deliverables (briefs, articles, anchors, titles) are all in English. Claude replies in the language the user writes in (the team normally writes Vietnamese).
 
 ## Tests
+
+GitHub Actions (`.github/workflows/tests.yml`) runs the tests on Python 3.11, 3.12 and 3.13 for every pull request and every push to `main`, then packages the skills (the zips are attached to the run as the `skills` artifact).
 
 ```bash
 python3 -W error::ResourceWarning -m unittest discover -s tests
